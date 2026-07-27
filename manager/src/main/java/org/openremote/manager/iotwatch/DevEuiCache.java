@@ -27,7 +27,10 @@ public class DevEuiCache {
             .getOrDefault(normalize(eui), Set.of()));
     }
 
-    public void put(String realm, String eui, String assetId) {
+    // put/remove are synchronized because they maintain a cross-map invariant
+    // (forward map + reverse map + shared mutable Set) that individual
+    // concurrent-map operations cannot make atomic; resolve stays lock-free.
+    public synchronized void put(String realm, String eui, String assetId) {
         remove(assetId);
         String normalized = normalize(eui);
         idsByEuiByRealm
@@ -37,7 +40,7 @@ public class DevEuiCache {
         entryByAssetId.put(assetId, new RealmEui(realm, normalized));
     }
 
-    public void remove(String assetId) {
+    public synchronized void remove(String assetId) {
         RealmEui previous = entryByAssetId.remove(assetId);
         if (previous == null) {
             return;
