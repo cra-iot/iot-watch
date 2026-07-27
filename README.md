@@ -1,73 +1,120 @@
-# OpenRemote Custom Project Template
+# IoT Watch
 
-This repository is a template for custom projects; showing the recommended project structure and including `README` files in the `deployment` directory to provide details about how to customize each part.
-
-**[You can find the documentation here](https://docs.openremote.io/docs/user-guide/deploying/custom-deployment/)**.
-
-
----
-
-# (PROJECT_NAME)
-
-*(Please describe, in a short summary, the context of the project.)*
-<!-- For example:
-OpenRemote produces sensors for monitoring the power production of solar panels.
-They use ESP32 hardware that auto provisions in the OpenRemote platform through the cloud.
-This hardware gets delivered to end consumers in their homes, where they can use a dedicated app for monitoring their solar panels.
--->
+IoT Watch is the CRA (České Radiokomunikace a.s.) customization of [OpenRemote](https://github.com/openremote/openremote), deployed alongside the CRA IoT Platform. It provides data visualization for CRA customers: device messages collected by the IoT Platform are delivered over its MQTT egress into this OpenRemote instance, modelled as assets, and presented in Manager UI dashboards and a custom web application. Each customer is served by a dedicated realm.
 
 > This repository is set up using the [Custom Project template](https://github.com/openremote/custom-project/). This repository uses the same standards and folder structure. More information about how to use this repository as a template to develop your own agents, services, model classes, setup tasks, tests, and new UI apps can be found in the [OpenRemote documentation](https://docs.openremote.io/docs/developer-guide/creating-a-custom-project).
-<!-- If different from "normal custom projects", you can replace or add information here. For example, note additional folders, or source code outside this repository. -->
+
+## License and source publication
+
+OpenRemote is licensed under [AGPL-3.0](https://github.com/openremote/openremote/blob/master/LICENSE.txt). Because IoT Watch is offered to customers as a network service, all modifications made in this repository must be publicly available.
+
+- Public mirror: **https://github.com/cra-cz/iot-watch**
+- Everything merged to `main` on the CRA GitLab (`origin`) is published to the GitHub mirror automatically via GitLab push mirroring.
+- Consequently, never commit anything that cannot be public: secrets, tokens, customer data, or internal-only information. Assume every commit becomes public.
+- CRA-specific code in this repository is licensed under AGPL-3.0-or-later as well, see [LICENSE.txt](LICENSE.txt).
 
 ## Project context
 
 ### Features
-*(Please insert a bullet point list with features specific to this custom project.)*
-<!-- For example:
-  - Custom app for end users to access their solar panel data.
-  - Custom agent for communicating with the ESP32 devices.
-  - Custom HAProxy configuration to add additional services managed by them.
-  - Gateways ...
-  - OR extensions in use ...
--->
+
+- **Custom asset types** (`model/`) representing CRA IoT device data — the main customization of this project.
+- **Custom web app** for CRA customers (`ui/app/`) built on OpenRemote UI components.
+- **CRA branding** (`deployment/`): logos, Manager UI configuration, map settings, and Keycloak theme.
+- **Data ingestion** from the CRA IoT Platform via its MQTT egress, consumed by the built-in OpenRemote MQTT agent (configured in the Manager; no custom protocol code).
+- **Groovy rules** authored in the Manager UI; this repository versions their backups.
+
+OpenRemote itself runs unmodified — the customizations above are delivered to the instances as an extensions JAR and mounted files, not as a custom OpenRemote build (see [Deployment](#deployment-kubernetes)).
 
 ### Vocabulary / common terms
-*(Please insert a bullet point list with common terms in this project, with a short explanation.)*
-<!-- For example:
-  - **Manager UI**: The end-user UI deployed on `https://<url>/manager/` for monitoring devices.
--->
+
+- **CRA IoT Platform** — CRA's integration/messaging platform (PaaS) for IoT devices (LoRaWAN, MQTT, UDP ingest). The source of all device data shown in IoT Watch.
+- **Egress** — delivery of device messages from the IoT Platform to customer endpoints (HTTP or MQTT). IoT Watch consumes the MQTT egress.
+- **Manager (UI)** — the OpenRemote administration and dashboard UI, deployed at `https://<hostname>/manager/`.
+- **Realm** — a Keycloak/OpenRemote tenant. IoT Watch uses one realm per CRA customer.
+- **Asset / attribute** — OpenRemote's data model: devices and their measurements are represented as assets with attributes.
+- **Agent** — an OpenRemote component connecting external protocols to assets via agent links; here the built-in MQTT agent.
+- **Extension (JAR)** — a JAR the manager loads at startup from `/deployment/manager/extensions`; the mechanism by which the custom asset types, services, and setup tasks from this repository reach the unmodified OpenRemote image.
 
 ### Company background
-*(If applicable, write context about the company this custom project is meant for.)*
-<!-- For example:
-  - What kind of company they are (installer, manufacturer)
-  - What kind of team we're working with
-  - Whether they have an in-house development team
-  - Who has access to this repository
-  - If they write Groovy scripts yes/no
-  - If they have their own outside repository, etc. -->
+
+CRA (České Radiokomunikace a.s.) operates the CRA IoT Platform, a PaaS that ingests, persists, transforms, and routes IoT device messages. The platform itself does not host customer-facing applications; IoT Watch fills that gap by giving CRA customers visualization of their device data on top of OpenRemote. The project is developed in-house by the CRA IoT team. Write access is limited to CRA employees and contractors; the sources are public through the GitHub mirror (see above).
 
 ## Architecture
-*(Please insert, preferably a diagram, or a short explanation of the high level architecture)*
-<!-- For example, what systems are there, and how do they interact with each other. -->
+
+```
+Devices (LoRaWAN / MQTT / UDP)
+        │
+        ▼
+CRA IoT Platform ─── MQTT egress
+                          │
+                          ▼
+              OpenRemote MQTT agent
+                          │
+                          ▼
+        Assets / attributes (custom asset types from model/)
+                          │
+                          ▼
+      Manager UI dashboards + custom app (ui/app/)
+                          ▲
+                          │
+        CRA customers (one Keycloak realm per customer)
+```
+
+IoT Watch does not communicate with devices directly. Device connectivity, message persistence, transformation, and routing are the responsibility of the CRA IoT Platform; IoT Watch only consumes the resulting MQTT egress stream and visualizes it.
 
 ### Keycloak setup
-The identity provider in place is [Keycloak](https://github.com/openremote/keycloak), running in its own container. The default configuration from the repository ([link](https://github.com/openremote/keycloak)) is used.
-<!-- If the identity provider setup is different, or a custom configuration is used, please specify. -->
+
+The identity provider in place is [Keycloak](https://github.com/openremote/keycloak), running in its own container. The default configuration from the repository ([link](https://github.com/openremote/keycloak)) is used. Users are managed locally in Keycloak — there is no federation to the CRA corporate SSO. Each customer gets a dedicated realm.
 
 ### Proxy setup
-All requests from and towards running services go through the [HAProxy](https://github.com/openremote/proxy) container. The default configuration from the repository ([haproxy.cfg](https://github.com/openremote/proxy/blob/main/haproxy.cfg)) is used.
-<!-- If the proxy setup is different, or a custom configuration is used, please specify. -->
 
-<!-- Feel free to add additional chapters on architecture specific to this custom project -->
+All requests from and towards running services go through the [HAProxy](https://github.com/openremote/proxy) container. The default configuration from the repository ([haproxy.cfg](https://github.com/openremote/proxy/blob/main/haproxy.cfg)) is used.
+
+### Deployment (Kubernetes)
+
+The TEST and PROD instances run the **unmodified official OpenRemote images** on CRA Kubernetes; Helm charts and deployment configuration are maintained in a separate repository on the CRA GitLab. No custom OpenRemote image is built from this repository. Instead, `./gradlew clean installDist` assembles the deployment content under `deployment/build/image/`, and the relevant parts are mounted into the pods:
+
+- `manager/extensions/*.jar` — the extension JARs (custom asset types, custom services, setup tasks). The manager loads every JAR found in `/deployment/manager/extensions`.
+- Branding files (`manager/app/`), Keycloak themes, and map settings — mounted the same way.
+
+The `docker-compose.yml` in the root of this repository is the upstream template's deployment profile and serves local development and manual runs only; there the same content is delivered through the `deployment` image and a shared volume instead of a mount.
+
+#### Deployment considerations
+
+- **Version coupling.** The extension JARs are compiled against the OpenRemote version pinned in `gradle/libs.versions.toml`. When the manager image tag is bumped in the Helm charts, the JARs must be rebuilt against the same version — a mismatch can fail at startup or misbehave silently.
+- **Startup-only loading.** The manager scans `/deployment/manager/extensions` only at boot. Replacing a JAR on the mounted volume has no effect until the manager pod is restarted; every JAR update must be paired with a rollout restart.
+- **Artifact delivery.** Copying JARs to a volume by hand is unversioned and hard to roll back. The recommended variant of the same architecture: build the deployment image this repository already produces (`deployment/Dockerfile`) and run it as an init container that copies `/deployment` into an `emptyDir` shared with the manager container. A deployment then becomes an image tag in Helm — versioned, reproducible, with rollback and pod restart for free.
+- **Whole content, not just extensions.** The custom UI app and branding are served by the manager from the same `/deployment` volume, so the mount must carry the complete `deployment/build/image/` content, not only the `extensions/` folder.
 
 ## Developer Guide
 
 ### Quickstart
+
 Before starting, make sure you have cloned the Git repository locally, as this is required.
 Follow the initial guides on the OpenRemote documentation on [preparing the environment](https://docs.openremote.io/docs/developer-guide/preparing-the-environment), [installing and using Docker](https://docs.openremote.io/docs/developer-guide/installing-and-using-docker), and on [setting up an IDE](https://docs.openremote.io/docs/developer-guide/setting-up-an-ide).
 
-*(Please describe the steps necessary to run this custom project locally.)*
+Build the Java modules and assemble the deployment image content:
+
+```bash
+./gradlew clean installDist
+```
+
+The extension JARs end up in `deployment/build/image/manager/extensions/` — this is the artifact mounted into the Kubernetes manager pod.
+
+Run the full local stack (fetch the base compose profile once, see [Docker Compose files](#docker-compose-files)):
+
+```bash
+docker build -t openremote/deployment:develop ./deployment/build/
+OR_HOSTNAME=localhost OR_ADMIN_PASSWORD=secret DEPLOYMENT_VERSION=develop docker compose -p iot-watch up -d
+```
+
+For UI development, start the backend from a dev profile (it pulls `deploy.yml` for the pinned OpenRemote version directly from GitHub) and serve the app with hot reload:
+
+```bash
+docker compose -f profile/dev-ui.yml -p iot-watch up -d
+yarn install
+cd ui/app/custom && yarn run serve   # http://localhost:9000/custom/
+```
 
 ### Upstream repository synchronization
 
@@ -108,7 +155,9 @@ Notes:
 - Do not add the GitHub repository as a second push URL on `origin`; keeping it as a separate fetch-only `upstream` remote is what provides "push to CRA GitLab, pull from GitHub manually".
 
 ### Docker Compose files
+
 In the `profile` directory you can find different Docker Compose files, each serving a different purpose. To be able to use them, you'll need to download a copy of the `deploy.yml` file from the main OpenRemote repository and place it in the `openremote/profile` directory, to ensure you always have the latest version of the file:
+
 ```bash
 mkdir -p openremote/profile && curl -L https://github.com/openremote/openremote/raw/refs/heads/master/profile/deploy.yml -o openremote/profile/deploy.yml
 ```
@@ -125,27 +174,27 @@ mkdir -p openremote/profile && curl -L https://github.com/openremote/openremote/
 | `PROXY_VERSION`      | `proxy`               | The HAProxy version in use.                                                                                                       | 'latest' |
 
 A list of all environment variables from OpenRemote can be found [here](https://github.com/openremote/openremote/blob/master/profile/deploy.yml).
-<!-- Feel free to add additional chapters on developer information such as local gateway setup, encrypted files in the repository, etc. -->
 
 ## Deployments / environments
 
-This custom project is deployed by OpenRemote on their managed infrastructure. It's running in Docker containers, using the `docker-compose.yml` file in the root folder of the repository. All deployments are run using the GitHub Actions CI/CD workflow.
-<!-- If applicable, specify otherwise -->
+Both environments run the unmodified official OpenRemote images on CRA Kubernetes, deployed via the Helm charts in the separate deployment repository. This repository only supplies the mounted artifacts (extension JARs, branding files, UI app bundle); updates are rolled out through the CRA deployment process.
 
-The list of available environments:
-### `staging`
-Used by OpenRemote to test new functionality and bugfixes before publishing them to production. Important practices and agreements to be aware of:
-- This environment is only used for development purposes, so can be offline at any time.
-- There is no guarantee that this data will be persisted in the long-term.
-<!-- If applicable, you can provide additional practices such as "Devices in the field are connected to this" or "Be aware that an external company has API access" -->
-- **OpenRemote Manager:** https://(staging.CUSTOM_HOSTNAME).com/manager
-- **Custom app:** https://(staging.CUSTOM_HOSTNAME).com/custom
-<!-- If applicable, add additional URLs to other services or apps -->
+### `test`
+
+Used for development and testing before releasing to production.
+- This environment is only used for development purposes, so it can be offline at any time.
+- There is no guarantee that data will be persisted in the long term.
+- **OpenRemote Manager:** internal URL - see the deployment (Helm) repository
+
 ### `production`
-Used for the live system with devices in the field, with a guarantee of stability and data persistence. Important practices and agreements to be aware of:
-- There is a daily backup active for this instance.
-- This deployment is **manually updated**, and should be communicated with stakeholders.
-<!-- If applicable, you can provide additional practices, such as "Auto deploys when making a new release through GitHub", or "It updates every 1st day of the month" -->
-- **OpenRemote Manager:** https://(CUSTOM_HOSTNAME).com/manager
-- **Custom app:** https://(CUSTOM_HOSTNAME).com/custom
-<!-- If applicable, add additional URLs to other services or apps -->
+
+The live, customer-facing instance with a guarantee of stability and data persistence.
+- **OpenRemote Manager:** internal URL - see the deployment (Helm) repository
+
+## Project setup TODO
+
+Remaining setup steps for this repository:
+
+- [ ] Add a `.gitlab-ci.yml` (Gradle build/test + UI build) on the CRA GitLab; the template's GitHub Actions workflow (`.github/workflows/ci_cd.yml`) stays dormant on the mirror.
+- [ ] Implement the first CRA asset types in `model/` (replacing the `CustomAsset` example) and regenerate the TypeScript model (`./gradlew :ui:component:model:generateTypeScript`).
+- [ ] Define where Manager-authored Groovy rules are backed up in this repository (e.g. a `rules/` directory) and how the backup is refreshed.

@@ -1,1 +1,10 @@
 # ADDITIONAL CUSTOM PROJECT LICENSES
+
+All CRA-specific code and content in this repository (everything not
+originating from the OpenRemote custom-project template or from OpenRemote
+dependencies) is licensed under the GNU Affero General Public License,
+version 3 or later (AGPL-3.0-or-later) — the same license as OpenRemote.
+
+Full license text: https://www.gnu.org/licenses/agpl-3.0.txt
+
+Copyright (c) 2026 České Radiokomunikace a.s.
