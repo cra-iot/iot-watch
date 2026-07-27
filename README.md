@@ -69,6 +69,44 @@ Follow the initial guides on the OpenRemote documentation on [preparing the envi
 
 *(Please describe the steps necessary to run this custom project locally.)*
 
+### Upstream repository synchronization
+
+This repository lives on the CRA GitLab (`origin`, `git@INTERNAL-GITLAB-HOST:iot-platform/other/iot-watch.git`) and is based on the [openremote/custom-project](https://github.com/openremote/custom-project) template (`upstream`). Day-to-day work is committed and pushed to `origin` as usual; changes from the upstream template are pulled in manually when needed.
+
+#### One-time setup (per clone)
+
+Add the upstream remote as fetch-only, so an accidental `git push upstream` fails with a clear error:
+
+```bash
+git remote add upstream https://github.com/openremote/custom-project.git
+git remote set-url --push upstream DISABLED
+```
+
+If the upstream history has not been merged into this repository yet, the very first merge must connect the two unrelated histories:
+
+```bash
+git fetch upstream
+git merge upstream/main --allow-unrelated-histories
+# resolve conflicts (e.g. README.md), then: git add <files> && git commit
+git push origin main
+```
+
+#### Manual upstream sync (recurring)
+
+Whenever newer upstream template changes are wanted:
+
+```bash
+git fetch upstream
+git merge upstream/main
+# resolve conflicts if any, commit
+git push origin main
+```
+
+Notes:
+- After the first merge the histories are connected, so `--allow-unrelated-histories` is no longer needed.
+- Always merge (do not rebase) when syncing from upstream — `main` is published on `origin` and rebasing would require a force-push.
+- Do not add the GitHub repository as a second push URL on `origin`; keeping it as a separate fetch-only `upstream` remote is what provides "push to CRA GitLab, pull from GitHub manually".
+
 ### Docker Compose files
 In the `profile` directory you can find different Docker Compose files, each serving a different purpose. To be able to use them, you'll need to download a copy of the `deploy.yml` file from the main OpenRemote repository and place it in the `openremote/profile` directory, to ensure you always have the latest version of the file:
 ```bash
