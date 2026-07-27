@@ -1,0 +1,37 @@
+{
+  "name": "@openremote/custom",
+  "version": "1.0.0",
+  "description": "OpenRemote Custom App",
+  "author": "OpenRemote",
+  "license": "AGPL-3.0-or-later",
+  "private": true,
+  "exports": {
+    "./*": "./lib/*.js"
+  },
+  "scripts": {
+    "clean": "npx tsc -b --clean && npx shx rm -rf dist",
+    "modelBuild": "npx orutil build",
+    "modelWatch": "npx orutil watch",
+    "build": "npx cross-env NODE_OPTIONS=--max_old_space_size=4096 rspack --mode production",
+    "serve": "npx tsc -b --clean && npx shx rm -rf dist && npx orutil build && npx cross-env NODE_OPTIONS=--max_old_space_size=4096 rspack serve --mode development",
+    "serveNoModelBuild": "npx tsc -b --clean && npx cross-env NODE_OPTIONS=--max_old_space_size=4096 rspack serve --mode development",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@openremote/manager": "~1.27.0",
+    "@openremote/or-app": "~1.27.0",
+    "lit": "^3.3.1",
+    "model": "workspace:*",
+    "rest": "workspace:*"
+  },
+  "devDependencies": {
+    "@openremote/util": "~1.27.0",
+    "@rspack/cli": "^1.7.10",
+    "@rspack/core": "^1.7.10",
+    "cross-env": "*",
+    "css-loader": "*",
+    "shx": "*",
+    "ts-loader": "*",
+    "typescript": "^5.9.3"
+  }
+}

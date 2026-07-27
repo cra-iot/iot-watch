@@ -1,93 +1,113 @@
-# IoT Watch
+# OpenRemote Custom Project Template
 
-## TESTING MIRROR
+This repository is a template for custom projects; showing the recommended project structure and including `README` files in the `deployment` directory to provide details about how to customize each part.
 
-## Getting started
+**[You can find the documentation here](https://docs.openremote.io/docs/user-guide/deploying/custom-deployment/)**.
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+---
 
-## Add your files
+# (PROJECT_NAME)
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+*(Please describe, in a short summary, the context of the project.)*
+<!-- For example:
+OpenRemote produces sensors for monitoring the power production of solar panels.
+They use ESP32 hardware that auto provisions in the OpenRemote platform through the cloud.
+This hardware gets delivered to end consumers in their homes, where they can use a dedicated app for monitoring their solar panels.
+-->
 
+> This repository is set up using the [Custom Project template](https://github.com/openremote/custom-project/). This repository uses the same standards and folder structure. More information about how to use this repository as a template to develop your own agents, services, model classes, setup tasks, tests, and new UI apps can be found in the [OpenRemote documentation](https://docs.openremote.io/docs/developer-guide/creating-a-custom-project).
+<!-- If different from "normal custom projects", you can replace or add information here. For example, note additional folders, or source code outside this repository. -->
+
+## Project context
+
+### Features
+*(Please insert a bullet point list with features specific to this custom project.)*
+<!-- For example:
+  - Custom app for end users to access their solar panel data.
+  - Custom agent for communicating with the ESP32 devices.
+  - Custom HAProxy configuration to add additional services managed by them.
+  - Gateways ...
+  - OR extensions in use ...
+-->
+
+### Vocabulary / common terms
+*(Please insert a bullet point list with common terms in this project, with a short explanation.)*
+<!-- For example:
+  - **Manager UI**: The end-user UI deployed on `https://<url>/manager/` for monitoring devices.
+-->
+
+### Company background
+*(If applicable, write context about the company this custom project is meant for.)*
+<!-- For example:
+  - What kind of company they are (installer, manufacturer)
+  - What kind of team we're working with
+  - Whether they have an in-house development team
+  - Who has access to this repository
+  - If they write Groovy scripts yes/no
+  - If they have their own outside repository, etc. -->
+
+## Architecture
+*(Please insert, preferably a diagram, or a short explanation of the high level architecture)*
+<!-- For example, what systems are there, and how do they interact with each other. -->
+
+### Keycloak setup
+The identity provider in place is [Keycloak](https://github.com/openremote/keycloak), running in its own container. The default configuration from the repository ([link](https://github.com/openremote/keycloak)) is used.
+<!-- If the identity provider setup is different, or a custom configuration is used, please specify. -->
+
+### Proxy setup
+All requests from and towards running services go through the [HAProxy](https://github.com/openremote/proxy) container. The default configuration from the repository ([haproxy.cfg](https://github.com/openremote/proxy/blob/main/haproxy.cfg)) is used.
+<!-- If the proxy setup is different, or a custom configuration is used, please specify. -->
+
+<!-- Feel free to add additional chapters on architecture specific to this custom project -->
+
+## Developer Guide
+
+### Quickstart
+Before starting, make sure you have cloned the Git repository locally, as this is required.
+Follow the initial guides on the OpenRemote documentation on [preparing the environment](https://docs.openremote.io/docs/developer-guide/preparing-the-environment), [installing and using Docker](https://docs.openremote.io/docs/developer-guide/installing-and-using-docker), and on [setting up an IDE](https://docs.openremote.io/docs/developer-guide/setting-up-an-ide).
+
+*(Please describe the steps necessary to run this custom project locally.)*
+
+### Docker Compose files
+In the `profile` directory you can find different Docker Compose files, each serving a different purpose. To be able to use them, you'll need to download a copy of the `deploy.yml` file from the main OpenRemote repository and place it in the `openremote/profile` directory, to ensure you always have the latest version of the file:
+```bash
+mkdir -p openremote/profile && curl -L https://github.com/openremote/openremote/raw/refs/heads/master/profile/deploy.yml -o openremote/profile/deploy.yml
 ```
-cd existing_repo
-git remote add origin https://git.cra.cz/iot-platform/other/iot-watch.git
-git branch -M main
-git push -uf origin main
-```
 
-## Integrate with your tools
+### Environment variables
 
-* [Set up project integrations](https://git.cra.cz/iot-platform/other/iot-watch/-/settings/integrations)
+| Key                  | Containers            | Description                                                                                                                       | Default  |
+|----------------------|-----------------------|-----------------------------------------------------------------------------------------------------------------------------------|----------|
+| `OR_HOSTNAME`        | All services          | **(REQUIRED)** FQDN hostname of where this instance will be exposed (localhost, IP address or public domain)                      | -        |
+| `OR_ADMIN_PASSWORD`  | `keycloak`, `manager` | **(REQUIRED)** Initial admin user password                                                                                        | -        |
+| `DEPLOYMENT_VERSION` | `deployment`          | **(REQUIRED)** The custom project version in use. This tag is used for building and deploying the artifacts from this repository. | -        |
+| `MANAGER_VERSION`    | `manager`             | The OpenRemote version in use.                                                                                                    | 'latest' |
+| `KEYCLOAK_VERSION`   | `keycloak`            | The Keycloak version in use.                                                                                                      | 'latest' |
+| `PROXY_VERSION`      | `proxy`               | The HAProxy version in use.                                                                                                       | 'latest' |
 
-## Collaborate with your team
+A list of all environment variables from OpenRemote can be found [here](https://github.com/openremote/openremote/blob/master/profile/deploy.yml).
+<!-- Feel free to add additional chapters on developer information such as local gateway setup, encrypted files in the repository, etc. -->
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+## Deployments / environments
 
-## Test and Deploy
+This custom project is deployed by OpenRemote on their managed infrastructure. It's running in Docker containers, using the `docker-compose.yml` file in the root folder of the repository. All deployments are run using the GitHub Actions CI/CD workflow.
+<!-- If applicable, specify otherwise -->
 
-Use the built-in continuous integration in GitLab.
-
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+The list of available environments:
+### `staging`
+Used by OpenRemote to test new functionality and bugfixes before publishing them to production. Important practices and agreements to be aware of:
+- This environment is only used for development purposes, so can be offline at any time.
+- There is no guarantee that this data will be persisted in the long-term.
+<!-- If applicable, you can provide additional practices such as "Devices in the field are connected to this" or "Be aware that an external company has API access" -->
+- **OpenRemote Manager:** https://(staging.CUSTOM_HOSTNAME).com/manager
+- **Custom app:** https://(staging.CUSTOM_HOSTNAME).com/custom
+<!-- If applicable, add additional URLs to other services or apps -->
+### `production`
+Used for the live system with devices in the field, with a guarantee of stability and data persistence. Important practices and agreements to be aware of:
+- There is a daily backup active for this instance.
+- This deployment is **manually updated**, and should be communicated with stakeholders.
+<!-- If applicable, you can provide additional practices, such as "Auto deploys when making a new release through GitHub", or "It updates every 1st day of the month" -->
+- **OpenRemote Manager:** https://(CUSTOM_HOSTNAME).com/manager
+- **Custom app:** https://(CUSTOM_HOSTNAME).com/custom
+<!-- If applicable, add additional URLs to other services or apps -->
