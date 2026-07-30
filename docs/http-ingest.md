@@ -2,8 +2,7 @@
 
 Receives device messages pushed by the CRA IoT Platform HTTP egress
 (`rest-sender`), as an alternative to the MQTT egress → MQTT agent path.
-Pilot feature — see
-`superpowers/specs/2026-07-27-http-ingest-api-key-endpoint-design.md`.
+Pilot feature.
 
 ## Endpoint
 

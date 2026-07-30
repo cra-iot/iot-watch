@@ -54,3 +54,6 @@ local.properties
 *.tsbuildinfo
 *~
 *.tar.gz
+
+# Superpowers working artifacts (specs/plans) — kept local, never committed/published
+docs/superpowers/
