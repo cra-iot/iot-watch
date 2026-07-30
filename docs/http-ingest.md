@@ -1,0 +1,60 @@
+# HTTP ingest endpoint
+
+Receives device messages pushed by the CRA IoT Platform HTTP egress
+(`rest-sender`), as an alternative to the MQTT egress → MQTT agent path.
+Pilot feature — see
+`superpowers/specs/2026-07-27-http-ingest-api-key-endpoint-design.md`.
+
+## Endpoint
+
+`POST https://<hostname>/api/{realm}/ingest`
+
+- Header `X-API-Key: <key>` — per-realm key, see configuration below.
+- Body: the platform integration envelope (`data` is a JSON-encoded string).
+- Responses: `200` accepted, `400` unparseable payload or missing `EUI`,
+  `401` wrong/missing key, `404` no asset with matching `devEui` in the
+  realm, `409` more than one asset with that `devEui`.
+
+The parsed inner message is written to the matched asset's `rawValue`
+attribute (event timestamp = inner `ts`, device time). Groovy rules in the
+Manager UI decode the hex `data` field into typed attributes. Note that
+OpenRemote discards events older than the attribute's last-updated
+timestamp, so late-arriving messages older than the newest stored one are
+dropped (the endpoint still returns `200` — dispatch is asynchronous).
+
+## Asset requirements
+
+The target asset must have its `devEui` attribute set to the device EUI
+(case does not matter). All IoT Watch asset types declare `devEui` as a
+required attribute; instances created before this feature must have the
+value filled in manually in the Manager UI — an asset without it cannot be
+saved and is never matched.
+
+## Configuration
+
+Keys live in the `OR_IOTWATCH_INGEST_KEYS` env var of the manager pod
+(Kubernetes Secret in the Helm repository, never in this repository):
+
+    OR_IOTWATCH_INGEST_KEYS=realm1:key1,realm2:key2
+
+Generate a key with `openssl rand -hex 32`. Rotation = update the Secret
+and restart the manager pod. If the variable is not set, the endpoint is
+not registered (404).
+
+On the platform side, configure a customer endpoint (Datový tok →
+HTTP endpoint) with the URL above and the `X-API-Key` header.
+
+## Manual verification (local dev stack)
+
+    curl -i -X POST "http://localhost:8080/api/master/ingest" \
+      -H "Content-Type: application/json" \
+      -H "X-API-Key: <key from OR_IOTWATCH_INGEST_KEYS>" \
+      -d '{
+        "data": "{\"cmd\":\"gw\",\"ts\":1773397633008,\"data\":\"cbe006e001c10106aa7fff\",\"bat\":254,\"EUI\":\"00112233AABBCCDD\"}",
+        "tags": [],
+        "tech": "L",
+        "type": "D"
+      }'
+
+Expect `200 OK` and the `rawValue` attribute of the asset whose `devEui` is
+`00112233AABBCCDD` updated in the Manager UI.
