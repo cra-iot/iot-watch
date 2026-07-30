@@ -47,6 +47,7 @@ public class IotWatchIngestService implements ContainerService {
 
     protected IngestKeyStore keyStore = IngestKeyStore.parse(null);
     protected final DevEuiCache cache = new DevEuiCache();
+    protected IngestMetrics metrics = IngestMetrics.create(null);
     protected AssetStorageService assetStorageService;
     protected AssetProcessingService assetProcessingService;
     protected MessageBrokerService messageBrokerService;
@@ -57,6 +58,7 @@ public class IotWatchIngestService implements ContainerService {
         assetStorageService = container.getService(AssetStorageService.class);
         assetProcessingService = container.getService(AssetProcessingService.class);
         messageBrokerService = container.getService(MessageBrokerService.class);
+        metrics = IngestMetrics.create(container.getMeterRegistry());
 
         keyStore = IngestKeyStore.parse(MapAccess.getString(container.getConfig(), OR_IOTWATCH_INGEST_KEYS, null));
         enabled = !keyStore.isEmpty();
@@ -83,6 +85,9 @@ public class IotWatchIngestService implements ContainerService {
                     .value(new ValueEmptyPredicate().negate(true))))
             .forEach(this::cacheAsset);
         LOG.info("devEui cache warmed up");
+
+        keyStore.realms().forEach(realm ->
+            metrics.registerCacheGauge(realm, () -> cache.size(realm)));
 
         messageBrokerService.getContext().addRoutes(new RouteBuilder() {
             @Override
@@ -123,6 +128,7 @@ public class IotWatchIngestService implements ContainerService {
 
     public Response handle(String realm, String apiKey, IngestEnvelope envelope) {
         if (!keyStore.check(realm, apiKey)) {
+            metrics.countRequest(keyStore.realms().contains(realm) ? realm : null, IngestMetrics.OUTCOME_UNAUTHORIZED);
             LOG.fine(() -> "Rejected ingest request for realm '" + realm + "': invalid API key");
             return Response.status(Response.Status.UNAUTHORIZED).build();
         }
@@ -131,12 +137,14 @@ public class IotWatchIngestService implements ContainerService {
         try {
             payload = IngestPayload.parse(envelope);
         } catch (IngestPayload.InvalidPayloadException e) {
+            metrics.countRequest(realm, IngestMetrics.OUTCOME_BAD_REQUEST);
             LOG.log(Level.FINE, "Rejected ingest request for realm '" + realm + "'", e);
             return Response.status(Response.Status.BAD_REQUEST).entity(e.getMessage()).build();
         }
 
         Set<String> assetIds = cache.resolve(realm, payload.getEui());
         if (assetIds.isEmpty()) {
+            metrics.countFallback(realm);
             assetIds = queryAssetIdsByDevEui(realm, payload.getEui());
             if (assetIds.size() == 1) {
                 cache.put(realm, payload.getEui(), assetIds.iterator().next());
@@ -144,16 +152,19 @@ public class IotWatchIngestService implements ContainerService {
         }
 
         if (assetIds.isEmpty()) {
+            metrics.countRequest(realm, IngestMetrics.OUTCOME_UNKNOWN_DEVICE);
             LOG.warning("No asset with devEui '" + payload.getEui() + "' in realm '" + realm + "'");
             return Response.status(Response.Status.NOT_FOUND).build();
         }
         if (assetIds.size() > 1) {
+            metrics.countRequest(realm, IngestMetrics.OUTCOME_CONFLICT);
             LOG.warning("Multiple assets with devEui '" + payload.getEui() + "' in realm '" + realm + "': " + assetIds);
             return Response.status(Response.Status.CONFLICT).build();
         }
 
         long timestamp = payload.getTimestamp() != null ? payload.getTimestamp() : currentTimeMillis();
         dispatch(new AttributeEvent(assetIds.iterator().next(), RAW_VALUE_ATTRIBUTE_NAME, payload.getMessage(), timestamp));
+        metrics.countRequest(realm, IngestMetrics.OUTCOME_ACCEPTED);
         return Response.ok().build();
     }
 

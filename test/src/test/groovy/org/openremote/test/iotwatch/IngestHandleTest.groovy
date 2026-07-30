@@ -1,7 +1,9 @@
 package org.openremote.test.iotwatch
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import jakarta.ws.rs.core.Response
 import org.openremote.manager.iotwatch.IngestKeyStore
+import org.openremote.manager.iotwatch.IngestMetrics
 import org.openremote.manager.iotwatch.IotWatchIngestService
 import org.openremote.model.attribute.AttributeEvent
 import org.openremote.model.iotwatch.IngestEnvelope
@@ -115,5 +117,52 @@ class IngestHandleTest extends Specification {
 
         then:
         service.dispatched.timestamp == 42L
+    }
+
+    def "counts every request outcome per realm"() {
+        given:
+        def registry = new SimpleMeterRegistry()
+        service.metrics = IngestMetrics.create(registry)
+        service.cache.put("master", "00112233AABBCCDD", "asset1")
+
+        when:
+        service.handle("master", "good-key", ENVELOPE)                                        // accepted
+        service.handle("master", "bad-key", ENVELOPE)                                         // unauthorized, known realm
+        service.handle("nobody", "good-key", ENVELOPE)                                        // unauthorized, unknown realm
+        service.handle("master", "good-key", new IngestEnvelope("D", "not json", "L", []))    // bad_request
+        service.cache.put("master", "00112233AABBCCDD", "asset2")                             // second asset, same EUI
+        service.handle("master", "good-key", ENVELOPE)                                        // conflict
+
+        then:
+        def requests = { String realm, String outcome ->
+            registry.get(IngestMetrics.REQUESTS_METER_NAME).tags("realm", realm, "outcome", outcome).counter().count()
+        }
+        requests("master", IngestMetrics.OUTCOME_ACCEPTED) == 1.0d
+        requests("master", IngestMetrics.OUTCOME_UNAUTHORIZED) == 1.0d
+        requests(IngestMetrics.UNKNOWN_REALM, IngestMetrics.OUTCOME_UNAUTHORIZED) == 1.0d
+        requests("master", IngestMetrics.OUTCOME_BAD_REQUEST) == 1.0d
+        requests("master", IngestMetrics.OUTCOME_CONFLICT) == 1.0d
+    }
+
+    def "counts unknown device and cache fallback"() {
+        given:
+        def registry = new SimpleMeterRegistry()
+        service.metrics = IngestMetrics.create(registry)
+
+        when: "cache and DB both miss"
+        service.handle("master", "good-key", ENVELOPE)
+
+        and: "DB fallback hits and populates the cache"
+        service.queryResult = ["asset9"] as Set
+        service.handle("master", "good-key", ENVELOPE)
+        service.handle("master", "good-key", ENVELOPE)
+
+        then:
+        registry.get(IngestMetrics.REQUESTS_METER_NAME)
+            .tags("realm", "master", "outcome", IngestMetrics.OUTCOME_UNKNOWN_DEVICE).counter().count() == 1.0d
+        registry.get(IngestMetrics.REQUESTS_METER_NAME)
+            .tags("realm", "master", "outcome", IngestMetrics.OUTCOME_ACCEPTED).counter().count() == 2.0d
+        // two fallbacks: the initial full miss and the populating hit; the third request is a cache hit
+        registry.get(IngestMetrics.FALLBACK_METER_NAME).tags("realm", "master").counter().count() == 2.0d
     }
 }
