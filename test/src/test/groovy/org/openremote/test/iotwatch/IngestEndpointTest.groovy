@@ -55,8 +55,8 @@ class IngestEndpointTest extends Specification implements ManagerContainerTrait 
         and: "a tracker asset with a devEui (created after service start: exercises cache freshness)"
         def tracker = assetStorageService.merge(trackerWithEui("Ingest test tracker", EUI))
 
-        and: "a device timestamp newer than the merge (AssetProcessingService discards events older than the attribute's last-updated timestamp, set at merge time, as outdated)"
-        def deviceTs = System.currentTimeMillis()
+        and: "a device timestamp from the container clock, not older than the merge (AssetProcessingService discards events older than the attribute's last-updated timestamp as outdated; the merge stamps attributes with the pseudo clock, which ContainerTrait advances 10 ms past wall-clock time, so System.currentTimeMillis() taken here could be older)"
+        def deviceTs = getClockTimeOf(container)
 
         expect: "the container is running"
         conditions.eventually {
