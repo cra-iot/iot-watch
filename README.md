@@ -116,6 +116,12 @@ yarn install
 cd ui/app/custom && yarn run serve   # http://localhost:9000/custom/
 ```
 
+### Examples
+
+How-to guides for template mechanisms we removed from the sources live in [`docs/examples/`](docs/examples/):
+
+- [Custom REST endpoint](docs/examples/custom-rest-endpoint.md) — adding a custom JAX-RS endpoint to the manager API (the template's `CustomEndpointResource` example).
+
 ### Upstream repository synchronization
 
 This repository lives on the CRA GitLab (`origin`, `git@INTERNAL-GITLAB-HOST:iot-platform/other/iot-watch.git`) and is based on the [openremote/custom-project](https://github.com/openremote/custom-project) template (`upstream`). Day-to-day work is committed and pushed to `origin` as usual; changes from the upstream template are pulled in manually when needed.

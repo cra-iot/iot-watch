@@ -51,6 +51,8 @@ Java modules mirror OpenRemote's package layout (`org.openremote.*`) and plug in
 - `deployment/` — deployment content mounted into the manager/keycloak pods on Kubernetes (for local docker compose it is packed into the `deployment` image instead): CRA branding (`manager/app/manager_config.json`, logos), Keycloak themes, map settings.
 - `profile/` — dev Docker Compose profiles (`dev-ui.yml` for UI work, `dev-testing.yml` for Keycloak theme work).
 
+Removed template examples are preserved as how-to guides in `docs/examples/` — check there before reinventing a mechanism. Currently: `custom-rest-endpoint.md` (custom JAX-RS endpoint: `*Resource.java` interface in `model/`, implementation registered via `ManagerWebService.addApiSingleton` in a `ContainerService`, typed TS client from `./gradlew :ui:component:rest:generateTypeScript`; with zero `*Resource.java` files in `model/` the build writes a dummy `ApiClient` — this is expected).
+
 ## Version pinning
 
 The OpenRemote version (currently 1.27.0) is pinned in three places that must stay in sync when upgrading: `gradle/libs.versions.toml` (`openremote = "..."`), `@openremote/*` dependency versions in `ui/app/*/package.json`, and the `x-base` URL anchors in `profile/dev-*.yml`. The project's own version comes from git tags via the axion-release plugin (`./gradlew currentVersion`).
