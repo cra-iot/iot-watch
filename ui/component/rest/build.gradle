@@ -26,9 +26,10 @@ def generateTypeScriptTask = tasks.named("generateTypeScript") {
 }
 
 tasks.register('dummyRestClient') {
+    def restClientFile = layout.projectDirectory.file('src/restclient.ts').asFile
     onlyIf { resourceJavaFilesCount == 0 }
     doLast {
-        file("${projectDir}/src/restclient.ts").text = 'export class ApiClient {}'
+        restClientFile.text = 'export class ApiClient {}'
     }
 }
 
