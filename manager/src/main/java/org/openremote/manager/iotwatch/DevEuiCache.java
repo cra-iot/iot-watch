@@ -57,6 +57,11 @@ public class DevEuiCache {
         }
     }
 
+    public int size(String realm) {
+        Map<String, Set<String>> realmMap = idsByEuiByRealm.get(realm);
+        return realmMap == null ? 0 : realmMap.size();
+    }
+
     public static String normalize(String eui) {
         return eui.trim().toUpperCase(Locale.ROOT);
     }

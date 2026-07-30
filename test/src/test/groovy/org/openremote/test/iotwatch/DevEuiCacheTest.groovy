@@ -59,4 +59,16 @@ class DevEuiCacheTest extends Specification {
         then:
         cache.resolve("master", "AAAAAAAAAAAAAAAA").isEmpty()
     }
+
+    def "reports cache size per realm"() {
+        given:
+        cache.put("master", "AAAAAAAAAAAAAAAA", "asset1")
+        cache.put("master", "BBBBBBBBBBBBBBBB", "asset2")
+        cache.put("other", "CCCCCCCCCCCCCCCC", "asset3")
+
+        expect:
+        cache.size("master") == 2
+        cache.size("other") == 1
+        cache.size("nothing") == 0
+    }
 }

@@ -41,4 +41,10 @@ class IngestKeyStoreTest extends Specification {
         where:
         config << [null, "", "   "]
     }
+
+    def "exposes configured realm names"() {
+        expect:
+        IngestKeyStore.parse("master:key-one,customer1:key-two").realms() == ["master", "customer1"] as Set
+        IngestKeyStore.parse(null).realms().isEmpty()
+    }
 }

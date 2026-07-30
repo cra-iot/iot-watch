@@ -2,8 +2,10 @@ package org.openremote.manager.iotwatch;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.logging.Logger;
 
 /**
@@ -46,5 +48,9 @@ public class IngestKeyStore {
         }
         byte[] expected = keysByRealm.get(realm);
         return expected != null && MessageDigest.isEqual(expected, apiKey.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public Set<String> realms() {
+        return Collections.unmodifiableSet(keysByRealm.keySet());
     }
 }
