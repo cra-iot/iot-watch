@@ -27,8 +27,9 @@ dropped (the endpoint still returns `200` — dispatch is asynchronous).
 The target asset must have its `devEui` attribute set to the device EUI
 (case does not matter). All IoT Watch asset types declare `devEui` as a
 required attribute; instances created before this feature must have the
-value filled in manually in the Manager UI — an asset without it cannot be
-saved and is never matched.
+value filled in manually in the Manager UI. The attribute exists on every
+new asset instance, but its value must be filled in; an asset with an empty
+devEui is never matched.
 
 ## Configuration
 
@@ -40,6 +41,10 @@ Keys live in the `OR_IOTWATCH_INGEST_KEYS` env var of the manager pod
 Generate a key with `openssl rand -hex 32`. Rotation = update the Secret
 and restart the manager pod. If the variable is not set, the endpoint is
 not registered (404).
+
+**Warning:** do not enable `OR_WEBSERVER_DUMP_REQUESTS` on an environment
+serving this endpoint — Undertow request dumping would write the `X-API-Key`
+header to logs.
 
 On the platform side, configure a customer endpoint (Datový tok →
 HTTP endpoint) with the URL above and the `X-API-Key` header.
