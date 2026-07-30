@@ -2,6 +2,7 @@ package org.openremote.test.iotwatch
 
 import groovy.json.JsonOutput
 import org.openremote.manager.asset.AssetStorageService
+import org.openremote.manager.iotwatch.IngestMetrics
 import org.openremote.manager.iotwatch.IotWatchIngestService
 import org.openremote.model.Constants
 import org.openremote.model.tracker.TrackerAsset
@@ -49,6 +50,8 @@ class IngestEndpointTest extends Specification implements ManagerContainerTrait 
         def serverPort = findEphemeralPort()
         def config = defaultConfig(serverPort)
         config.put(IotWatchIngestService.OR_IOTWATCH_INGEST_KEYS, "${Constants.MASTER_REALM}:${TEST_KEY}".toString())
+        config.put("OR_METRICS_ENABLED", "true")
+        config.put("OR_METRICS_PORT", String.valueOf(findEphemeralPort()))
         def container = startContainer(config, defaultServices())
         def assetStorageService = container.getService(AssetStorageService.class)
 
@@ -115,6 +118,15 @@ class IngestEndpointTest extends Specification implements ManagerContainerTrait 
         conditions.eventually {
             assert post(serverPort, Constants.MASTER_REALM, TEST_KEY, envelope(EUI, deviceTs)).statusCode() == 409
         }
+
+        and: "the meters are visible in the container registry"
+        def meterRegistry = container.getMeterRegistry()
+        meterRegistry.get(IngestMetrics.REQUESTS_METER_NAME)
+            .tags("realm", Constants.MASTER_REALM, "outcome", IngestMetrics.OUTCOME_ACCEPTED).counter().count() >= 1.0d
+        meterRegistry.get(IngestMetrics.REQUESTS_METER_NAME)
+            .tags("realm", Constants.MASTER_REALM, "outcome", IngestMetrics.OUTCOME_UNAUTHORIZED).counter().count() >= 1.0d
+        meterRegistry.get(IngestMetrics.CACHE_SIZE_METER_NAME)
+            .tags("realm", Constants.MASTER_REALM).gauge().value() >= 1.0d
     }
 
     def "endpoint is not registered when no keys are configured"() {

@@ -49,6 +49,25 @@ header to logs.
 On the platform side, configure a customer endpoint (Datový tok →
 HTTP endpoint) with the URL above and the `X-API-Key` header.
 
+## Metrics
+
+With `OR_METRICS_ENABLED=true` the manager's Prometheus scrape server
+(`OR_METRICS_PORT`, default 8405, run by the built-in HealthService)
+additionally exposes:
+
+- `or_iotwatch_ingest_requests_total{realm,outcome}` — one increment per
+  request; `outcome` is `accepted`, `unauthorized`, `bad_request`,
+  `unknown_device` or `conflict`. Unauthorized requests for realms that
+  have no configured key are bucketed as `realm="unknown"`.
+- `or_iotwatch_ingest_cache_fallback_total{realm}` — devEui cache misses
+  that fell back to a database query; a rising rate under steady traffic
+  means persistence events are being missed.
+- `or_iotwatch_ingest_cache_size{realm}` — devEuis currently cached per
+  configured realm.
+
+Enabling `OR_METRICS_ENABLED`/`OR_METRICS_PORT` and the Prometheus scrape
+configuration is deployment-side work in the Helm repository.
+
 ## Manual verification (local dev stack)
 
     curl -i -X POST "http://localhost:8080/api/master/ingest" \
