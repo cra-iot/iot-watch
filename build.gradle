@@ -15,7 +15,7 @@ scmVersion {
         remote.set('origin')
     }
     tag {
-        prefix.set('')
+        prefix.set('v')
     }
 }
 
