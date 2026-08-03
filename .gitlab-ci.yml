@@ -15,8 +15,8 @@ build:gradle:
   stage: build
   image: eclipse-temurin:21-jdk
   tags:
-    - docker
-    - iot
+    - docker-internet
+    - iot-internet
   variables:
     GIT_DEPTH: "0"
     GRADLE_USER_HOME: $CI_PROJECT_DIR/.gradle
