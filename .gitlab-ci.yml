@@ -1,5 +1,5 @@
 include:
-  - component: $CI_SERVER_FQDN/iot-platform/ci-catalog/automatic-release/auto-release@v1.2.0
+  - component: $CI_SERVER_FQDN/iot-platform/ci-catalog/automatic-release/auto-release@~latest
     inputs:
       proxy_auth: $PROXY_AUTH_WRITE
       proxy_auth2: $PROXY_AUTH_WRITE2
