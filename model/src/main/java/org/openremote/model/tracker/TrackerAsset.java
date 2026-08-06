@@ -3,6 +3,7 @@ package org.openremote.model.tracker;
 import jakarta.persistence.Entity;
 
 import java.util.Optional;
+
 import static org.openremote.model.Constants.*;
 
 import org.openremote.model.asset.Asset;
@@ -15,101 +16,84 @@ import org.openremote.model.value.ValueType;
 @Entity
 public class TrackerAsset extends Asset<TrackerAsset> {
 
-  // ── Device telemetry (permanent, written by Groovy rule) ─────────────────
+    // ── Device telemetry (permanent, written by Groovy rule) ─────────────────
 
-  // Platform device identifier (LoRa devEUI), matched by the HTTP ingest endpoint
-  public static final AttributeDescriptor<String> DEV_EUI_ATTRIBUTE_DESCRIPTOR =
-    new AttributeDescriptor<>("devEui", ValueType.TEXT);
+    // Platform device identifier (LoRa devEUI), matched by the HTTP ingest endpoint
+    public static final AttributeDescriptor<String> DEV_EUI_ATTRIBUTE_DESCRIPTOR =
+            new AttributeDescriptor<>("devEui", ValueType.TEXT,
+                    new MetaItem<>(MetaItemType.LABEL, "Identifikátor zařízení (devEUI)"));
 
-  public static final AttributeDescriptor<ValueType.ObjectMap> RAW_VALUE_ATTRIBUTE_DESCRIPTOR =
-    new AttributeDescriptor<>("rawValue", ValueType.JSON_OBJECT,
-      new MetaItem<>(MetaItemType.READ_ONLY),
-      new MetaItem<>(MetaItemType.RULE_STATE));
+    public static final AttributeDescriptor<ValueType.ObjectMap> RAW_VALUE_ATTRIBUTE_DESCRIPTOR =
+            new AttributeDescriptor<>("rawValue", ValueType.JSON_OBJECT,
+                    new MetaItem<>(MetaItemType.LABEL, "Surová data"),
+                    new MetaItem<>(MetaItemType.READ_ONLY),
+                    new MetaItem<>(MetaItemType.RULE_STATE));
 
-  public static final AttributeDescriptor<Double> BATTERY_ATTRIBUTE_DESCRIPTOR =
-    new AttributeDescriptor<>("battery", ValueType.NUMBER,
-      new MetaItem<>(MetaItemType.READ_ONLY),
-      new MetaItem<>(MetaItemType.STORE_DATA_POINTS))
-      .withUnits(UNITS_PERCENTAGE);
+    public static final AttributeDescriptor<Double> BATTERY_ATTRIBUTE_DESCRIPTOR =
+            new AttributeDescriptor<>("battery", ValueType.NUMBER,
+                    new MetaItem<>(MetaItemType.LABEL, "Stav baterie"),
+                    new MetaItem<>(MetaItemType.READ_ONLY),
+                    new MetaItem<>(MetaItemType.RULE_STATE),
+                    new MetaItem<>(MetaItemType.ACCESS_RESTRICTED_READ))
+                    .withUnits(UNITS_PERCENTAGE);
 
-  public static final AttributeDescriptor<Long> LAST_MESSAGE_TIME_ATTRIBUTE_DESCRIPTOR =
-    new AttributeDescriptor<>("lastMessageTime", ValueType.TIMESTAMP,
-      new MetaItem<>(MetaItemType.READ_ONLY));
+    // ── Assignment (filled when the tracker is put in use, cleared when idle) ──
 
-  public static final AttributeDescriptor<Double> RSSI_ATTRIBUTE_DESCRIPTOR =
-    new AttributeDescriptor<>("rssi", ValueType.NUMBER,
-      new MetaItem<>(MetaItemType.READ_ONLY))
-      .withUnits("dBm");
+    public static final AttributeDescriptor<Boolean> ACTIVE_ATTRIBUTE_DESCRIPTOR =
+            new AttributeDescriptor<>("active", ValueType.BOOLEAN,
+                    new MetaItem<>(MetaItemType.LABEL, "Aktivní"),
+                    new MetaItem<>(MetaItemType.ACCESS_RESTRICTED_READ))
+                    .withOptional(true);
 
-  public static final AttributeDescriptor<Double> SNR_ATTRIBUTE_DESCRIPTOR =
-    new AttributeDescriptor<>("snr", ValueType.NUMBER,
-      new MetaItem<>(MetaItemType.READ_ONLY))
-      .withUnits(UNITS_DECIBEL);
+    public static final AttributeDescriptor<String> ASSIGNED_TO_ATTRIBUTE_DESCRIPTOR =
+            new AttributeDescriptor<>("assignedTo", ValueType.TEXT,
+                    new MetaItem<>(MetaItemType.LABEL, "Přiřazený k"),
+                    new MetaItem<>(MetaItemType.ACCESS_RESTRICTED_READ))
+                    .withOptional(true);
 
-  // ── Assignment (filled when the tracker is put in use, cleared when idle) ──
+    // ── Asset descriptor (icon from OR icon set, teal colour) ─────────────────
 
-  public static final AttributeDescriptor<Boolean> ACTIVE_ATTRIBUTE_DESCRIPTOR =
-    new AttributeDescriptor<>("active", ValueType.BOOLEAN);
+    public static final AssetDescriptor<TrackerAsset> TRACKER_ASSET_DESCRIPTOR =
+            new AssetDescriptor<>("map-marker", "009688", TrackerAsset.class);
 
-  public static final AttributeDescriptor<String> ASSIGNED_TO_ATTRIBUTE_DESCRIPTOR =
-    new AttributeDescriptor<>("assignedTo", ValueType.TEXT);
+    protected TrackerAsset() {
+    }
 
-  // ── Asset descriptor (icon from OR icon set, teal colour) ─────────────────
+    public TrackerAsset(String name) {
+        super(name);
+    }
 
-  public static final AssetDescriptor<TrackerAsset> TRACKER_ASSET_DESCRIPTOR =
-    new AssetDescriptor<>("map-marker", "009688", TrackerAsset.class);
+    // ── Device telemetry getters ──────────────────────────────────────────────
 
-  protected TrackerAsset() {
-    // For JPA/Jackson
-  }
+    public Optional<String> getDevEui() {
+        return getAttributes().getValue(DEV_EUI_ATTRIBUTE_DESCRIPTOR);
+    }
 
-  public TrackerAsset(String name) {
-    super(name);
-  }
+    public Optional<ValueType.ObjectMap> getRawValue() {
+        return getAttributes().getValue(RAW_VALUE_ATTRIBUTE_DESCRIPTOR);
+    }
 
-  // ── Device telemetry getters ──────────────────────────────────────────────
+    public Optional<Double> getBattery() {
+        return getAttributes().getValue(BATTERY_ATTRIBUTE_DESCRIPTOR);
+    }
 
-  public Optional<String> getDevEui() {
-    return getAttributes().getValue(DEV_EUI_ATTRIBUTE_DESCRIPTOR);
-  }
+    // ── Assignment getters/setters ────────────────────────────────────────────
 
-  public Optional<ValueType.ObjectMap> getRawValue() {
-    return getAttributes().getValue(RAW_VALUE_ATTRIBUTE_DESCRIPTOR);
-  }
+    public Optional<Boolean> isActive() {
+        return getAttributes().getValue(ACTIVE_ATTRIBUTE_DESCRIPTOR);
+    }
 
-  public Optional<Double> getBattery() {
-    return getAttributes().getValue(BATTERY_ATTRIBUTE_DESCRIPTOR);
-  }
+    public TrackerAsset setActive(boolean active) {
+        getAttributes().getOrCreate(ACTIVE_ATTRIBUTE_DESCRIPTOR).setValue(active);
+        return this;
+    }
 
-  public Optional<Long> getLastMessageTime() {
-    return getAttributes().getValue(LAST_MESSAGE_TIME_ATTRIBUTE_DESCRIPTOR);
-  }
+    public Optional<String> getAssignedTo() {
+        return getAttributes().getValue(ASSIGNED_TO_ATTRIBUTE_DESCRIPTOR);
+    }
 
-  public Optional<Double> getRssi() {
-    return getAttributes().getValue(RSSI_ATTRIBUTE_DESCRIPTOR);
-  }
-
-  public Optional<Double> getSnr() {
-    return getAttributes().getValue(SNR_ATTRIBUTE_DESCRIPTOR);
-  }
-
-  // ── Assignment getters/setters ────────────────────────────────────────────
-
-  public Optional<Boolean> isActive() {
-    return getAttributes().getValue(ACTIVE_ATTRIBUTE_DESCRIPTOR);
-  }
-
-  public TrackerAsset setActive(boolean active) {
-    getAttributes().getOrCreate(ACTIVE_ATTRIBUTE_DESCRIPTOR).setValue(active);
-    return this;
-  }
-
-  public Optional<String> getAssignedTo() {
-    return getAttributes().getValue(ASSIGNED_TO_ATTRIBUTE_DESCRIPTOR);
-  }
-
-  public TrackerAsset setAssignedTo(String assignedTo) {
-    getAttributes().getOrCreate(ASSIGNED_TO_ATTRIBUTE_DESCRIPTOR).setValue(assignedTo);
-    return this;
-  }
+    public TrackerAsset setAssignedTo(String assignedTo) {
+        getAttributes().getOrCreate(ASSIGNED_TO_ATTRIBUTE_DESCRIPTOR).setValue(assignedTo);
+        return this;
+    }
 }
