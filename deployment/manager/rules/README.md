@@ -9,6 +9,7 @@ here when re-creating a rule.
 |------|------------------------|------------|
 | `tracker-gnss-location.groovy` | Tracker LoRaWAN GNSS → Location | `TrackerAsset` |
 | `ship-tracker-gnss-location.groovy` | Ship LoRaWAN GNSS → Location | `ShipTrackerAsset` |
+| `water-meter-decode.groovy` | Water meter → measurements (standalone) | `WaterMeterAsset` |
 
 Both decode `rawValue.data_decoded` GNSS coordinates into `location` and
 `battery_pct` into `battery`. They write only attributes that exist on the current
