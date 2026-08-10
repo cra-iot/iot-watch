@@ -1,0 +1,28 @@
+plugins {
+    id 'groovy'
+}
+
+// The .groovy files here are backups of rules authored in the Manager UI (see README.md).
+// This module exists only to compile-check them against the OpenRemote + custom model
+// classpath; it is never packaged or loaded (the manager creates rules from the UI).
+sourceSets {
+    main {
+        groovy {
+            srcDirs = ['.']
+        }
+    }
+}
+
+// Keep build output out of the deployment/ tree so no artifacts leak into the manager image
+// (deployment installDist copies the whole deployment/ directory).
+layout.buildDirectory.set(file("$rootDir/build/rules"))
+
+dependencies {
+    implementation project(':model')        // custom TrackerAsset / ShipTrackerAsset (+ openremote-model)
+    implementation libs.openremote.manager  // RulesBuilder; also provides Groovy transitively
+}
+
+// Compile the rules as part of the aggregate build so broken backups fail CI (matches sibling modules)
+tasks.register('installDist') {
+    dependsOn classes
+}

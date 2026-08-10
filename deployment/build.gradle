@@ -43,7 +43,7 @@ tasks.register('installDist', Copy) {
 
     into("image") {
         from projectDir
-        exclude "build.gradle", "Dockerfile", "build", "**/*.mbtiles", "src", "**/*.md", ".gitignore", "**/*.encrypted"
+        exclude "build.gradle", "**/build.gradle", "Dockerfile", "build", "**/*.mbtiles", "src", "**/*.md", ".gitignore", "**/*.encrypted"
     }
 
     into("image/manager/extensions") {
