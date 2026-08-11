@@ -57,3 +57,10 @@ local.properties
 
 # Superpowers working artifacts (specs/plans) — kept local, never committed/published
 docs/superpowers/
+
+# Vendor-confidential source datasheets (never commit to the public mirror)
+docs/_vendor/
+
+# Working docs kept local (not part of the public deliverable)
+docs/water-meter-dictionary.md
+/docs/runbooks/
