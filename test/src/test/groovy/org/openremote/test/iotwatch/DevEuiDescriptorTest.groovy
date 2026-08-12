@@ -1,7 +1,6 @@
 package org.openremote.test.iotwatch
 
 import org.openremote.model.electricmeter.ElectricMeterAsset
-import org.openremote.model.electricmeter.ElectricMeterGatewayAsset
 import org.openremote.model.rfid.RfidChipAsset
 import org.openremote.model.rfid.RfidReaderAsset
 import org.openremote.model.tracker.ShipTrackerAsset
@@ -25,8 +24,7 @@ class DevEuiDescriptorTest extends Specification {
             WaterMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR,
             RfidChipAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR,
             RfidReaderAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR,
-            ElectricMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR,
-            ElectricMeterGatewayAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR
+            ElectricMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR
         ]
     }
 }

@@ -20,8 +20,8 @@ import org.openremote.model.value.ValueType;
  * rule needs no mapping table. currentReading, devEui and rawValue keep their historic
  * camelCase names (ingest contract / preserved data-point history); all other
  * measurement and alarm keys are snake_case. Alarm booleans are decoded by the platform
- * decoder, not here. May also serve as a child of a water concentrator: set meter_id
- * (= meter serial) and leave devEui empty (gateway fan-out is not yet modelled).
+ * decoder, not here. The optional meter_id (= meter serial) identifies the physical meter
+ * for correlation.
  */
 @Entity
 public class WaterMeterAsset extends Asset<WaterMeterAsset> {

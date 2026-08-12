@@ -1,26 +1,17 @@
 package org.openremote.test.iotwatch
 
 import org.openremote.model.electricmeter.ElectricMeterAsset
-import org.openremote.model.electricmeter.ElectricMeterGatewayAsset
 import org.openremote.model.value.ValueType
 import spock.lang.Specification
 
 class ElectricMeterDescriptorTest extends Specification {
-
-    def "gateway requires devEui and rawValue"() {
-        expect:
-        !ElectricMeterGatewayAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR.isOptional()
-        ElectricMeterGatewayAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR.type == ValueType.TEXT
-        !ElectricMeterGatewayAsset.RAW_VALUE_ATTRIBUTE_DESCRIPTOR.isOptional()
-        ElectricMeterGatewayAsset.RAW_VALUE_ATTRIBUTE_DESCRIPTOR.type == ValueType.JSON_OBJECT
-    }
 
     def "meter requires devEui and rawValue; identity + measurements optional"() {
         expect:
         !ElectricMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR.isOptional()
         !ElectricMeterAsset.RAW_VALUE_ATTRIBUTE_DESCRIPTOR.isOptional()
         ElectricMeterAsset.METER_ID_ATTRIBUTE_DESCRIPTOR.isOptional()
-        ElectricMeterAsset.METER_ID_ATTRIBUTE_DESCRIPTOR.name == "meterId"
+        ElectricMeterAsset.METER_ID_ATTRIBUTE_DESCRIPTOR.name == "meter_id"
         ElectricMeterAsset.METER_ID_ATTRIBUTE_DESCRIPTOR.type == ValueType.TEXT
     }
 

@@ -64,3 +64,4 @@ docs/_vendor/
 # Working docs kept local (not part of the public deliverable)
 docs/water-meter-dictionary.md
 /docs/runbooks/
+/docs/electric-meter-dictionary.md

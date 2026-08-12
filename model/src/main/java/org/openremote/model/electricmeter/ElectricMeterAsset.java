@@ -16,9 +16,8 @@ import org.openremote.model.value.ValueType;
  * Universal electric-meter asset. devEui + rawValue are required; every measurement
  * is an optional descriptor the operator adds per instance (a device reports only a
  * subset). Attribute-name strings equal the decoder's snake_case canonical keys, so
- * the electric-meter-decode rule needs no mapping table. Also serves as a child of an
- * {@link ElectricMeterGatewayAsset}: set meterId (= meter serial) and leave devEui
- * empty; the gateway's fan-out rule writes the measurements.
+ * the electric-meter-decode rule needs no mapping table. The optional meterId (= meter
+ * serial) identifies the physical meter for correlation.
  */
 @Entity
 public class ElectricMeterAsset extends Asset<ElectricMeterAsset> {
@@ -36,7 +35,7 @@ public class ElectricMeterAsset extends Asset<ElectricMeterAsset> {
                     new MetaItem<>(MetaItemType.RULE_STATE));
 
     public static final AttributeDescriptor<String> METER_ID_ATTRIBUTE_DESCRIPTOR =
-            new AttributeDescriptor<>("meterId", ValueType.TEXT,
+            new AttributeDescriptor<>("meter_id", ValueType.TEXT,
                     new MetaItem<>(MetaItemType.LABEL, "Výrobní číslo elektroměru"),
                     new MetaItem<>(MetaItemType.READ_ONLY))
                     .withOptional(true);
