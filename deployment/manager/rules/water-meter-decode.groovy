@@ -3,9 +3,11 @@ package demo.rules
 import org.openremote.manager.rules.RulesBuilder
 import org.openremote.model.query.AssetQuery
 import org.openremote.model.rules.Assets
-import org.openremote.model.util.ValueUtil
 import org.openremote.model.watermeter.WaterMeterAsset
+import org.openremote.model.value.AttributeDescriptor
 
+import java.lang.reflect.Field
+import java.lang.reflect.Modifier
 import java.util.logging.Logger
 
 Logger LOG = binding.LOG
@@ -13,18 +15,24 @@ RulesBuilder rules = binding.rules
 Assets assets = binding.assets
 
 // Attribute names declared by the WaterMeterAsset model (currentReading, battery_level,
-// every measurement/alarm, …). Computed once from the model registry: the rules facade
+// every measurement/alarm, …). Read from the class's own static AttributeDescriptor fields
+// rather than ValueUtil.getAssetInfo(...).getAttributeDescriptors(), whose map also includes
+// the inherited base-Asset attributes (name, location, notes, …) — a decoder key colliding
+// with one of those would otherwise be written to the core attribute. The rules facade
 // cannot return per-instance attributes (Assets.getResults forces excludeAttributes), so
-// we filter decoded keys against the type descriptors instead.
-Set<String> KNOWN = ValueUtil.getAssetInfo(WaterMeterAsset.class)
-        .map { it.getAttributeDescriptors().keySet() }
-        .orElse(Collections.emptySet())
+// this comes from the model, not the asset.
+Set<String> KNOWN = WaterMeterAsset.class.getDeclaredFields()
+        .findAll { Field f -> Modifier.isStatic(f.modifiers) && AttributeDescriptor.isAssignableFrom(f.type) }
+        .collect { Field f -> ((AttributeDescriptor) f.get(null)).getName() }
+        .toSet()
 
 // Standalone water meter: decode rawValue.data_decoded into the meter's own attributes.
 // Only keys declared by the WaterMeterAsset model are written; other decoder keys
-// (datetime, diagnostics, …) are ignored. A modelled key the operator didn't add to
-// this instance is dispatched anyway and harmlessly dropped by the manager. The platform
-// decoder emits final values, including the alarm booleans (e.g. "leakage": true).
+// (datetime, diagnostics, …) are ignored. A modelled key the operator did not add to this
+// instance is still dispatched, then logged at WARNING (ATTRIBUTE_NOT_FOUND) and discarded
+// — keys that do exist still land, so provision only the attributes the device reports to
+// avoid warning spam. The platform decoder emits final values, including alarm booleans
+// (e.g. "leakage": true).
 rules.add()
         .name("Water meter → measurements (standalone)")
         .when({ facts ->
@@ -39,7 +47,7 @@ rules.add()
                 try {
                     def payload = assetState.getValue().orElse(null)
                     def decoded = payload instanceof Map ? payload["data_decoded"] : null
-                    if (!(decoded instanceof Map)) return   // child meters (empty rawValue) fall out here
+                    if (!(decoded instanceof Map)) return   // no decoded payload → nothing to write
 
                     decoded.each { k, v ->
                         String name = (String) k

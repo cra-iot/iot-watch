@@ -16,7 +16,7 @@ import org.openremote.model.value.ValueType;
  * Universal electric-meter asset. devEui + rawValue are required; every measurement
  * is an optional descriptor the operator adds per instance (a device reports only a
  * subset). Attribute-name strings equal the decoder's snake_case canonical keys, so
- * the electric-meter-decode rule needs no mapping table. The optional meterId (= meter
+ * the electric-meter-decode rule needs no mapping table. The optional meter_id (= meter
  * serial) identifies the physical meter for correlation.
  */
 @Entity
