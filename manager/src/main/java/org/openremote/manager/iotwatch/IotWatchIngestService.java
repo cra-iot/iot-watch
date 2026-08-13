@@ -36,7 +36,7 @@ import java.util.stream.Collectors;
  * so the request path performs no database query; the parsed inner message is
  * written to the asset's rawValue attribute, which {@code IotWatchDecodeService}
  * then decodes into typed attributes.
- * See docs/http-ingest.md.
+ * See the HTTP ingest doc kept locally at docs/http-ingest.md (not part of the public mirror).
  */
 public class IotWatchIngestService implements ContainerService {
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-IoT Watch — CRA's customization of OpenRemote, based on the [openremote/custom-project](https://github.com/openremote/custom-project) template. It runs next to the CRA IoT Platform and visualizes device data for CRA customers: the platform's MQTT egress feeds the built-in OpenRemote MQTT agent, data is modelled as custom asset types, and customers (one Keycloak realm each, local Keycloak users, no CRA SSO) view it in Manager UI dashboards and a custom web app.
+IoT Watch — CRA's customization of OpenRemote, based on the [openremote/custom-project](https://github.com/openremote/custom-project) template. It runs next to the CRA IoT Platform and visualizes device data for CRA customers: the platform's HTTP egress posts device messages to a custom, API-key-authenticated HTTP ingest endpoint, which writes each message to the asset's `rawValue`; a decode service then turns `rawValue` into typed attributes. Data is modelled as custom asset types, and customers (one Keycloak realm each, local Keycloak users, no CRA SSO) view it in Manager UI dashboards and a custom web app. The MQTT egress → built-in OpenRemote MQTT agent path is still supported but no longer used — both paths write the same `rawValue`, so decode serves both.
 
 TEST/PROD run the **unmodified official OpenRemote images** on CRA Kubernetes (Helm charts in a separate repository). This repo is never built into a custom OpenRemote image — it produces extension JARs (custom asset types, services, setup tasks) plus deployment files (branding, UI app) that are mounted into the pods; the manager loads every JAR in `/deployment/manager/extensions`. Groovy rules are authored in the Manager UI and only backed up here.
 
@@ -43,9 +43,9 @@ Full local stack: `./gradlew clean installDist`, then `docker build -t openremot
 
 Java modules mirror OpenRemote's package layout (`org.openremote.*`) and plug into the manager via `META-INF/services` registrations — a new provider/service class does nothing until it is listed in the corresponding `META-INF/services` file:
 
-- `model/` — **custom asset types, the main customization.** Asset classes + `AssetModelProvider` registration. After any change here, regenerate the TypeScript model so the UI sees the new types.
-- `agent/` — custom protocol agents (template example only; data ingestion uses the built-in MQTT agent configured in the Manager, so no custom agent code is expected).
-- `manager/` — custom manager services (`ContainerService` registration).
+- `model/` — **custom asset types, the main customization.** Asset classes + `AssetModelProvider` registration. Also holds the HTTP ingest JAX-RS contract (`IngestResource`) and its envelope DTOs. After any change here, regenerate the TypeScript model so the UI sees the new types.
+- `agent/` — custom protocol agents (template example only, not used). Data ingestion does not go through a custom agent: the active path is the HTTP ingest endpoint (see `manager/`). The built-in OpenRemote MQTT agent (configured in the Manager, no custom code) remains supported but is no longer used.
+- `manager/` — custom manager services (`ContainerService` registration). Holds the two core runtime services: `IotWatchIngestService` (the API-key-authenticated HTTP ingest endpoint, enabled by manager configuration; writes device messages to `rawValue`) and `IotWatchDecodeService` (reacts to committed `rawValue` events and writes typed attributes via a `DecoderRegistry`/`DecodePlan`; replaced the former Groovy decode rules).
 - `setup/` — setup tasks (`SetupTasks` registration) that provision realms, users, and assets on a clean install.
 - `ui/app/custom` — Lit-based custom app (this is the customer-facing app); `ui/app/custom-react` — React example; `ui/component/model` — TypeScript model generated from `model/` (do not edit `src/model.ts` by hand); `ui/component/rest` — REST client.
 - `deployment/` — deployment content mounted into the manager/keycloak pods on Kubernetes (for local docker compose it is packed into the `deployment` image instead): CRA branding (`manager/app/manager_config.json`, logos), Keycloak themes, map settings.

@@ -1,6 +1,6 @@
 # IoT Watch
 
-IoT Watch is the CRA (České Radiokomunikace a.s.) customization of [OpenRemote](https://github.com/openremote/openremote), deployed alongside the CRA IoT Platform. It provides data visualization for CRA customers: device messages collected by the IoT Platform are delivered over its MQTT egress into this OpenRemote instance, modelled as assets, and presented in Manager UI dashboards and a custom web application. Each customer is served by a dedicated realm.
+IoT Watch is the CRA (České Radiokomunikace a.s.) customization of [OpenRemote](https://github.com/openremote/openremote), deployed alongside the CRA IoT Platform. It provides data visualization for CRA customers: device messages collected by the IoT Platform are delivered over its HTTP egress into this OpenRemote instance, modelled as assets, and presented in Manager UI dashboards and a custom web application. Each customer is served by a dedicated realm.
 
 > This repository is set up using the [Custom Project template](https://github.com/openremote/custom-project/). This repository uses the same standards and folder structure. More information about how to use this repository as a template to develop your own agents, services, model classes, setup tasks, tests, and new UI apps can be found in the [OpenRemote documentation](https://docs.openremote.io/docs/developer-guide/creating-a-custom-project).
 
@@ -20,7 +20,8 @@ OpenRemote is licensed under [AGPL-3.0](https://github.com/openremote/openremote
 - **Custom asset types** (`model/`) representing CRA IoT device data — the main customization of this project.
 - **Custom web app** for CRA customers (`ui/app/`) built on OpenRemote UI components.
 - **CRA branding** (`deployment/`): logos, Manager UI configuration, map settings, and Keycloak theme.
-- **Data ingestion** from the CRA IoT Platform via its MQTT egress, consumed by the built-in OpenRemote MQTT agent (configured in the Manager; no custom protocol code).
+- **Data ingestion** from the CRA IoT Platform via its HTTP egress, received by a custom, API-key-authenticated HTTP ingest endpoint implemented in `manager/`. The MQTT egress → built-in OpenRemote MQTT agent path (configured in the Manager; no custom protocol code) remains supported but is no longer used.
+- **Device decoding** (`manager/`): a decode service turns each message's `rawValue` into typed attributes, independent of how `rawValue` arrived — so it serves both ingest paths. Replaces the earlier Manager-authored Groovy decode rules.
 - **Groovy rules** authored in the Manager UI; this repository versions their backups.
 
 OpenRemote itself runs unmodified — the customizations above are delivered to the instances as an extensions JAR and mounted files, not as a custom OpenRemote build (see [Deployment](#deployment-kubernetes)).
@@ -28,11 +29,11 @@ OpenRemote itself runs unmodified — the customizations above are delivered to 
 ### Vocabulary / common terms
 
 - **CRA IoT Platform** — CRA's integration/messaging platform (PaaS) for IoT devices (LoRaWAN, MQTT, UDP ingest). The source of all device data shown in IoT Watch.
-- **Egress** — delivery of device messages from the IoT Platform to customer endpoints (HTTP or MQTT). IoT Watch consumes the MQTT egress.
+- **Egress** — delivery of device messages from the IoT Platform to customer endpoints (HTTP or MQTT). IoT Watch consumes the HTTP egress; the MQTT egress is still supported but no longer used.
 - **Manager (UI)** — the OpenRemote administration and dashboard UI, deployed at `https://<hostname>/manager/`.
 - **Realm** — a Keycloak/OpenRemote tenant. IoT Watch uses one realm per CRA customer.
 - **Asset / attribute** — OpenRemote's data model: devices and their measurements are represented as assets with attributes.
-- **Agent** — an OpenRemote component connecting external protocols to assets via agent links; here the built-in MQTT agent.
+- **Agent** — an OpenRemote component connecting external protocols to assets via agent links; the built-in MQTT agent is supported but no longer used, as ingestion now goes through the HTTP endpoint.
 - **Extension (JAR)** — a JAR the manager loads at startup from `/deployment/manager/extensions`; the mechanism by which the custom asset types, services, and setup tasks from this repository reach the unmodified OpenRemote image.
 
 ### Company background
@@ -45,13 +46,14 @@ CRA (České Radiokomunikace a.s.) operates the CRA IoT Platform, a PaaS that in
 Devices (LoRaWAN / MQTT / UDP)
         │
         ▼
-CRA IoT Platform ─── MQTT egress
+CRA IoT Platform
+   ├── HTTP egress → custom HTTP ingest endpoint (API-key) → ingest service  [active]
+   └── MQTT egress → built-in OpenRemote MQTT agent                          [supported, unused]
+                          │  both write ▼
+        rawValue attribute on the asset (custom asset types from model/)
                           │
                           ▼
-              OpenRemote MQTT agent
-                          │
-                          ▼
-        Assets / attributes (custom asset types from model/)
+     decode service → typed attributes (location, battery, currentReading, …)
                           │
                           ▼
       Manager UI dashboards + custom app (ui/app/)
@@ -60,7 +62,7 @@ CRA IoT Platform ─── MQTT egress
         CRA customers (one Keycloak realm per customer)
 ```
 
-IoT Watch does not communicate with devices directly. Device connectivity, message persistence, transformation, and routing are the responsibility of the CRA IoT Platform; IoT Watch only consumes the resulting MQTT egress stream and visualizes it.
+IoT Watch does not communicate with devices directly. Device connectivity, message persistence, transformation, and routing are the responsibility of the CRA IoT Platform; IoT Watch only consumes the resulting egress stream — currently over HTTP, with the MQTT egress path still supported but no longer used — and visualizes it.
 
 ### Keycloak setup
 
