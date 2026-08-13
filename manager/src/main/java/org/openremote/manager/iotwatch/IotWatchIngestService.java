@@ -34,7 +34,8 @@ import java.util.stream.Collectors;
  * "realm1:key1,realm2:key2") — the platform egress cannot do OAuth2. The
  * target asset is matched by its devEui attribute through an in-memory cache
  * so the request path performs no database query; the parsed inner message is
- * written to the asset's rawValue attribute for Groovy rules to decode.
+ * written to the asset's rawValue attribute, which {@code IotWatchDecodeService}
+ * then decodes into typed attributes.
  * See docs/http-ingest.md.
  */
 public class IotWatchIngestService implements ContainerService {

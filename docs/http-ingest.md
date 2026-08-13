@@ -15,8 +15,9 @@ Pilot feature.
   realm, `409` more than one asset with that `devEui`.
 
 The parsed inner message is written to the matched asset's `rawValue`
-attribute (event timestamp = inner `ts`, device time). Groovy rules in the
-Manager UI decode the hex `data` field into typed attributes. Note that
+attribute (event timestamp = inner `ts`, device time). The `IotWatchDecodeService`
+Java service reacts to that `rawValue` update and decodes the platform-produced
+`data_decoded` map into typed attributes. Note that
 OpenRemote discards events older than the attribute's last-updated
 timestamp, so late-arriving messages older than the newest stored one are
 dropped (the endpoint still returns `200` — dispatch is asynchronous).
