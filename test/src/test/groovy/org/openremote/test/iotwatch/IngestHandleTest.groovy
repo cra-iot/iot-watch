@@ -18,7 +18,7 @@ class IngestHandleTest extends Specification {
     static class TestableService extends IotWatchIngestService {
         Set<String> queryResult = [] as Set
         int queryCount = 0
-        AttributeEvent dispatched
+        List<AttributeEvent> dispatched = []
         long serverTime = 42L
 
         @Override
@@ -29,7 +29,7 @@ class IngestHandleTest extends Specification {
 
         @Override
         protected void dispatch(AttributeEvent event) {
-            dispatched = event
+            dispatched << event
         }
 
         @Override
@@ -64,17 +64,21 @@ class IngestHandleTest extends Specification {
     def "returns 404 when no asset matches"() {
         expect:
         service.handle("master", "good-key", ENVELOPE).status == 404
-        service.dispatched == null
+        service.dispatched.isEmpty()
     }
 
-    def "returns 409 when multiple assets match"() {
+    def "fans out rawValue to every asset that shares the devEui"() {
         given:
         service.cache.put("master", "00112233AABBCCDD", "asset1")
         service.cache.put("master", "00112233AABBCCDD", "asset2")
 
-        expect:
-        service.handle("master", "good-key", ENVELOPE).status == 409
-        service.dispatched == null
+        when:
+        def response = service.handle("master", "good-key", ENVELOPE)
+
+        then:
+        response.status == 200
+        service.dispatched*.ref*.id as Set == ["asset1", "asset2"] as Set
+        service.dispatched.every { it.ref.name == "rawValue" && it.timestamp == 1773397633008L }
     }
 
     def "writes rawValue with device timestamp on cache hit"() {
@@ -86,10 +90,10 @@ class IngestHandleTest extends Specification {
 
         then:
         response.status == 200
-        service.dispatched.ref.id == "asset1"
-        service.dispatched.ref.name == "rawValue"
-        service.dispatched.timestamp == 1773397633008L
-        (service.dispatched.value.get() as Map).get("bat") == 254
+        service.dispatched[0].ref.id == "asset1"
+        service.dispatched[0].ref.name == "rawValue"
+        service.dispatched[0].timestamp == 1773397633008L
+        (service.dispatched[0].value.get() as Map).get("bat") == 254
         service.queryCount == 0
     }
 
@@ -105,7 +109,20 @@ class IngestHandleTest extends Specification {
         first.status == 200
         second.status == 200
         service.queryCount == 1   // second request served from cache
-        service.dispatched.ref.id == "asset9"
+        service.dispatched[0].ref.id == "asset9"
+    }
+
+    def "caches every id returned by the fallback query"() {
+        given:
+        service.queryResult = ["asset8", "asset9"] as Set
+
+        when:
+        service.handle("master", "good-key", ENVELOPE)   // fallback populates cache
+        service.handle("master", "good-key", ENVELOPE)   // served from cache
+
+        then:
+        service.queryCount == 1
+        service.cache.resolve("master", "00112233AABBCCDD") == ["asset8", "asset9"] as Set
     }
 
     def "uses server time when the message has no ts"() {
@@ -116,7 +133,7 @@ class IngestHandleTest extends Specification {
         service.handle("master", "good-key", new IngestEnvelope("D", '{"EUI":"00112233AABBCCDD"}', "L", []))
 
         then:
-        service.dispatched.timestamp == 42L
+        service.dispatched[0].timestamp == 42L
     }
 
     def "counts every request outcome per realm"() {
@@ -130,8 +147,6 @@ class IngestHandleTest extends Specification {
         service.handle("master", "bad-key", ENVELOPE)                                         // unauthorized, known realm
         service.handle("nobody", "good-key", ENVELOPE)                                        // unauthorized, unknown realm
         service.handle("master", "good-key", new IngestEnvelope("D", "not json", "L", []))    // bad_request
-        service.cache.put("master", "00112233AABBCCDD", "asset2")                             // second asset, same EUI
-        service.handle("master", "good-key", ENVELOPE)                                        // conflict
 
         then:
         def requests = { String realm, String outcome ->
@@ -141,7 +156,6 @@ class IngestHandleTest extends Specification {
         requests("master", IngestMetrics.OUTCOME_UNAUTHORIZED) == 1.0d
         requests(IngestMetrics.UNKNOWN_REALM, IngestMetrics.OUTCOME_UNAUTHORIZED) == 1.0d
         requests("master", IngestMetrics.OUTCOME_BAD_REQUEST) == 1.0d
-        requests("master", IngestMetrics.OUTCOME_CONFLICT) == 1.0d
     }
 
     def "counts unknown device and cache fallback"() {

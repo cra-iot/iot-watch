@@ -147,9 +147,8 @@ public class IotWatchIngestService implements ContainerService {
         if (assetIds.isEmpty()) {
             metrics.countFallback(realm);
             assetIds = queryAssetIdsByDevEui(realm, payload.getEui());
-            if (assetIds.size() == 1) {
-                cache.put(realm, payload.getEui(), assetIds.iterator().next());
-            }
+            // Cache every match — a devEui may legitimately be shared by several assets.
+            assetIds.forEach(id -> cache.put(realm, payload.getEui(), id));
         }
 
         if (assetIds.isEmpty()) {
@@ -157,14 +156,12 @@ public class IotWatchIngestService implements ContainerService {
             LOG.warning("No asset with devEui '" + payload.getEui() + "' in realm '" + realm + "'");
             return Response.status(Response.Status.NOT_FOUND).build();
         }
-        if (assetIds.size() > 1) {
-            metrics.countRequest(realm, IngestMetrics.OUTCOME_CONFLICT);
-            LOG.warning("Multiple assets with devEui '" + payload.getEui() + "' in realm '" + realm + "': " + assetIds);
-            return Response.status(Response.Status.CONFLICT).build();
-        }
 
         long timestamp = payload.getTimestamp() != null ? payload.getTimestamp() : currentTimeMillis();
-        dispatch(new AttributeEvent(assetIds.iterator().next(), RAW_VALUE_ATTRIBUTE_NAME, payload.getMessage(), timestamp));
+        // Fan the message out to every asset sharing the devEui; per-asset decode routing
+        // (IotWatchDecodeService) picks the reading each asset should consume.
+        assetIds.forEach(id ->
+            dispatch(new AttributeEvent(id, RAW_VALUE_ATTRIBUTE_NAME, payload.getMessage(), timestamp)));
         metrics.countRequest(realm, IngestMetrics.OUTCOME_ACCEPTED);
         return Response.ok().build();
     }
