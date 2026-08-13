@@ -6,26 +6,12 @@ only compile-checks these files against the OpenRemote + custom model classpath 
 backup fails CI. Keep a file here in sync whenever the corresponding Manager-UI rule
 changes, and paste from here when re-creating a rule.
 
-| File | Rule name (Manager UI) | Asset type |
-|------|------------------------|------------|
-| `tracker-gnss-location.groovy` | Tracker LoRaWAN GNSS → Location | `TrackerAsset` |
-| `ship-tracker-gnss-location.groovy` | Ship LoRaWAN GNSS → Location | `ShipTrackerAsset` |
-| `water-meter-decode.groovy` | Water meter → measurements (standalone) | `WaterMeterAsset` |
-| `electric-meter-decode.groovy` | Electric meter → measurements (standalone) | `ElectricMeterAsset` |
+Device-message decode (rawValue → typed attributes) is done in Java by
+`IotWatchDecodeService` (manager module), not by rules. See
+`docs/superpowers/specs/2026-08-13-ingest-side-decode-design.md`.
 
-All rules read `rawValue.data_decoded` (the parsed device message written by the HTTP
-ingest endpoint) and write typed attributes:
-
-- **Trackers** (`tracker-gnss-location`, `ship-tracker-gnss-location`) decode
-  `gnss_latitude` / `gnss_longitude` into `location` and `battery_pct` into `battery`.
-- **Meters** (`water-meter-decode`, `electric-meter-decode`) copy each `data_decoded` key
-  into the attribute of the **same name**, but only for keys the asset model declares itself
-  (inherited base-`Asset` attributes and other decoder keys such as `datetime`/diagnostics
-  are ignored). A modelled key the operator did not add to that instance is still dispatched,
-  then logged at WARNING (`ATTRIBUTE_NOT_FOUND`) and discarded — keys that do exist still
-  land, so provision only the attributes the device reports to avoid warning spam. Attribute
-  names are the decoder's canonical keys; see `docs/water-meter-dictionary.md` and
-  `docs/electric-meter-dictionary.md`.
-
-Do not re-add writes to removed attributes (`lastMessageTime`, `rssi`, `snr` on the tracker
-types) — the manager rejects events for attributes that do not exist on the current model.
+This directory is currently empty of rule backups — the four decode rules formerly backed
+up here (`water-meter-decode.groovy`, `electric-meter-decode.groovy`,
+`tracker-gnss-location.groovy`, `ship-tracker-gnss-location.groovy`) were retired along with
+their Manager-UI counterparts. It is retained for future Manager-UI rule backups and the
+`build.gradle` compile-check.
