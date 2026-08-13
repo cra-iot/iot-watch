@@ -10,14 +10,14 @@ Pilot feature.
 
 - Header `X-API-Key: <key>` — per-realm key, see configuration below.
 - Body: the platform integration envelope (`data` is a JSON-encoded string).
-- Responses: `200` accepted, `400` unparseable payload or missing `EUI`,
-  `401` wrong/missing key, `404` no asset with matching `devEui` in the
-  realm, `409` more than one asset with that `devEui`.
+- Responses: `200` accepted (written to every asset sharing the `devEui`),
+  `400` unparseable payload or missing `EUI`, `401` wrong/missing key,
+  `404` no asset with matching `devEui` in the realm.
 
-The parsed inner message is written to the matched asset's `rawValue`
-attribute (event timestamp = inner `ts`, device time). The `IotWatchDecodeService`
-Java service reacts to that `rawValue` update and decodes the platform-produced
-`data_decoded` map into typed attributes. Note that
+The parsed inner message is written to the `rawValue` attribute of **every** asset whose
+`devEui` matches (a device may feed several assets — e.g. the meters in a building, or an
+air-quality device split across a temperature+humidity asset and a radiation asset). The
+`IotWatchDecodeService` then routes each asset to the reading it should consume. Note that
 OpenRemote discards events older than the attribute's last-updated
 timestamp, so late-arriving messages older than the newest stored one are
 dropped (the endpoint still returns `200` — dispatch is asynchronous).
@@ -82,3 +82,26 @@ configuration is deployment-side work in the Helm repository.
 
 Expect `200 OK` and the `rawValue` attribute of the asset whose `devEui` is
 `00112233AABBCCDD` updated in the Manager UI.
+
+## Multiple assets per device (shared devEui)
+
+A `devEui` may be bound to more than one asset; each message is delivered to all of them.
+How each asset gets only its own data:
+
+- **Disjoint fields** (air quality: a temperature+humidity asset and a radiation asset;
+  electric vs water): each asset declares different attribute names, so it picks its own
+  fields out of the flat `data_decoded` by name. No extra configuration.
+- **Same field on two assets** (e.g. two water meters both reporting `volume`, or two gas
+  meters): set a distinct `external_id` on each asset, and have the platform decoder emit a
+  tagged payload:
+
+      "data_decoded": { "readings": [
+        { "external_id": "<serial-1>", "volume": 12.3, ... },
+        { "external_id": "<serial-2>", "volume": 45.6, ... }
+      ] }
+
+  Decode delivers each reading to the asset whose `external_id` matches. If a contested field
+  arrives untagged, decode writes nothing for it and logs a warning (it will not duplicate).
+
+`external_id` is optional and only needed for the shared-field case; `meter_id` remains the
+decoded meter serial and is unaffected.
