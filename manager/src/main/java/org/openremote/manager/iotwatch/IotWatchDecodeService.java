@@ -29,6 +29,7 @@ import java.util.logging.Logger;
 public class IotWatchDecodeService implements ContainerService {
 
     public static final String RAW_VALUE_ATTRIBUTE_NAME = "rawValue";
+    public static final String DATA_DECODED_KEY = "data_decoded";
 
     private static final Logger LOG = Logger.getLogger(IotWatchDecodeService.class.getName());
 
