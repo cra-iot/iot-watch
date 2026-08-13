@@ -22,7 +22,7 @@ public class SameNameDecoder implements DeviceDecoder {
 
     // "rawValue" is also exposed as IotWatchDecodeService.RAW_VALUE_ATTRIBUTE_NAME (Task 4);
     // kept as a literal here to avoid a forward dependency on that class.
-    private static final Set<String> EXCLUDED = Set.of("rawValue", "devEui");
+    private static final Set<String> EXCLUDED = Set.of("rawValue", "devEui", "external_id");
 
     @Override
     public Set<String> candidateAttributeNames(Asset<?> asset) {

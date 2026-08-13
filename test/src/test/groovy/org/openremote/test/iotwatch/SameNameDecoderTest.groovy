@@ -84,5 +84,7 @@ class SameNameDecoderTest extends Specification {
         !names.contains("devEui")
         !names.contains("rawValue")
         !names.contains("notes")   // inherited base attribute, not declared on WaterMeterAsset
+        !names.contains("external_id")   // routing/binding key, never decoded
+        names.contains("meter_id")       // still a decodable field
     }
 }

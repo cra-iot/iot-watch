@@ -44,6 +44,14 @@ public class WaterMeterAsset extends Asset<WaterMeterAsset> {
                     new MetaItem<>(MetaItemType.READ_ONLY))
                     .withOptional(true);
 
+    // Operator-provisioned routing/binding key: selects this asset's reading when a device
+    // feeds several assets that claim the same field. Not READ_ONLY (the operator sets it),
+    // not decoded (excluded in SameNameDecoder). Distinct from meter_id (the decoded serial).
+    public static final AttributeDescriptor<String> EXTERNAL_ID_ATTRIBUTE_DESCRIPTOR =
+            new AttributeDescriptor<>("external_id", ValueType.TEXT,
+                    new MetaItem<>(MetaItemType.LABEL, "Externí identifikátor"))
+                    .withOptional(true);
+
     // ── Volume registers (m³) ──────────────────────────────────────────────────
 
     // Cumulative forward-volume index. REQUIRED and kept camelCase to preserve its
@@ -153,6 +161,7 @@ public class WaterMeterAsset extends Asset<WaterMeterAsset> {
     public Optional<String> getDevEui() { return getAttributes().getValue(DEV_EUI_ATTRIBUTE_DESCRIPTOR); }
     public Optional<ValueType.ObjectMap> getRawValue() { return getAttributes().getValue(RAW_VALUE_ATTRIBUTE_DESCRIPTOR); }
     public Optional<String> getMeterId() { return getAttributes().getValue(METER_ID_ATTRIBUTE_DESCRIPTOR); }
+    public Optional<String> getExternalId() { return getAttributes().getValue(EXTERNAL_ID_ATTRIBUTE_DESCRIPTOR); }
     public Optional<Double> getCurrentReading() { return getAttributes().getValue(CURRENT_READING_ATTRIBUTE_DESCRIPTOR); }
     public Optional<Double> getVolumeReverse() { return getAttributes().getValue(VOLUME_REVERSE_ATTRIBUTE_DESCRIPTOR); }
     public Optional<Double> getVolumePreviousDay() { return getAttributes().getValue(VOLUME_PREVIOUS_DAY_ATTRIBUTE_DESCRIPTOR); }

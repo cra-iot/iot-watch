@@ -18,6 +18,9 @@ class WaterMeterDescriptorTest extends Specification {
         WaterMeterAsset.METER_ID_ATTRIBUTE_DESCRIPTOR.isOptional()
         WaterMeterAsset.METER_ID_ATTRIBUTE_DESCRIPTOR.name == "meter_id"
         WaterMeterAsset.METER_ID_ATTRIBUTE_DESCRIPTOR.type == ValueType.TEXT
+        WaterMeterAsset.EXTERNAL_ID_ATTRIBUTE_DESCRIPTOR.isOptional()
+        WaterMeterAsset.EXTERNAL_ID_ATTRIBUTE_DESCRIPTOR.name == "external_id"
+        WaterMeterAsset.EXTERNAL_ID_ATTRIBUTE_DESCRIPTOR.type == ValueType.TEXT
     }
 
     def "measurement '#descriptor.name' is optional with the expected key and type"() {

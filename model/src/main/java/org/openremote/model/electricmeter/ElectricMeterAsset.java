@@ -40,6 +40,14 @@ public class ElectricMeterAsset extends Asset<ElectricMeterAsset> {
                     new MetaItem<>(MetaItemType.READ_ONLY))
                     .withOptional(true);
 
+    // Operator-provisioned routing/binding key: selects this asset's reading when a device
+    // feeds several assets that claim the same field. Not READ_ONLY (the operator sets it),
+    // not decoded (excluded in SameNameDecoder). Distinct from meter_id (the decoded serial).
+    public static final AttributeDescriptor<String> EXTERNAL_ID_ATTRIBUTE_DESCRIPTOR =
+            new AttributeDescriptor<>("external_id", ValueType.TEXT,
+                    new MetaItem<>(MetaItemType.LABEL, "Externí identifikátor"))
+                    .withOptional(true);
+
     // ── Energy registers (kWh) ────────────────────────────────────────────────
 
     public static final AttributeDescriptor<Double> ENERGY_ACTIVE_TOTAL_ATTRIBUTE_DESCRIPTOR =
@@ -171,6 +179,7 @@ public class ElectricMeterAsset extends Asset<ElectricMeterAsset> {
     public Optional<String> getDevEui() { return getAttributes().getValue(DEV_EUI_ATTRIBUTE_DESCRIPTOR); }
     public Optional<ValueType.ObjectMap> getRawValue() { return getAttributes().getValue(RAW_VALUE_ATTRIBUTE_DESCRIPTOR); }
     public Optional<String> getMeterId() { return getAttributes().getValue(METER_ID_ATTRIBUTE_DESCRIPTOR); }
+    public Optional<String> getExternalId() { return getAttributes().getValue(EXTERNAL_ID_ATTRIBUTE_DESCRIPTOR); }
 
     public Optional<Double> getEnergyActiveTotal() { return getAttributes().getValue(ENERGY_ACTIVE_TOTAL_ATTRIBUTE_DESCRIPTOR); }
     public Optional<Double> getEnergyActiveT1() { return getAttributes().getValue(ENERGY_ACTIVE_T1_ATTRIBUTE_DESCRIPTOR); }
