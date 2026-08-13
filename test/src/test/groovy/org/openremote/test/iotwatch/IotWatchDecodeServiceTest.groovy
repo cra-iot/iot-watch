@@ -1,60 +1,95 @@
 package org.openremote.test.iotwatch
 
 import org.openremote.manager.iotwatch.DecoderRegistry
-import org.openremote.manager.iotwatch.GnssDecoder
 import org.openremote.manager.iotwatch.IotWatchDecodeService
+import org.openremote.manager.iotwatch.IotWatchDecodeService.CachedPlan
+import org.openremote.manager.iotwatch.SameNameDecoder
 import org.openremote.model.attribute.AttributeEvent
+import org.openremote.model.util.ValueUtil
+import org.openremote.model.watermeter.WaterMeterAsset
 import spock.lang.Specification
 
 class IotWatchDecodeServiceTest extends Specification {
 
+    def setupSpec() { ValueUtil.initialise(null) }
+
     static class TestableService extends IotWatchDecodeService {
         List<AttributeEvent> dispatched = []
-
-        @Override
-        protected void dispatch(AttributeEvent event) {
-            dispatched << event
-        }
-
-        @Override
-        protected DecoderRegistry.DecodePlan loadPlan(String assetId) {
-            return null   // no DB in unit tests; tests pre-populate planCache
-        }
+        @Override protected void dispatch(AttributeEvent event) { dispatched << event }
+        @Override protected CachedPlan loadPlan(String assetId) { return null }
     }
 
     TestableService service = new TestableService()
+    SameNameDecoder sameName = new SameNameDecoder()
 
-    def "decodes a rawValue event using the cached plan"() {
-        given:
-        service.planCache.put("t1",
-            new DecoderRegistry.DecodePlan(new GnssDecoder(), ["location", "battery"] as Set))
-        def message = [data_decoded: [gnss_latitude: 50.1d, gnss_longitude: 14.4d, battery_pct: 87]]
-
-        when:
-        service.onRawValue(new AttributeEvent("t1", "rawValue", message, 3000L))
-
-        then:
-        service.dispatched*.ref*.name as Set == ["location", "battery"] as Set
-        service.dispatched.every { it.ref.id == "t1" && it.timestamp == 3000L }
+    private CachedPlan plan(String realm, String devEui, Set<String> targets, String externalId, Set<String> contested) {
+        new IotWatchDecodeService.CachedPlan(realm, devEui,
+            new DecoderRegistry.DecodePlan(sameName, targets), externalId, contested)
     }
 
-    def "ignores an event whose asset has no cached plan"() {
+    def "disjoint-field siblings each decode their own fields from a flat payload without external_id"() {
+        given: "temp+humidity asset and radiation asset share a devEui; nothing contested"
+        service.planCache.put("th", plan("master", "AABB", ["temperature", "humidity"] as Set, null, [] as Set))
+        service.planCache.put("rad", plan("master", "AABB", ["radiation"] as Set, null, [] as Set))
+        def message = [data_decoded: [temperature: 21.4d, humidity: 55, radiation: 0.12d]]
+
         when:
-        service.onRawValue(new AttributeEvent("unknown", "rawValue", [data_decoded: [battery_pct: 1]], 1L))
+        service.onRawValue(new AttributeEvent("th", "rawValue", message, 1000L))
+        service.onRawValue(new AttributeEvent("rad", "rawValue", message, 1000L))
+
+        then:
+        service.dispatched.findAll { it.ref.id == "th" }*.ref*.name as Set == ["temperature", "humidity"] as Set
+        service.dispatched.findAll { it.ref.id == "rad" }*.ref*.name as Set == ["radiation"] as Set
+    }
+
+    def "two same-type meters route by external_id from a tagged payload"() {
+        given:
+        service.planCache.put("w1", plan("master", "AABB", ["currentReading"] as Set, "W1", ["currentReading"] as Set))
+        service.planCache.put("w2", plan("master", "AABB", ["currentReading"] as Set, "W2", ["currentReading"] as Set))
+        def message = [data_decoded: [readings: [
+                [external_id: "W1", currentReading: 10d],
+                [external_id: "W2", currentReading: 20d]]]]
+
+        when:
+        service.onRawValue(new AttributeEvent("w1", "rawValue", message, 1000L))
+        service.onRawValue(new AttributeEvent("w2", "rawValue", message, 1000L))
+
+        then:
+        service.dispatched.find { it.ref.id == "w1" }.value.get() == 10d
+        service.dispatched.find { it.ref.id == "w2" }.value.get() == 20d
+    }
+
+    def "contested field in an untagged payload is dropped (no duplicate fill)"() {
+        given: "two same-type meters, no external_id, flat payload"
+        service.planCache.put("w1", plan("master", "AABB", ["currentReading"] as Set, null, ["currentReading"] as Set))
+        service.planCache.put("w2", plan("master", "AABB", ["currentReading"] as Set, null, ["currentReading"] as Set))
+        def message = [data_decoded: [currentReading: 10d]]
+
+        when:
+        service.onRawValue(new AttributeEvent("w1", "rawValue", message, 1000L))
+        service.onRawValue(new AttributeEvent("w2", "rawValue", message, 1000L))
 
         then:
         service.dispatched.isEmpty()
     }
 
-    def "ignores an event whose value is not a map"() {
-        given:
-        service.planCache.put("t1",
-            new DecoderRegistry.DecodePlan(new GnssDecoder(), ["battery"] as Set))
+    def "computes contestedNames across siblings when assets are cached"() {
+        given: "two water meters that both provision currentReading, same devEui"
+        def a = new WaterMeterAsset("W1"); a.setId("w1"); a.setRealm("master")
+        a.getAttributes().clear()
+        a.getAttributes().getOrCreate(WaterMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR).setValue("AABB")
+        a.getAttributes().getOrCreate(WaterMeterAsset.CURRENT_READING_ATTRIBUTE_DESCRIPTOR)
+        def b = new WaterMeterAsset("W2"); b.setId("w2"); b.setRealm("master")
+        b.getAttributes().clear()
+        b.getAttributes().getOrCreate(WaterMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR).setValue("AABB")
+        b.getAttributes().getOrCreate(WaterMeterAsset.CURRENT_READING_ATTRIBUTE_DESCRIPTOR)
 
         when:
-        service.onRawValue(new AttributeEvent("t1", "rawValue", "not-a-map", 1L))
+        service.cacheAsset(a)
+        service.cacheAsset(b)
 
-        then:
-        service.dispatched.isEmpty()
+        then: "each sees currentReading as contested (the other claims it too)"
+        service.planCache.get("w1").contestedNames() == ["currentReading"] as Set
+        service.planCache.get("w2").contestedNames() == ["currentReading"] as Set
     }
 }

@@ -6,7 +6,6 @@ import org.openremote.container.persistence.PersistenceService;
 import org.openremote.manager.asset.AssetProcessingService;
 import org.openremote.manager.asset.AssetStorageService;
 import org.openremote.manager.event.ClientEventService;
-import org.openremote.manager.iotwatch.DecoderRegistry.DecodePlan;
 import org.openremote.model.Container;
 import org.openremote.model.ContainerService;
 import org.openremote.model.PersistenceEvent;
@@ -14,8 +13,11 @@ import org.openremote.model.asset.Asset;
 import org.openremote.model.asset.AssetFilter;
 import org.openremote.model.attribute.AttributeEvent;
 import org.openremote.model.query.AssetQuery;
+import org.openremote.model.watermeter.WaterMeterAsset;
 
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
@@ -33,8 +35,14 @@ public class IotWatchDecodeService implements ContainerService {
 
     private static final Logger LOG = Logger.getLogger(IotWatchDecodeService.class.getName());
 
+    public record CachedPlan(String realm, String devEui,
+                             DecoderRegistry.DecodePlan plan, String externalId,
+                             Set<String> contestedNames) {}
+
     protected final DecoderRegistry registry = new DecoderRegistry();
-    protected final Map<String, DecodePlan> planCache = new ConcurrentHashMap<>();
+    protected final Map<String, CachedPlan> planCache = new ConcurrentHashMap<>();
+    // realm+devEui -> asset ids sharing it, to recompute contested fields across siblings
+    protected final Map<String, Set<String>> assetIdsByEuiKey = new ConcurrentHashMap<>();
     protected AssetStorageService assetStorageService;
     protected AssetProcessingService assetProcessingService;
     protected ClientEventService clientEventService;
@@ -84,23 +92,87 @@ public class IotWatchDecodeService implements ContainerService {
     protected void onAssetChange(PersistenceEvent<Asset<?>> event) {
         Asset<?> asset = event.getEntity();
         switch (event.getCause()) {
-            case DELETE -> planCache.remove(asset.getId());
+            case DELETE -> removeAsset(asset.getId());
             case CREATE, UPDATE -> cacheAsset(asset);
         }
     }
 
     protected void cacheAsset(Asset<?> asset) {
-        registry.planFor(asset).ifPresentOrElse(
-            plan -> planCache.put(asset.getId(), plan),
-            () -> planCache.remove(asset.getId()));
+        removeAsset(asset.getId());   // drop any stale grouping first (devEui may have changed)
+        registry.planFor(asset).ifPresent(plan -> {
+            String realm = asset.getRealm();
+            String devEui = normaliseEui(asset.getAttributes()
+                .get(IotWatchIngestService.DEV_EUI_ATTRIBUTE_NAME)
+                .flatMap(a -> a.getValue(String.class)).orElse(null));
+            String externalId = asset.getAttributes()
+                .get(WaterMeterAsset.EXTERNAL_ID_ATTRIBUTE_DESCRIPTOR.getName())
+                .flatMap(a -> a.getValue(String.class)).orElse(null);
+            planCache.put(asset.getId(), new CachedPlan(realm, devEui, plan, externalId, Set.of()));
+            if (devEui != null) {
+                assetIdsByEuiKey.computeIfAbsent(key(realm, devEui), k -> ConcurrentHashMap.newKeySet())
+                    .add(asset.getId());
+                recomputeContested(realm, devEui);
+            }
+        });
+    }
+
+    protected void removeAsset(String assetId) {
+        CachedPlan previous = planCache.remove(assetId);
+        if (previous == null || previous.devEui() == null) {
+            return;
+        }
+        String k = key(previous.realm(), previous.devEui());
+        Set<String> ids = assetIdsByEuiKey.get(k);
+        if (ids != null) {
+            ids.remove(assetId);
+            if (ids.isEmpty()) {
+                assetIdsByEuiKey.remove(k, ids);
+            }
+        }
+        recomputeContested(previous.realm(), previous.devEui());
+    }
+
+    // Recompute contestedNames for every asset sharing this realm+devEui: a field is contested
+    // for asset A when at least one sibling B also has it in targetNames.
+    protected void recomputeContested(String realm, String devEui) {
+        Set<String> ids = assetIdsByEuiKey.getOrDefault(key(realm, devEui), Set.of());
+        for (String id : ids) {
+            CachedPlan cp = planCache.get(id);
+            if (cp == null) {
+                continue;
+            }
+            Set<String> contested = new HashSet<>();
+            for (String other : ids) {
+                if (!other.equals(id)) {
+                    CachedPlan sibling = planCache.get(other);
+                    if (sibling != null) {
+                        for (String name : cp.plan().targetNames()) {
+                            if (sibling.plan().targetNames().contains(name)) {
+                                contested.add(name);
+                            }
+                        }
+                    }
+                }
+            }
+            planCache.put(id, new CachedPlan(cp.realm(), cp.devEui(), cp.plan(), cp.externalId(),
+                Set.copyOf(contested)));
+        }
+    }
+
+    private static String key(String realm, String devEui) {
+        return realm + "|" + devEui;
+    }
+
+    private static String normaliseEui(String eui) {
+        return (eui == null || eui.isBlank()) ? null : DevEuiCache.normalize(eui);
     }
 
     protected void onRawValue(AttributeEvent event) {
-        DecodePlan plan = planCache.get(event.getId());
-        if (plan == null) {
-            plan = loadPlan(event.getId());
+        CachedPlan cp = planCache.get(event.getId());
+        if (cp == null) {
+            cp = loadPlan(event.getId());
         }
-        if (plan == null) {
+        if (cp == null) {
             return;
         }
         Object raw = event.getValue().orElse(null);
@@ -110,25 +182,26 @@ public class IotWatchDecodeService implements ContainerService {
         @SuppressWarnings("unchecked")
         Map<String, Object> message = (Map<String, Object>) raw;
         try {
-            plan.decoder().decode(event.getId(), message, plan.targetNames(), event.getTimestamp())
-                .forEach(this::dispatch);
+            for (ReadingRouter.Routed routed : ReadingRouter.route(
+                    message, cp.externalId(), cp.plan().targetNames(), cp.contestedNames())) {
+                cp.plan().decoder()
+                    .decode(event.getId(), routed.message(), routed.effectiveTargets(), event.getTimestamp())
+                    .forEach(this::dispatch);
+            }
         } catch (Exception e) {
             LOG.warning("IoT Watch decode error [" + event.getId() + "]: " + e.getMessage());
         }
     }
 
-    // Cache miss (a rawValue event arriving before the asset's persistence event was seen):
-    // fetch the asset once, build and cache the plan. Rare; keeps steady state DB-free.
-    protected DecodePlan loadPlan(String assetId) {
+    // Cache miss (rawValue arriving before the asset's persistence event): fetch, build, cache
+    // via cacheAsset so the sibling grouping/contested set is populated too.
+    protected CachedPlan loadPlan(String assetId) {
         Asset<?> asset = assetStorageService.find(assetId, true);
         if (asset == null) {
             return null;
         }
-        DecodePlan plan = registry.planFor(asset).orElse(null);
-        if (plan != null) {
-            planCache.put(assetId, plan);
-        }
-        return plan;
+        cacheAsset(asset);
+        return planCache.get(assetId);
     }
 
     protected void dispatch(AttributeEvent event) {
