@@ -73,6 +73,25 @@ class IotWatchDecodeServiceTest extends Specification {
         service.dispatched.isEmpty()
     }
 
+    def "contested field in an untagged payload is dropped end-to-end with index-computed contestedNames"() {
+        given: "two real WaterMeterAsset siblings sharing a devEui, no external_id"
+        def w1 = new WaterMeterAsset("W1"); w1.setId("w1"); w1.setRealm("master")
+        w1.getAttributes().clear()
+        w1.getAttributes().getOrCreate(WaterMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR).setValue("AABB")
+        w1.getAttributes().getOrCreate(WaterMeterAsset.CURRENT_READING_ATTRIBUTE_DESCRIPTOR)
+        def w2 = new WaterMeterAsset("W2"); w2.setId("w2"); w2.setRealm("master")
+        w2.getAttributes().clear()
+        w2.getAttributes().getOrCreate(WaterMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR).setValue("AABB")
+        w2.getAttributes().getOrCreate(WaterMeterAsset.CURRENT_READING_ATTRIBUTE_DESCRIPTOR)
+        service.cacheAsset(w1); service.cacheAsset(w2)
+
+        when:
+        service.onRawValue(new AttributeEvent("w1", "rawValue", [data_decoded: [currentReading: 10d]], 1000L))
+
+        then: "currentReading is contested (both siblings claim it) and the payload is untagged"
+        service.dispatched.isEmpty()
+    }
+
     def "computes contestedNames across siblings when assets are cached"() {
         given: "two water meters that both provision currentReading, same devEui"
         def a = new WaterMeterAsset("W1"); a.setId("w1"); a.setRealm("master")

@@ -22,6 +22,9 @@ public final class ReadingRouter {
 
     public record Routed(Map<String, Object> message, Set<String> effectiveTargets) {}
 
+    /** {@code warnings} carries diagnostics for dropped/ambiguous readings as data; the caller logs them. */
+    public record RouteResult(List<Routed> routed, List<String> warnings) {}
+
     private static final String READINGS = "readings";
     private static final String EXTERNAL_ID = "external_id";
 
@@ -29,11 +32,11 @@ public final class ReadingRouter {
     }
 
     @SuppressWarnings("unchecked")
-    public static List<Routed> route(Map<String, Object> message, String selector,
+    public static RouteResult route(Map<String, Object> message, String selector,
                                      Set<String> targetNames, Set<String> contestedNames) {
         Object dd = message.get(IotWatchDecodeService.DATA_DECODED_KEY);
         if (!(dd instanceof Map)) {
-            return List.of();
+            return new RouteResult(List.of(), List.of());
         }
         Map<String, Object> decoded = (Map<String, Object>) dd;
 
@@ -50,6 +53,7 @@ public final class ReadingRouter {
 
         List<Map<String, Object>> tagged = new ArrayList<>();
         List<Routed> result = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
         Set<String> untaggedTargets = targetNames.stream()
             .filter(n -> !contestedNames.contains(n))
             .collect(Collectors.toUnmodifiableSet());
@@ -62,13 +66,23 @@ public final class ReadingRouter {
                 }
             } else {
                 result.add(new Routed(Map.of(IotWatchDecodeService.DATA_DECODED_KEY, reading), untaggedTargets));
+                Set<String> droppedContested = reading.keySet().stream()
+                    .filter(contestedNames::contains)
+                    .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+                if (!droppedContested.isEmpty()) {
+                    warnings.add("dropped contested field(s) " + droppedContested
+                        + " from an untagged reading; set external_id to route it");
+                }
             }
         }
 
         if (tagged.size() == 1) {
             result.add(new Routed(Map.of(IotWatchDecodeService.DATA_DECODED_KEY, tagged.get(0)), targetNames));
+        } else if (tagged.size() > 1) {
+            // ambiguous/duplicate mis-tagged payload → consume none of the tagged readings
+            warnings.add("ignored " + tagged.size() + " readings tagged external_id '" + selector
+                + "' (ambiguous/duplicate); wrote nothing");
         }
-        // tagged.size() > 1 → ambiguous mis-tagged payload → consume none of the tagged readings
-        return result;
+        return new RouteResult(result, warnings);
     }
 }

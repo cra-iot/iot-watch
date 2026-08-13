@@ -182,8 +182,10 @@ public class IotWatchDecodeService implements ContainerService {
         @SuppressWarnings("unchecked")
         Map<String, Object> message = (Map<String, Object>) raw;
         try {
-            for (ReadingRouter.Routed routed : ReadingRouter.route(
-                    message, cp.externalId(), cp.plan().targetNames(), cp.contestedNames())) {
+            ReadingRouter.RouteResult rr = ReadingRouter.route(
+                message, cp.externalId(), cp.plan().targetNames(), cp.contestedNames());
+            rr.warnings().forEach(w -> LOG.warning("IoT Watch decode [" + event.getId() + "]: " + w));
+            for (ReadingRouter.Routed routed : rr.routed()) {
                 cp.plan().decoder()
                     .decode(event.getId(), routed.message(), routed.effectiveTargets(), event.getTimestamp())
                     .forEach(this::dispatch);
