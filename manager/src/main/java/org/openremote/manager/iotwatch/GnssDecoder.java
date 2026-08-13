@@ -26,11 +26,10 @@ public class GnssDecoder implements DeviceDecoder {
     @Override
     public List<AttributeEvent> decode(String assetId, Map<String, Object> message,
                                        Set<String> targetNames, long timestamp) {
-        Object decodedObj = message.get("data_decoded");
-        if (!(decodedObj instanceof Map)) {
+        Map<?, ?> decoded = DeviceDecoder.successfulDecodedPayload(message);
+        if (decoded == null) {
             return List.of();
         }
-        Map<?, ?> decoded = (Map<?, ?>) decodedObj;
         List<AttributeEvent> events = new ArrayList<>();
 
         Object lat = decoded.get("gnss_latitude");

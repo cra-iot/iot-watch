@@ -43,4 +43,16 @@ class GnssDecoderTest extends Specification {
         decoder.decode("t1", [data_decoded: [battery_pct: 87]] as Map, targets, 1L)*.ref*.name == ["battery"]
         decoder.decode("t1", [:] as Map, targets, 1L).isEmpty()
     }
+
+    def "writes nothing when the platform signalled a failed decode"() {
+        expect:
+        decoder.decode("t1", message as Map, targets, 2000L).isEmpty()
+
+        where:
+        message << [
+            [data_decoded: [decoded: false, ok: false, gnss_latitude: 50.1d, gnss_longitude: 14.4d, battery_pct: 87]],
+            [data_decoded: [decoded: false]],
+            [data_decoded: [ok: false]]
+        ]
+    }
 }

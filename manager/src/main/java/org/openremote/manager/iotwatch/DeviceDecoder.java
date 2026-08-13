@@ -24,4 +24,22 @@ public interface DeviceDecoder {
      */
     List<AttributeEvent> decode(String assetId, Map<String, Object> message,
                                 Set<String> targetNames, long timestamp);
+
+    /**
+     * The decoded payload to fan out, or {@code null} when there is nothing to decode:
+     * {@code data_decoded} is absent, null, or not a map, or the platform signalled a
+     * failed decode via {@code decoded == false} or {@code ok == false} (in which case
+     * no measurement data is valid and nothing must be written).
+     */
+    static Map<?, ?> successfulDecodedPayload(Map<String, Object> message) {
+        Object dd = message.get("data_decoded");
+        if (!(dd instanceof Map)) {
+            return null;
+        }
+        Map<?, ?> decoded = (Map<?, ?>) dd;
+        if (Boolean.FALSE.equals(decoded.get("decoded")) || Boolean.FALSE.equals(decoded.get("ok"))) {
+            return null;
+        }
+        return decoded;
+    }
 }

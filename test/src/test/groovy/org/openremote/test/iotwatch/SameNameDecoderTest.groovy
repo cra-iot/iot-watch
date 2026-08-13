@@ -47,6 +47,33 @@ class SameNameDecoderTest extends Specification {
         message << [ [:], [data_decoded: "not-a-map"], [other: 1] ]
     }
 
+    def "writes nothing when the platform signalled a failed decode"() {
+        expect:
+        decoder.decode("asset1", message as Map, ["currentReading", "leakage"] as Set, 1000L).isEmpty()
+
+        where:
+        message << [
+            [data_decoded: null],
+            [data_decoded: [decoded: false, ok: false]],
+            [data_decoded: [decoded: false]],
+            [data_decoded: [ok: false]],
+            [data_decoded: [decoded: false, currentReading: 123.4d]],   // real key present but decode failed
+            [data_decoded: [ok: false, currentReading: 123.4d]]
+        ]
+    }
+
+    def "decodes normally when success flags are present"() {
+        given:
+        def message = [data_decoded: [decoded: true, ok: true, currentReading: 123.4d]]
+
+        when:
+        def events = decoder.decode("asset1", message, ["currentReading"] as Set, 1000L)
+
+        then:
+        events*.ref*.name == ["currentReading"]
+        events[0].value.get() == 123.4d
+    }
+
     def "candidateAttributeNames are the class's own attributes minus devEui and rawValue"() {
         when:
         def names = decoder.candidateAttributeNames(new WaterMeterAsset("W"))
