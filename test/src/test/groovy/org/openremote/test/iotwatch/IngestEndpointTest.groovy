@@ -117,11 +117,15 @@ class IngestEndpointTest extends Specification implements ManagerContainerTrait 
         }
 
         when: "a second asset claims the same devEui"
-        assetStorageService.merge(trackerWithEui("Duplicate tracker", EUI))
+        def duplicate = assetStorageService.merge(trackerWithEui("Duplicate tracker", EUI))
 
-        then: "posting eventually returns 409 (persistence event updates the cache)"
+        then: "posting eventually fans out to both assets (persistence event updates the cache)"
         conditions.eventually {
-            assert post(serverPort, Constants.MASTER_REALM, TEST_KEY, envelope(EUI, deviceTs)).statusCode() == 409
+            assert post(serverPort, Constants.MASTER_REALM, TEST_KEY, envelope(EUI, deviceTs)).statusCode() == 200
+            def dup = assetStorageService.find(duplicate.getId(), true) as TrackerAsset
+            def dupRaw = dup.getAttribute(TrackerAsset.RAW_VALUE_ATTRIBUTE_DESCRIPTOR).orElse(null)
+            assert dupRaw != null && dupRaw.getValue().isPresent()
+            assert (dupRaw.getValue().get() as Map).get("bat") == 254
         }
 
         and: "the meters are visible in the container registry"

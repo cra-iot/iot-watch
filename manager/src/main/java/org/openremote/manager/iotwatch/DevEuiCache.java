@@ -8,7 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * In-memory devEui to asset id index, one map per realm, kept fresh from asset
  * persistence events. EUIs are normalized to uppercase. One EUI may map to
- * multiple asset ids — a configuration error the endpoint reports as HTTP 409.
+ * multiple asset ids — the ingest endpoint fans a message out to all of them.
  */
 public class DevEuiCache {
 
