@@ -142,7 +142,12 @@ class IngestEndpointTest extends Specification implements ManagerContainerTrait 
 
         then: "posting eventually fans out to both assets (persistence event updates the cache)"
         conditions.eventually {
-            assert post(serverPort, Constants.MASTER_REALM, TEST_KEY, envelope(EUI, deviceTs)).statusCode() == 200
+            // Re-read the clock here (rather than reusing deviceTs): the duplicate asset is merged
+            // after deviceTs was captured, so its rawValue attribute is stamped with a later pseudo-clock
+            // reading, and a stale deviceTs would always be discarded as outdated for it (see the clock
+            // hazard noted above for the first merge).
+            def fanOutTs = getClockTimeOf(container)
+            assert post(serverPort, Constants.MASTER_REALM, TEST_KEY, envelope(EUI, fanOutTs)).statusCode() == 200
             def dup = assetStorageService.find(duplicate.getId(), true) as TrackerAsset
             def dupRaw = dup.getAttribute(TrackerAsset.RAW_VALUE_ATTRIBUTE_DESCRIPTOR).orElse(null)
             assert dupRaw != null && dupRaw.getValue().isPresent()
