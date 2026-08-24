@@ -2,10 +2,13 @@ package org.openremote.test.iotwatch
 
 import groovy.json.JsonOutput
 import org.openremote.manager.asset.AssetStorageService
+import org.openremote.manager.datapoint.AssetDatapointService
 import org.openremote.manager.iotwatch.IngestMetrics
 import org.openremote.manager.iotwatch.IotWatchIngestService
 import org.openremote.model.Constants
+import org.openremote.model.attribute.AttributeRef
 import org.openremote.model.tracker.TrackerAsset
+import org.openremote.model.watermeter.WaterMeterAsset
 import org.openremote.test.ManagerContainerTrait
 import spock.lang.IgnoreIf
 import spock.lang.Specification
@@ -47,6 +50,24 @@ class IngestEndpointTest extends Specification implements ManagerContainerTrait 
         asset.setRealm(Constants.MASTER_REALM)
         asset.getAttributes().getOrCreate(TrackerAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR).setValue(eui)
         return asset
+    }
+
+    static WaterMeterAsset waterMeterWithEui(String name, String eui) {
+        def asset = new WaterMeterAsset(name)
+        asset.setRealm(Constants.MASTER_REALM)
+        asset.getAttributes().getOrCreate(WaterMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR).setValue(eui)
+        asset.getAttributes().getOrCreate(WaterMeterAsset.CURRENT_READING_ATTRIBUTE_DESCRIPTOR)
+        return asset
+    }
+
+    /** An envelope whose decoded payload carries one reading with an explicit measurement time. */
+    static String readingEnvelope(String eui, long messageTs, Long measuredAt, double currentReading) {
+        def reading = [currentReading: currentReading]
+        if (measuredAt != null) {
+            reading.measured_at = measuredAt
+        }
+        def inner = [cmd: "gw", EUI: eui, ts: messageTs, data_decoded: reading]
+        return JsonOutput.toJson([data: JsonOutput.toJson(inner), tags: [], tech: "L", type: "D"])
     }
 
     def "ingest endpoint authenticates, matches devEui and writes rawValue"() {
@@ -151,5 +172,51 @@ class IngestEndpointTest extends Specification implements ManagerContainerTrait 
 
         then:
         response.statusCode() == 404
+    }
+
+    def "a backdated reading lands in history without moving the current value"() {
+        given: "a container with the ingest key configured and a water meter asset"
+        def conditions = new PollingConditions(timeout: 15, delay: 0.5)
+        def serverPort = findEphemeralPort()
+        def config = defaultConfig(serverPort)
+        config.put(IotWatchIngestService.OR_IOTWATCH_INGEST_KEYS, "${Constants.MASTER_REALM}:${TEST_KEY}".toString())
+        def container = startContainer(config, defaultServices())
+        def assetStorageService = container.getService(AssetStorageService.class)
+        def datapointService = container.getService(AssetDatapointService.class)
+        def meter = assetStorageService.merge(waterMeterWithEui("Ingest test water meter", EUI))
+        def now = getClockTimeOf(container)
+        def yesterday = now - 86_400_000L
+
+        when: "a reading measured now arrives"
+        def response = post(serverPort, Constants.MASTER_REALM, TEST_KEY,
+            readingEnvelope(EUI, now, now, 100.0d))
+
+        then: "it becomes the current value"
+        response.statusCode() == 200
+        conditions.eventually {
+            def updated = assetStorageService.find(meter.getId(), true) as WaterMeterAsset
+            def attribute = updated.getAttribute(WaterMeterAsset.CURRENT_READING_ATTRIBUTE_DESCRIPTOR).orElse(null)
+            assert attribute != null
+            assert attribute.getValue().orElse(null) == 100.0d
+            assert attribute.getTimestamp().orElse(0L) == now
+        }
+
+        when: "a reading measured yesterday is delivered afterwards"
+        response = post(serverPort, Constants.MASTER_REALM, TEST_KEY,
+            readingEnvelope(EUI, now + 1000L, yesterday, 90.0d))
+
+        then: "history gains yesterday's point while the current value stays at today's"
+        response.statusCode() == 200
+        conditions.eventually {
+            def points = datapointService.getDatapoints(
+                new AttributeRef(meter.getId(), WaterMeterAsset.CURRENT_READING_ATTRIBUTE_DESCRIPTOR.getName()))
+            assert points.any { it.timestamp == yesterday && (it.value as double) == 90.0d }
+            assert points.any { it.timestamp == now && (it.value as double) == 100.0d }
+
+            def updated = assetStorageService.find(meter.getId(), true) as WaterMeterAsset
+            def attribute = updated.getAttribute(WaterMeterAsset.CURRENT_READING_ATTRIBUTE_DESCRIPTOR).orElse(null)
+            assert attribute.getValue().orElse(null) == 100.0d
+            assert attribute.getTimestamp().orElse(0L) == now
+        }
     }
 }
