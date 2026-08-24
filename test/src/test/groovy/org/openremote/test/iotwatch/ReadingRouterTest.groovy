@@ -188,4 +188,37 @@ class ReadingRouterTest extends Specification {
         where:
         edge << [MSG_TS - ReadingRouter.MAX_BACKDATE_MILLIS, MSG_TS + ReadingRouter.MAX_FUTURE_SKEW_MILLIS]
     }
+
+    def "several readings tagged for our meter at distinct times are all routed"() {
+        given: "a buffered history batch for one meter"
+        def message = [data_decoded: [readings: [
+                [external_id: "W1", measured_at: MSG_TS - 2 * HOUR, currentReading: 10d],
+                [external_id: "W1", measured_at: MSG_TS - HOUR, currentReading: 11d],
+                [external_id: "W2", measured_at: MSG_TS - HOUR, currentReading: 99d]]]]
+
+        when:
+        def result = ReadingRouter.route(message, "W1",
+                ["currentReading"] as Set, ["currentReading"] as Set, MSG_TS)
+
+        then: "only our meter's readings, one per measurement time, with full targets"
+        result.routed().size() == 2
+        result.routed()*.timestamp() == [MSG_TS - 2 * HOUR, MSG_TS - HOUR]
+        result.routed()*.effectiveTargets().every { it == ["currentReading"] as Set }
+        result.warnings().isEmpty()
+    }
+
+    def "tagged readings that share a measurement time are still refused"() {
+        given: "two readings for our meter at the same time — one would overwrite the other"
+        def message = [data_decoded: [readings: [
+                [external_id: "W1", measured_at: MSG_TS - HOUR, currentReading: 10d],
+                [external_id: "W1", measured_at: MSG_TS - HOUR, currentReading: 11d]]]]
+
+        when:
+        def result = ReadingRouter.route(message, "W1", ["currentReading"] as Set, [] as Set, MSG_TS)
+
+        then:
+        result.routed().isEmpty()
+        result.warnings().size() == 1
+        result.warnings()[0].contains("W1")
+    }
 }

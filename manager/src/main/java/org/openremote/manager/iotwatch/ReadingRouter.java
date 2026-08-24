@@ -104,9 +104,15 @@ public final class ReadingRouter {
         if (tagged.size() == 1) {
             result.add(routed(tagged.get(0), targetNames));
         } else if (tagged.size() > 1) {
-            // ambiguous/duplicate mis-tagged payload → consume none of the tagged readings
-            warnings.add("ignored " + tagged.size() + " readings tagged external_id '" + selector
-                + "' (ambiguous/duplicate); wrote nothing");
+            long distinctTimes = tagged.stream().mapToLong(Candidate::timestamp).distinct().count();
+            if (distinctTimes == tagged.size()) {
+                // A buffered history batch for this meter: one reading per measurement time.
+                tagged.forEach(candidate -> result.add(routed(candidate, targetNames)));
+            } else {
+                // duplicate/mis-tagged payload → consume none of the tagged readings
+                warnings.add("ignored " + tagged.size() + " readings tagged external_id '" + selector
+                    + "' (two or more share a measurement time); wrote nothing");
+            }
         }
         return new RouteResult(result, warnings);
     }
