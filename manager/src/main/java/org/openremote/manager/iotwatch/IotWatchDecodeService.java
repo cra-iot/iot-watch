@@ -183,11 +183,12 @@ public class IotWatchDecodeService implements ContainerService {
         Map<String, Object> message = (Map<String, Object>) raw;
         try {
             ReadingRouter.RouteResult rr = ReadingRouter.route(
-                message, cp.externalId(), cp.plan().targetNames(), cp.contestedNames());
+                message, cp.externalId(), cp.plan().targetNames(), cp.contestedNames(),
+                event.getTimestamp());
             rr.warnings().forEach(w -> LOG.warning("IoT Watch decode [" + event.getId() + "]: " + w));
             for (ReadingRouter.Routed routed : rr.routed()) {
                 cp.plan().decoder()
-                    .decode(event.getId(), routed.message(), routed.effectiveTargets(), event.getTimestamp())
+                    .decode(event.getId(), routed.message(), routed.effectiveTargets(), routed.timestamp())
                     .forEach(this::dispatch);
             }
         } catch (Exception e) {

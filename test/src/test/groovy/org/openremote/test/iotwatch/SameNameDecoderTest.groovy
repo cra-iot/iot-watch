@@ -87,4 +87,14 @@ class SameNameDecoderTest extends Specification {
         !names.contains("external_id")   // routing/binding key, never decoded
         names.contains("meter_id")       // still a decodable field
     }
+
+    def "a reserved key is never written as an attribute value, even if offered as a target"() {
+        when: "measured_at and external_id are (wrongly) among the targets"
+        def events = new SameNameDecoder().decode("a1",
+                [data_decoded: [measured_at: 1_700_000_000_000L, external_id: "W1", currentReading: 5d]],
+                ["currentReading", "measured_at", "external_id"] as Set, 1_000L)
+
+        then: "only the real measurement is emitted"
+        events*.ref*.name == ["currentReading"]
+    }
 }

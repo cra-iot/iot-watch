@@ -20,9 +20,11 @@ import java.util.Set;
  */
 public class SameNameDecoder implements DeviceDecoder {
 
+    // Reserved routing/metadata keys: identity, per-meter selector and measurement time.
     // "rawValue" is also exposed as IotWatchDecodeService.RAW_VALUE_ATTRIBUTE_NAME (Task 4);
     // kept as a literal here to avoid a forward dependency on that class.
-    private static final Set<String> EXCLUDED = Set.of("rawValue", "devEui", "external_id");
+    private static final Set<String> EXCLUDED =
+        Set.of("rawValue", "devEui", "external_id", "measured_at");
 
     @Override
     public Set<String> candidateAttributeNames(Asset<?> asset) {
@@ -40,7 +42,7 @@ public class SameNameDecoder implements DeviceDecoder {
         for (Map.Entry<?, ?> entry : decoded.entrySet()) {
             String name = String.valueOf(entry.getKey());
             Object value = entry.getValue();
-            if (value != null && targetNames.contains(name)) {
+            if (value != null && targetNames.contains(name) && !EXCLUDED.contains(name)) {
                 events.add(new AttributeEvent(assetId, name, value, timestamp));
             }
         }

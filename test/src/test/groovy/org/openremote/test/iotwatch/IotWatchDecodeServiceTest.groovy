@@ -21,6 +21,8 @@ class IotWatchDecodeServiceTest extends Specification {
 
     TestableService service = new TestableService()
     SameNameDecoder sameName = new SameNameDecoder()
+    static final long MSG_TS = 1_700_000_000_000L
+    static final long DAY = 86_400_000L
 
     private CachedPlan plan(String realm, String devEui, Set<String> targets, String externalId, Set<String> contested) {
         new IotWatchDecodeService.CachedPlan(realm, devEui,
@@ -110,5 +112,19 @@ class IotWatchDecodeServiceTest extends Specification {
         then: "each sees currentReading as contested (the other claims it too)"
         service.planCache.get("w1").contestedNames() == ["currentReading"] as Set
         service.planCache.get("w2").contestedNames() == ["currentReading"] as Set
+    }
+
+    def "decoded events are stamped with the reading's measured_at, not the message timestamp"() {
+        given:
+        service.planCache.put("w1", plan("master", "AABB", ["currentReading"] as Set, null, [] as Set))
+        def message = [data_decoded: [measured_at: MSG_TS - DAY, currentReading: 12.5d]]
+
+        when: "the message is delivered now but the measurement was taken yesterday"
+        service.onRawValue(new AttributeEvent("w1", "rawValue", message, MSG_TS))
+
+        then:
+        service.dispatched.size() == 1
+        service.dispatched[0].ref.name == "currentReading"
+        service.dispatched[0].timestamp == MSG_TS - DAY
     }
 }
