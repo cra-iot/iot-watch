@@ -114,12 +114,46 @@ public final class ReadingRouter {
                     + "' (two or more share a measurement time); wrote nothing");
             }
         }
+        warnAboutCollisions(result, warnings);
         return new RouteResult(result, warnings);
     }
 
     private static Routed routed(Candidate candidate, Set<String> effectiveTargets) {
         return new Routed(Map.of(IotWatchDecodeService.DATA_DECODED_KEY, candidate.reading()),
             effectiveTargets, candidate.timestamp());
+    }
+
+    /**
+     * Two readings that resolve to the same timestamp and write the same field overwrite each
+     * other in the data-point table, whose key is asset + attribute + timestamp. Quadratic in
+     * the number of readings in one message, which is a handful.
+     */
+    private static void warnAboutCollisions(List<Routed> routed, List<String> warnings) {
+        for (int i = 0; i < routed.size(); i++) {
+            for (int j = i + 1; j < routed.size(); j++) {
+                Routed first = routed.get(i);
+                Routed second = routed.get(j);
+                if (first.timestamp() != second.timestamp()) {
+                    continue;
+                }
+                Set<String> collidingFields = writtenFields(first);
+                collidingFields.retainAll(writtenFields(second));
+                if (!collidingFields.isEmpty()) {
+                    warnings.add("readings collide on field(s) " + collidingFields + " at timestamp "
+                        + first.timestamp() + "; only the last one is stored — give each reading a"
+                        + " distinct measured_at");
+                }
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Set<String> writtenFields(Routed routed) {
+        Map<String, Object> reading =
+            (Map<String, Object>) routed.message().get(IotWatchDecodeService.DATA_DECODED_KEY);
+        return reading.keySet().stream()
+            .filter(routed.effectiveTargets()::contains)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     /**

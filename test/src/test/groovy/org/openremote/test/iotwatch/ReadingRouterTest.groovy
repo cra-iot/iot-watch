@@ -221,4 +221,31 @@ class ReadingRouterTest extends Specification {
         result.warnings().size() == 1
         result.warnings()[0].contains("W1")
     }
+
+    def "untagged readings that would overwrite each other are reported"() {
+        given: "two untagged readings for the same field with no measurement time"
+        def message = [data_decoded: [readings: [[currentReading: 10d], [currentReading: 11d]]]]
+
+        when:
+        def result = ReadingRouter.route(message, null, ["currentReading"] as Set, [] as Set, MSG_TS)
+
+        then: "both are still routed (the last write wins) but the loss is reported"
+        result.routed().size() == 2
+        result.warnings().size() == 1
+        result.warnings()[0].contains("currentReading")
+        result.warnings()[0].contains("collide")
+    }
+
+    def "untagged readings carrying different fields at the same time do not warn"() {
+        given:
+        def message = [data_decoded: [readings: [[temperature: 21.4d], [radiation: 0.12d]]]]
+
+        when:
+        def result = ReadingRouter.route(message, null,
+                ["temperature", "radiation"] as Set, [] as Set, MSG_TS)
+
+        then:
+        result.routed().size() == 2
+        result.warnings().isEmpty()
+    }
 }
