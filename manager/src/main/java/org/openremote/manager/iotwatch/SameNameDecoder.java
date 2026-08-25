@@ -20,11 +20,14 @@ import java.util.Set;
  */
 public class SameNameDecoder implements DeviceDecoder {
 
-    // Reserved routing/metadata keys: identity, per-meter selector and measurement time.
+    // Reserved routing/metadata keys: identity, per-meter selector, measurement time, the
+    // multi-reading container and the decode-success flags. None of them is a measurement, so
+    // none may ever be written as an attribute value — not even if an asset type later declares
+    // an attribute of that name.
     // "rawValue" is also exposed as IotWatchDecodeService.RAW_VALUE_ATTRIBUTE_NAME (Task 4);
     // kept as a literal here to avoid a forward dependency on that class.
     private static final Set<String> EXCLUDED =
-        Set.of("rawValue", "devEui", "external_id", "measured_at");
+        Set.of("rawValue", "devEui", "external_id", "measured_at", "readings", "decoded", "ok");
 
     @Override
     public Set<String> candidateAttributeNames(Asset<?> asset) {

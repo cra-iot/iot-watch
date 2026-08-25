@@ -97,4 +97,14 @@ class SameNameDecoderTest extends Specification {
         then: "only the real measurement is emitted"
         events*.ref*.name == ["currentReading"]
     }
+
+    def "the container and success-flag keys are excluded too, not merely unmatched by chance"() {
+        when: "readings, decoded and ok are all (wrongly) among the targets"
+        def events = new SameNameDecoder().decode("a1",
+                [data_decoded: [decoded: true, ok: true, readings: [[currentReading: 1d]], currentReading: 5d]],
+                ["currentReading", "readings", "decoded", "ok"] as Set, 1_000L)
+
+        then: "only the real measurement is emitted — the exclusion is enforced, not accidental"
+        events*.ref*.name == ["currentReading"]
+    }
 }
