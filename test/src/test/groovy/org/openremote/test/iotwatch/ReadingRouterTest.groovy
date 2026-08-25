@@ -350,4 +350,39 @@ class ReadingRouterTest extends Specification {
         result.warnings()[0].contains("measured_at")
         result.routed()[0].timestamp() == MSG_TS   // the fallback, reached via a warning
     }
+
+    def "the validity window is a year back and a day forward"() {
+        expect:
+        ReadingRouter.MAX_BACKDATE_MILLIS == 365L * 24 * 60 * 60 * 1000
+        ReadingRouter.MAX_FUTURE_SKEW_MILLIS == 24L * 60 * 60 * 1000
+    }
+
+    def "an invalid own measured_at falls back to the batch default, not to the message timestamp"() {
+        given:
+        def message = [data_decoded: [measured_at: MSG_TS - HOUR, readings: [
+                [currentReading: 10d, measured_at: 1.5d]]]]
+
+        when:
+        def result = ReadingRouter.route(message, null, ["currentReading"] as Set, [] as Set, MSG_TS)
+
+        then:
+        result.routed().size() == 1
+        result.routed()[0].timestamp() == MSG_TS - HOUR
+        result.warnings().size() == 1
+        result.warnings()[0].contains("measured_at")
+    }
+
+    def "a reading with no own measured_at under an invalid batch default falls back to the message timestamp"() {
+        given:
+        def message = [data_decoded: [measured_at: MSG_TS - 400 * DAY, readings: [[currentReading: 10d]]]]
+
+        when:
+        def result = ReadingRouter.route(message, null, ["currentReading"] as Set, [] as Set, MSG_TS)
+
+        then:
+        result.routed().size() == 1
+        result.routed()[0].timestamp() == MSG_TS
+        result.warnings().size() == 1
+        result.warnings()[0].contains("measured_at")
+    }
 }
