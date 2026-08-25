@@ -70,6 +70,20 @@ class IngestEndpointTest extends Specification implements ManagerContainerTrait 
         return JsonOutput.toJson([data: JsonOutput.toJson(inner), tags: [], tech: "L", type: "D"])
     }
 
+    /**
+     * An envelope whose decoded payload carries several readings, each with its own measurement
+     * time, as {@code [[measuredAt, currentReading], ...]}. Because the envelope is real JSON,
+     * {@code data_decoded.readings} reaches the router as the {@code Object[]} Jackson produces
+     * for an untyped JSON array (ValueUtil enables USE_JAVA_ARRAY_FOR_JSON_ARRAY) — the
+     * representation the production path actually carries, which a Groovy list literal does not
+     * reproduce.
+     */
+    static String readingsEnvelope(String eui, long messageTs, List<List> measuredAtAndReading) {
+        def readings = measuredAtAndReading.collect { [measured_at: it[0], currentReading: it[1]] }
+        def inner = [cmd: "gw", EUI: eui, ts: messageTs, data_decoded: [readings: readings]]
+        return JsonOutput.toJson([data: JsonOutput.toJson(inner), tags: [], tech: "L", type: "D"])
+    }
+
     def "ingest endpoint authenticates, matches devEui and writes rawValue"() {
         given: "a container with the ingest key configured for the master realm"
         def conditions = new PollingConditions(timeout: 15, delay: 0.5)
@@ -220,6 +234,43 @@ class IngestEndpointTest extends Specification implements ManagerContainerTrait 
 
             def updated = assetStorageService.find(meter.getId(), true) as WaterMeterAsset
             def attribute = updated.getAttribute(WaterMeterAsset.CURRENT_READING_ATTRIBUTE_DESCRIPTOR).orElse(null)
+            assert attribute.getValue().orElse(null) == 100.0d
+            assert attribute.getTimestamp().orElse(0L) == now
+        }
+    }
+
+    def "a readings list from one message becomes one data point per measurement time"() {
+        given: "a container with the ingest key configured and a water meter asset"
+        def conditions = new PollingConditions(timeout: 15, delay: 0.5)
+        def config = defaultConfig(null)
+        config.put(IotWatchIngestService.OR_IOTWATCH_INGEST_KEYS, "${Constants.MASTER_REALM}:${TEST_KEY}".toString())
+        def container = startContainer(config, defaultServices())
+        // startContainer reuses an already-running container when the config and services match,
+        // and deliberately ignores the listen port in that comparison. The preceding feature method
+        // has an identical config, so the reused container keeps its original port — ask it which.
+        def port = getServerPort()
+        def assetStorageService = container.getService(AssetStorageService.class)
+        def datapointService = container.getService(AssetDatapointService.class)
+        def meter = assetStorageService.merge(waterMeterWithEui("Ingest test water meter", EUI))
+        def now = getClockTimeOf(container)
+        def anHourAgo = now - 3_600_000L
+
+        when: "one message carries two readings for this meter, measured an hour apart"
+        def response = post(port, Constants.MASTER_REALM, TEST_KEY,
+            readingsEnvelope(EUI, now, [[anHourAgo, 90.0d], [now, 100.0d]]))
+
+        then: "both readings are stored, each under its own measurement time"
+        response.statusCode() == 200
+        conditions.eventually {
+            def points = datapointService.getDatapoints(
+                new AttributeRef(meter.getId(), WaterMeterAsset.CURRENT_READING_ATTRIBUTE_DESCRIPTOR.getName()))
+            assert points.any { it.timestamp == anHourAgo && (it.value as double) == 90.0d }
+            assert points.any { it.timestamp == now && (it.value as double) == 100.0d }
+
+            // the newest measurement is the current value; the backdated one only reaches history
+            def updated = assetStorageService.find(meter.getId(), true) as WaterMeterAsset
+            def attribute = updated.getAttribute(WaterMeterAsset.CURRENT_READING_ATTRIBUTE_DESCRIPTOR).orElse(null)
+            assert attribute != null
             assert attribute.getValue().orElse(null) == 100.0d
             assert attribute.getTimestamp().orElse(0L) == now
         }

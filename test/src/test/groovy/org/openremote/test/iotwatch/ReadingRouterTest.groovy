@@ -1,6 +1,8 @@
 package org.openremote.test.iotwatch
 
 import org.openremote.manager.iotwatch.ReadingRouter
+import org.openremote.model.util.ValueUtil
+import org.openremote.model.value.ValueType
 import spock.lang.Specification
 
 class ReadingRouterTest extends Specification {
@@ -9,6 +11,22 @@ class ReadingRouterTest extends Specification {
     static final long MSG_TS = 1_700_000_000_000L
     static final long HOUR = 3_600_000L
     static final long DAY = 86_400_000L
+
+    // ValueUtil.JSON is used below to build a message the way the ingest path builds it; the
+    // mapper is only configured once ValueUtil has been initialised (see SameNameDecoderTest).
+    def setupSpec() {
+        ValueUtil.initialise(null)
+    }
+
+    /**
+     * Builds a message exactly as IngestPayload.parse does — JSON text through ValueUtil.JSON
+     * into a ValueType.ObjectMap. This is the representation the HTTP ingest path produces, and
+     * it differs from a Groovy map literal: ValueUtil enables USE_JAVA_ARRAY_FOR_JSON_ARRAY, so
+     * an untyped JSON array deserialises to Object[] rather than to a List.
+     */
+    static Map<String, Object> ingested(String json) {
+        return ValueUtil.JSON.convertValue(ValueUtil.JSON.readTree(json), ValueType.ObjectMap.class)
+    }
 
     def "flat untagged payload yields one routed reading minus contested fields"() {
         given:
@@ -247,5 +265,89 @@ class ReadingRouterTest extends Specification {
         then:
         result.routed().size() == 2
         result.warnings().isEmpty()
+    }
+
+    def "readings built the way the ingest path builds them are routed"() {
+        given: "a message deserialised by ValueUtil.JSON, as IngestPayload.parse produces it"
+        def message = ingested("""
+            {"EUI": "00112233AABBCCDD", "ts": ${MSG_TS},
+             "data_decoded": {"readings": [
+                 {"measured_at": ${MSG_TS - HOUR}, "currentReading": 10.0},
+                 {"measured_at": ${MSG_TS}, "currentReading": 11.0}]}}""")
+
+        expect: "the readings list is an Object[], which is what production actually carries"
+        message.data_decoded.readings instanceof Object[]
+
+        when:
+        def result = ReadingRouter.route(message, null, ["currentReading"] as Set, [] as Set, MSG_TS)
+
+        then: "both readings are routed, each under its own measurement time"
+        result.routed().size() == 2
+        result.routed()*.timestamp() == [MSG_TS - HOUR, MSG_TS]
+        result.routed()*.message()*.get("data_decoded")*.get("currentReading") == [10.0d, 11.0d]
+        result.warnings().isEmpty()
+    }
+
+    def "a tagged history batch arriving as an Object[] is routed"() {
+        given: "the same array representation, built directly"
+        def message = [data_decoded: [readings: [
+                [external_id: "W1", measured_at: MSG_TS - 2 * HOUR, currentReading: 10d],
+                [external_id: "W1", measured_at: MSG_TS - HOUR, currentReading: 11d]] as Object[]]]
+
+        when:
+        def result = ReadingRouter.route(message, "W1",
+                ["currentReading"] as Set, ["currentReading"] as Set, MSG_TS)
+
+        then:
+        result.routed().size() == 2
+        result.routed()*.timestamp() == [MSG_TS - 2 * HOUR, MSG_TS - HOUR]
+        result.warnings().isEmpty()
+    }
+
+    def "three readings colliding on one field yield exactly one warning"() {
+        given: "three untagged readings for the same field with no measurement time"
+        def message = [data_decoded: [readings: [
+                [currentReading: 10d], [currentReading: 11d], [currentReading: 12d]]]]
+
+        when:
+        def result = ReadingRouter.route(message, null, ["currentReading"] as Set, [] as Set, MSG_TS)
+
+        then: "one warning per (timestamp, colliding field set), not one per colliding pair"
+        result.routed().size() == 3
+        result.warnings().size() == 1
+        result.warnings()[0].contains("currentReading")
+        result.warnings()[0].contains(String.valueOf(MSG_TS))
+    }
+
+    def "a non-finite measured_at is rejected and reported as sent"() {
+        given: "Math.floor(Infinity) == Infinity, so an integral-only check lets it through"
+        def message = [data_decoded: [measured_at: Double.POSITIVE_INFINITY, currentReading: 1d]]
+
+        when:
+        def result = ReadingRouter.route(message, null, ["currentReading"] as Set, [] as Set, MSG_TS)
+
+        then: "the warning names the value the decoder sent, not Long.MAX_VALUE"
+        result.routed().size() == 1
+        result.routed()[0].timestamp() == MSG_TS
+        result.warnings().size() == 1
+        result.warnings()[0].contains("Infinity")
+        !result.warnings()[0].contains(String.valueOf(Long.MAX_VALUE))
+    }
+
+    def "a measured_at above 2^63 is rejected rather than wrapped into the window"() {
+        given: "2^64 + MSG_TS, whose low 64 bits are exactly MSG_TS"
+        def message = ingested('{"data_decoded": {"measured_at": 18446745773709551616, "currentReading": 1.0}}')
+
+        expect: "JSON of that magnitude deserialises to BigInteger, whose longValue() truncates"
+        message.data_decoded.measured_at instanceof BigInteger
+        ((BigInteger) message.data_decoded.measured_at).longValue() == MSG_TS
+
+        when:
+        def result = ReadingRouter.route(message, null, ["currentReading"] as Set, [] as Set, MSG_TS)
+
+        then: "rejected on magnitude, not silently accepted as an in-window timestamp"
+        result.warnings().size() == 1
+        result.warnings()[0].contains("measured_at")
+        result.routed()[0].timestamp() == MSG_TS   // the fallback, reached via a warning
     }
 }
