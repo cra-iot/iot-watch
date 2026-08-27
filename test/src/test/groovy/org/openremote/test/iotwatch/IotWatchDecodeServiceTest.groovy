@@ -114,6 +114,20 @@ class IotWatchDecodeServiceTest extends Specification {
         service.planCache.get("w2").contestedNames() == ["currentReading"] as Set
     }
 
+    def "a batch flagged as a failed decode writes nothing"() {
+        given:
+        service.planCache.put("w1", plan("master", "AABB", ["currentReading"] as Set, null, [] as Set))
+        def message = [data_decoded: [ok: false, readings: [
+                [measured_at: MSG_TS - DAY, currentReading: 10d],
+                [measured_at: MSG_TS, currentReading: 11d]] as Object[]]]
+
+        when: "the platform signalled the failure next to the readings list"
+        service.onRawValue(new AttributeEvent("w1", "rawValue", message, MSG_TS))
+
+        then: "no reading of that batch reaches an attribute"
+        service.dispatched.isEmpty()
+    }
+
     def "decoded events are stamped with the reading's measured_at, not the message timestamp"() {
         given:
         service.planCache.put("w1", plan("master", "AABB", ["currentReading"] as Set, null, [] as Set))

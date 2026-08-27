@@ -20,7 +20,9 @@ import java.util.stream.Collectors;
  * An untagged reading is shared by field name: the asset consumes its targets minus any field
  * a sibling also claims ({@code contestedNames}). The returned messages are re-wrapped as
  * {@code {"data_decoded": <reading>}} so the existing {@link DeviceDecoder}s decode them
- * unchanged (including the per-reading decoded/ok failure guard).
+ * unchanged (including the per-reading decoded/ok failure guard). A failure flag sitting next
+ * to the {@code readings} list instead is applied here, to the whole batch: re-wrapping would
+ * leave it behind in the envelope, out of every decoder's reach.
  *
  * <p>Each routed reading carries the time the measurement was taken: its own
  * {@code measured_at} (epoch millis), else a batch-level {@code measured_at} sitting next to
@@ -114,9 +116,17 @@ public final class ReadingRouter {
                                               List<String> warnings) {
         List<?> readings = readingList(decoded.get(READINGS));
         if (readings == null) {
-            // Flat: data_decoded itself is the single reading and carries its own measured_at.
+            // Flat: data_decoded itself is the single reading, carrying its own measured_at —
+            // and its decoded/ok flags travel with it, so DeviceDecoder enforces them.
             return List.of(new Candidate(decoded,
                 resolveTimestamp(decoded, messageTimestamp, messageTimestamp, warnings)));
+        }
+        if (DeviceDecoder.isFailedDecode(decoded)) {
+            // A failed-decode flag next to the readings list applies to the whole batch. Each
+            // reading is re-wrapped on its own, so the flag would otherwise stay behind in the
+            // batch envelope, where no decoder ever sees it, and readings the platform declared
+            // invalid would be written as measurements.
+            return List.of();
         }
         // A measured_at next to the readings list is the default for entries without one.
         long batchTimestamp = resolveTimestamp(decoded, messageTimestamp, messageTimestamp, warnings);

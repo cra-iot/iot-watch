@@ -351,6 +351,102 @@ class ReadingRouterTest extends Specification {
         result.routed()[0].timestamp() == MSG_TS   // the fallback, reached via a warning
     }
 
+    def "a failed-decode flag next to the readings list discards the whole batch"() {
+        given: "the platform declared the frame undecodable alongside the readings it still sent"
+        def message = [data_decoded: [(flag): false, readings: [
+                [measured_at: MSG_TS - HOUR, currentReading: 10d],
+                [measured_at: MSG_TS, currentReading: 11d]] as Object[]]]
+
+        when:
+        def result = ReadingRouter.route(message, null, ["currentReading"] as Set, [] as Set, MSG_TS)
+
+        then: "nothing is routed: re-wrapping would leave the flag behind, out of the decoder's reach"
+        result.routed().isEmpty()
+        result.warnings().isEmpty()
+
+        where:
+        flag << ["decoded", "ok"]
+    }
+
+    def "a true decode flag next to the readings list routes the batch normally"() {
+        given:
+        def message = [data_decoded: [decoded: true, ok: true, readings: [
+                [measured_at: MSG_TS - HOUR, currentReading: 10d],
+                [measured_at: MSG_TS, currentReading: 11d]] as Object[]]]
+
+        when:
+        def result = ReadingRouter.route(message, null, ["currentReading"] as Set, [] as Set, MSG_TS)
+
+        then:
+        result.routed().size() == 2
+        result.warnings().isEmpty()
+    }
+
+    def "an absent or null batch flag does not discard the batch"() {
+        given:
+        def message = [data_decoded: flags + [readings: [
+                [measured_at: MSG_TS, currentReading: 10d]] as Object[]]]
+
+        when:
+        def result = ReadingRouter.route(message, null, ["currentReading"] as Set, [] as Set, MSG_TS)
+
+        then: "only an explicit false discards it — a missing flag is not a failure signal"
+        result.routed().size() == 1
+        result.warnings().isEmpty()
+
+        where:
+        flags << [[:], [ok: null], [decoded: null], [decoded: true, ok: null]]
+    }
+
+    def "only a JSON boolean false discards the batch"() {
+        given: "a decoder spelling the batch flag as a string or a number instead of a boolean"
+        def message = [data_decoded: [(key): value, readings: [
+                [measured_at: MSG_TS, currentReading: 10d]] as Object[]]]
+
+        when:
+        def result = ReadingRouter.route(message, null, ["currentReading"] as Set, [] as Set, MSG_TS)
+
+        then: "it is NOT recognised and the batch is routed — a known limitation, pinned here"
+        // Same comparison as the per-reading guard (DeviceDecoder.isFailedDecode); widening one
+        // widens both.
+        result.routed().size() == 1
+
+        where:
+        key       | value
+        "ok"      | "false"
+        "ok"      | 0
+        "decoded" | "false"
+        "decoded" | 0
+    }
+
+    def "a per-reading failure flag is left to the decoder, not to the router"() {
+        given: "only one of the two readings is flagged"
+        def message = [data_decoded: [readings: [
+                [ok: false, measured_at: MSG_TS - HOUR, currentReading: 10d],
+                [measured_at: MSG_TS, currentReading: 11d]] as Object[]]]
+
+        when:
+        def result = ReadingRouter.route(message, null, ["currentReading"] as Set, [] as Set, MSG_TS)
+
+        then: "both are routed with the flag intact; DeviceDecoder drops the flagged one"
+        result.routed().size() == 2
+        result.routed()[0].message().get("data_decoded").get("ok") == false
+        result.warnings().isEmpty()
+    }
+
+    def "a batch discarded by its failure flag does not warn about its measured_at"() {
+        given: "an unusable batch whose batch-level measured_at is also invalid"
+        def message = [data_decoded: [ok: false, measured_at: "not a number", readings: [
+                [currentReading: 10d]] as Object[]]]
+
+        when:
+        def result = ReadingRouter.route(message, null, ["currentReading"] as Set, [] as Set, MSG_TS)
+
+        then: "the batch is gone before its timestamp is resolved — no misleading warning"
+        result.routed().isEmpty()
+        result.warnings().isEmpty()
+    }
+
     def "the validity window is a year back and a day forward"() {
         expect:
         ReadingRouter.MAX_BACKDATE_MILLIS == 365L * 24 * 60 * 60 * 1000

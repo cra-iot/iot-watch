@@ -62,6 +62,42 @@ class SameNameDecoderTest extends Specification {
         ]
     }
 
+    def "an absent or null flag is not a failure signal"() {
+        given: "the common case — a payload that carries no decode flags at all, or a null one"
+        def message = [data_decoded: flags + [currentReading: 123.4d]]
+
+        when:
+        def events = decoder.decode("asset1", message, ["currentReading"] as Set, 1000L)
+
+        then: "the reading is decoded — only an explicit false signals failure"
+        // Boolean.FALSE.equals(null) is false, so a missing flag reads as success. Treating an
+        // absent flag as a failure would drop every normal message, which carries no flags.
+        events*.ref*.name == ["currentReading"]
+
+        where:
+        flags << [[:], [ok: null], [decoded: null], [decoded: true, ok: null]]
+    }
+
+    def "only a JSON boolean false is recognised as a failure signal"() {
+        given: "a decoder spelling the flag as a string or a number instead of a boolean"
+        def message = [data_decoded: [(key): value, currentReading: 123.4d]]
+
+        when:
+        def events = decoder.decode("asset1", message, ["currentReading"] as Set, 1000L)
+
+        then: "it is NOT recognised and the reading is written — a known limitation, pinned here"
+        // DeviceDecoder.isFailedDecode compares against Boolean.FALSE, so a platform decoder must
+        // emit a real JSON boolean. Widen isFailedDecode if a decoder ever needs the loose spelling.
+        events*.ref*.name == ["currentReading"]
+
+        where:
+        key       | value
+        "ok"      | "false"
+        "ok"      | 0
+        "decoded" | "false"
+        "decoded" | 0
+    }
+
     def "decodes normally when success flags are present"() {
         given:
         def message = [data_decoded: [decoded: true, ok: true, currentReading: 123.4d]]

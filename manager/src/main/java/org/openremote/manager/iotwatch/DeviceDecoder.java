@@ -37,9 +37,19 @@ public interface DeviceDecoder {
             return null;
         }
         Map<?, ?> decoded = (Map<?, ?>) dd;
-        if (Boolean.FALSE.equals(decoded.get("decoded")) || Boolean.FALSE.equals(decoded.get("ok"))) {
+        if (isFailedDecode(decoded)) {
             return null;
         }
         return decoded;
+    }
+
+    /**
+     * The platform's failed-decode signal on an unwrapped {@code data_decoded} payload:
+     * {@code decoded == false} or {@code ok == false}. Exposed separately from
+     * {@link #successfulDecodedPayload} because {@link ReadingRouter} must apply it to a batch
+     * envelope, whose flags are left behind when each reading is re-wrapped on its own.
+     */
+    static boolean isFailedDecode(Map<?, ?> decoded) {
+        return Boolean.FALSE.equals(decoded.get("decoded")) || Boolean.FALSE.equals(decoded.get("ok"));
     }
 }
