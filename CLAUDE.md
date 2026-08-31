@@ -17,7 +17,6 @@ OpenRemote is AGPL-3.0, so all modifications are published on the public GitHub 
 - `origin` = CRA GitLab (`git@INTERNAL-GITLAB-HOST:iot-platform/other/iot-watch.git`), where daily work is pushed.
 - `upstream` = the OpenRemote custom-project template on GitHub, fetch-only (push URL is `DISABLED` on purpose). Sync by `git fetch upstream && git merge upstream/main` — always merge, never rebase (see README, "Upstream repository synchronization").
 - Keep README changes conflict-friendly: the template's section order is preserved deliberately so upstream merges stay small.
-- Commit messages and code identifiers in English.
 
 ## Build and run commands
 
@@ -56,3 +55,9 @@ Removed template examples are preserved as how-to guides in `docs/examples/` —
 ## Version pinning
 
 The OpenRemote version (currently 1.27.0) is pinned in three places that must stay in sync when upgrading: `gradle/libs.versions.toml` (`openremote = "..."`), `@openremote/*` dependency versions in `ui/app/*/package.json`, and the `x-base` URL anchors in `profile/dev-*.yml`. The project's own version comes from git tags via the axion-release plugin (`./gradlew currentVersion`).
+
+## Communication
+
+Always communicate in English. All content you create — code comments, commit
+messages, documentation, identifiers — must be in English, even when existing
+code or files contain Czech.
