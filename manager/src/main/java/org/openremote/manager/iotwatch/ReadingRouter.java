@@ -134,6 +134,14 @@ public final class ReadingRouter {
         for (Object o : readings) {
             if (o instanceof Map) {
                 Map<String, Object> reading = (Map<String, Object>) o;
+                // A reading the platform declared invalid is dropped here rather than left for
+                // DeviceDecoder. It would write nothing either way, but a candidate that survives
+                // this far still counts towards the tagged duplicate-timestamp check below and
+                // still reports field collisions — so two flagged readings sharing a fallback
+                // timestamp would refuse the whole tagged batch, valid readings included.
+                if (DeviceDecoder.isFailedDecode(reading)) {
+                    continue;
+                }
                 candidates.add(new Candidate(reading,
                     resolveTimestamp(reading, batchTimestamp, messageTimestamp, warnings)));
             }
@@ -214,14 +222,14 @@ public final class ReadingRouter {
             return fallback;
         }
         if (!(raw instanceof Number number)) {
-            warnings.add("ignored measured_at '" + raw + "' (not a number of epoch millis); used "
+            warnings.add("ignored measured_at " + describe(raw) + " (not a number of epoch millis); used "
                 + fallback);
             return fallback;
         }
         double value = number.doubleValue();
         if (!Double.isFinite(value) || value != Math.floor(value)) {
-            warnings.add("ignored measured_at '" + raw
-                + "' (not a finite integral number of epoch millis); used " + fallback);
+            warnings.add("ignored measured_at " + describe(raw)
+                + " (not a finite integral number of epoch millis); used " + fallback);
             return fallback;
         }
         // The window is checked before narrowing: BigInteger.longValue() truncates modulo 2^64
@@ -230,10 +238,27 @@ public final class ReadingRouter {
         // double is exact at these magnitudes and cannot wrap.
         if (value < (double) (messageTimestamp - MAX_BACKDATE_MILLIS)
             || value > (double) (messageTimestamp + MAX_FUTURE_SKEW_MILLIS)) {
-            warnings.add("ignored measured_at " + raw + " outside the validity window around "
+            warnings.add("ignored measured_at " + describe(raw) + " outside the validity window around "
                 + "message timestamp " + messageTimestamp + "; used " + fallback);
             return fallback;
         }
         return number.longValue();
+    }
+
+    /** Longest rendering of a rejected measured_at that reaches the log. */
+    private static final int MAX_REPORTED_VALUE_CHARS = 64;
+
+    /**
+     * A rejected {@code measured_at} as it appears in a warning: the value the decoder sent,
+     * truncated, and tagged with its type. The value is decoder output and so only as
+     * trustworthy as the platform decoder — an unbounded rendering would let one message
+     * amplify into megabytes of log, once per reading and again per asset sharing the devEui.
+     */
+    private static String describe(Object raw) {
+        String text = String.valueOf(raw);
+        String shown = text.length() <= MAX_REPORTED_VALUE_CHARS
+            ? text
+            : text.substring(0, MAX_REPORTED_VALUE_CHARS) + "...(" + text.length() + " chars)";
+        return "'" + shown + "' (" + raw.getClass().getSimpleName() + ")";
     }
 }

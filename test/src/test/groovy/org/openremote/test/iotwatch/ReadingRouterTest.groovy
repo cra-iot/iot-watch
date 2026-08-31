@@ -419,7 +419,7 @@ class ReadingRouterTest extends Specification {
         "decoded" | 0
     }
 
-    def "a per-reading failure flag is left to the decoder, not to the router"() {
+    def "a per-reading failure flag drops that reading in the router"() {
         given: "only one of the two readings is flagged"
         def message = [data_decoded: [readings: [
                 [ok: false, measured_at: MSG_TS - HOUR, currentReading: 10d],
@@ -428,10 +428,62 @@ class ReadingRouterTest extends Specification {
         when:
         def result = ReadingRouter.route(message, null, ["currentReading"] as Set, [] as Set, MSG_TS)
 
-        then: "both are routed with the flag intact; DeviceDecoder drops the flagged one"
-        result.routed().size() == 2
-        result.routed()[0].message().get("data_decoded").get("ok") == false
+        then: "only the unflagged one is routed; DeviceDecoder would have written nothing for the other anyway"
+        result.routed().size() == 1
+        result.routed()[0].message().get("data_decoded").get("currentReading") == 11d
+        result.routed()[0].timestamp() == MSG_TS
         result.warnings().isEmpty()
+    }
+
+    def "flagged readings do not refuse the valid readings tagged for the same meter"() {
+        given: "two unusable readings that would both fall back to the message timestamp, plus a good one"
+        def message = [data_decoded: [readings: [
+                [external_id: "W1", ok: false, currentReading: 10d],
+                [external_id: "W1", ok: false, currentReading: 11d],
+                [external_id: "W1", measured_at: MSG_TS - HOUR, currentReading: 12d]] as Object[]]]
+
+        when:
+        def result = ReadingRouter.route(message, "W1", ["currentReading"] as Set, [] as Set, MSG_TS)
+
+        then: "the flagged pair never reaches the duplicate-timestamp check, so the good reading survives"
+        result.routed().size() == 1
+        result.routed()[0].message().get("data_decoded").get("currentReading") == 12d
+        result.routed()[0].timestamp() == MSG_TS - HOUR
+        result.warnings().isEmpty()
+    }
+
+    def "flagged readings are not reported as colliding with each other"() {
+        given: "two flagged readings that write the same field at the same fallback time"
+        def message = [data_decoded: [readings: [
+                [ok: false, currentReading: 10d],
+                [ok: false, currentReading: 11d]] as Object[]]]
+
+        when:
+        def result = ReadingRouter.route(message, null, ["currentReading"] as Set, [] as Set, MSG_TS)
+
+        then: "nothing is written, so there is no overwrite to report"
+        result.routed().isEmpty()
+        result.warnings().isEmpty()
+    }
+
+    def "an oversized measured_at is truncated before it reaches a warning"() {
+        given: "a decoder that sends a huge string where epoch millis belong"
+        def huge = "9" * 5000
+        def message = [data_decoded: [measured_at: huge, currentReading: 10d]]
+
+        when:
+        def result = ReadingRouter.route(message, null, ["currentReading"] as Set, [] as Set, MSG_TS)
+
+        then: "the reading still falls back to the message timestamp"
+        result.routed().size() == 1
+        result.routed()[0].timestamp() == MSG_TS
+
+        and: "the warning names the type and stays far below the value it rejected"
+        result.warnings().size() == 1
+        result.warnings()[0].contains("String")
+        result.warnings()[0].contains("5000 chars")
+        result.warnings()[0].length() < 200
+        !result.warnings()[0].contains(huge)
     }
 
     def "a batch discarded by its failure flag does not warn about its measured_at"() {
