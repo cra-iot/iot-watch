@@ -2,6 +2,7 @@ package org.openremote.manager.iotwatch;
 
 import org.openremote.model.asset.Asset;
 import org.openremote.model.electricmeter.ElectricMeterAsset;
+import org.openremote.model.gasmeter.GasMeterAsset;
 import org.openremote.model.heatmeter.HeatMeterAsset;
 import org.openremote.model.tracker.ShipTrackerAsset;
 import org.openremote.model.tracker.TrackerAsset;
@@ -31,6 +32,7 @@ public class DecoderRegistry {
             WaterMeterAsset.class, sameName,
             ElectricMeterAsset.class, sameName,
             HeatMeterAsset.class, sameName,
+            GasMeterAsset.class, sameName,
             TrackerAsset.class, gnss,
             ShipTrackerAsset.class, gnss);
     }
@@ -38,7 +40,7 @@ public class DecoderRegistry {
     /** Asset classes to narrow the event subscription to (Task 4). */
     public List<Class<? extends Asset>> assetClasses() {
         return List.of(WaterMeterAsset.class, ElectricMeterAsset.class, HeatMeterAsset.class,
-            TrackerAsset.class, ShipTrackerAsset.class);
+            GasMeterAsset.class, TrackerAsset.class, ShipTrackerAsset.class);
     }
 
     public Optional<DecodePlan> planFor(Asset<?> asset) {
