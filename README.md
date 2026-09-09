@@ -199,10 +199,3 @@ Used for development and testing before releasing to production.
 The live, customer-facing instance with a guarantee of stability and data persistence.
 - **OpenRemote Manager:** internal URL - see the deployment (Helm) repository
 
-## Project setup TODO
-
-Remaining setup steps for this repository:
-
-- [ ] Add a `.gitlab-ci.yml` (Gradle build/test + UI build) on the CRA GitLab; the template's GitHub Actions workflow (`.github/workflows/ci_cd.yml`) stays dormant on the mirror.
-- [ ] Implement the first CRA asset types in `model/` (replacing the `CustomAsset` example) and regenerate the TypeScript model (`./gradlew :ui:component:model:generateTypeScript`).
-- [ ] Define where Manager-authored Groovy rules are backed up in this repository (e.g. a `rules/` directory) and how the backup is refreshed.
