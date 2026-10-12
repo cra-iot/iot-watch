@@ -1,6 +1,9 @@
 package org.openremote.test.iotwatch
 
 import org.openremote.manager.iotwatch.SameNameDecoder
+import org.openremote.model.electricmeter.ElectricMeterAsset
+import org.openremote.model.gasmeter.GasMeterAsset
+import org.openremote.model.heatmeter.HeatMeterAsset
 import org.openremote.model.util.ValueUtil
 import org.openremote.model.watermeter.WaterMeterAsset
 import spock.lang.Specification
@@ -142,5 +145,33 @@ class SameNameDecoderTest extends Specification {
 
         then: "only the real measurement is emitted — the exclusion is enforced, not accidental"
         events*.ref*.name == ["currentReading"]
+    }
+
+    def "a payload can never write the operator-provisioned delivery_point_id"() {
+        given: "a device that reports its own delivery point, and an over-permissive target set"
+        def message = [data_decoded: [
+            delivery_point_id: "27ZG000Z0000000A",
+            currentReading   : 123.4d
+        ]]
+        def targetNames = ["delivery_point_id", "currentReading"] as Set
+
+        when:
+        def events = decoder.decode("asset1", message, targetNames, 1000L)
+
+        then: "only the measurement is written; the identifier is reserved"
+        events*.ref*.name == ["currentReading"]
+    }
+
+    def "delivery_point_id is not a candidate attribute name for any meter type"() {
+        expect:
+        !decoder.candidateAttributeNames(asset).contains("delivery_point_id")
+
+        where:
+        asset << [
+            new WaterMeterAsset("w"),
+            new GasMeterAsset("g"),
+            new ElectricMeterAsset("e"),
+            new HeatMeterAsset("h")
+        ]
     }
 }
