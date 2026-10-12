@@ -32,8 +32,12 @@ public final class DeliveryPoint {
     }
 
     /**
-     * A fresh descriptor instance for one asset type. Each meter class must hold its own static
-     * field: SameNameDecoder discovers attribute names through {@code getDeclaredFields()}.
+     * A fresh descriptor instance for one asset type. {@link AttributeDescriptor} is mutable
+     * (e.g. {@code updateConstraints()}), so sharing one instance across asset types would let a
+     * mutation on one type's descriptor leak into every other type's; each call returns its own
+     * instance to keep that impossible. Each meter class must also hold its own static field
+     * rather than inherit one — {@code SameNameDecoder} discovers attribute names through
+     * {@code getDeclaredFields()}, which does not see fields declared on a superclass.
      */
     public static AttributeDescriptor<String> descriptor() {
         return new AttributeDescriptor<>(ATTRIBUTE_NAME, ValueType.TEXT,

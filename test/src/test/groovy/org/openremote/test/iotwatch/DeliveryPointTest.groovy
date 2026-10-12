@@ -47,8 +47,11 @@ class DeliveryPointTest extends Specification {
         expect: "the format is enforced by the model, not by the operator's care"
         d.constraints.any { it instanceof ValueConstraint.Pattern && it.regexp == DeliveryPoint.PATTERN }
 
+        and: "the label is the exact Global Constraint, not an approximation of it"
+        d.getMetaValue(MetaItemType.LABEL).orElse(null) == "Identifikátor odběrného místa (EAN/EIC)"
+
         and: "customer (restricted) users can read their own delivery point"
-        d.meta.has(MetaItemType.ACCESS_RESTRICTED_READ)
+        d.getMetaValue(MetaItemType.ACCESS_RESTRICTED_READ).orElse(false)
 
         and: "the operator sets this value, so it is not read-only"
         !d.meta.has(MetaItemType.READ_ONLY)
@@ -59,9 +62,8 @@ class DeliveryPointTest extends Specification {
     }
 
     def "an asset that has no delivery point reads as empty, not as a failure"() {
-        given: "an asset built the way every pre-existing asset is: without the attribute"
+        given: "an optional descriptor is never materialised, so no asset has this attribute until someone adds it"
         def asset = new GasMeterAsset("g")
-        asset.getAttributes().remove(DeliveryPoint.ATTRIBUTE_NAME)
 
         expect:
         !asset.getDeliveryPointId().isPresent()
