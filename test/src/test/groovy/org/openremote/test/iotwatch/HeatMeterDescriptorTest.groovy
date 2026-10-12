@@ -86,4 +86,11 @@ class HeatMeterDescriptorTest extends Specification {
         // devEui and rawValue are the ingest-contract names; all the rest are snake_case.
         names.findAll { !(it in ["devEui", "rawValue"]) }.every { it ==~ /^[a-z0-9]+(_[a-z0-9]+)*$/ }
     }
+
+    def "delivery_point_id is an optional text attribute"() {
+        expect:
+        HeatMeterAsset.DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR.isOptional()
+        HeatMeterAsset.DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR.name == "delivery_point_id"
+        HeatMeterAsset.DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR.type == ValueType.TEXT
+    }
 }

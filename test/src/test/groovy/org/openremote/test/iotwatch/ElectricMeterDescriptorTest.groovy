@@ -49,4 +49,11 @@ class ElectricMeterDescriptorTest extends Specification {
         ElectricMeterAsset.TEMPERATURE_4_ATTRIBUTE_DESCRIPTOR         | "temperature_4"        | ValueType.NUMBER
         ElectricMeterAsset.TARIFF_ATTRIBUTE_DESCRIPTOR                | "tariff"               | ValueType.POSITIVE_INTEGER
     }
+
+    def "delivery_point_id is an optional text attribute"() {
+        expect:
+        ElectricMeterAsset.DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR.isOptional()
+        ElectricMeterAsset.DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR.name == "delivery_point_id"
+        ElectricMeterAsset.DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR.type == ValueType.TEXT
+    }
 }

@@ -59,4 +59,11 @@ class WaterMeterDescriptorTest extends Specification {
         WaterMeterAsset.FREEZING_ATTRIBUTE_DESCRIPTOR           | "freezing"
         WaterMeterAsset.NO_WATER_ATTRIBUTE_DESCRIPTOR           | "no_water"
     }
+
+    def "delivery_point_id is an optional text attribute"() {
+        expect:
+        WaterMeterAsset.DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR.isOptional()
+        WaterMeterAsset.DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR.name == "delivery_point_id"
+        WaterMeterAsset.DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR.type == ValueType.TEXT
+    }
 }

@@ -8,6 +8,7 @@ import org.openremote.model.Constants;
 import org.openremote.model.asset.Asset;
 import org.openremote.model.asset.AssetDescriptor;
 import org.openremote.model.attribute.MetaItem;
+import org.openremote.model.meter.DeliveryPoint;
 import org.openremote.model.value.AttributeDescriptor;
 import org.openremote.model.value.MetaItemType;
 import org.openremote.model.value.ValueType;
@@ -61,6 +62,12 @@ public class HeatMeterAsset extends Asset<HeatMeterAsset> {
             new AttributeDescriptor<>("external_id", ValueType.TEXT,
                     new MetaItem<>(MetaItemType.LABEL, "Externí identifikátor"))
                     .withOptional(true);
+
+    // Operator-provisioned delivery-point identifier (electricity EAN / gas EIC). Shared name
+    // across every meter type so one asset query finds a delivery point whatever it measures.
+    // Never decoded — the name is reserved in SameNameDecoder.
+    public static final AttributeDescriptor<String> DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR =
+            DeliveryPoint.descriptor();
 
     // -- Energy registers (GJ) ------------------------------------------------
 
@@ -233,6 +240,7 @@ public class HeatMeterAsset extends Asset<HeatMeterAsset> {
     public Optional<ValueType.ObjectMap> getRawValue() { return getAttributes().getValue(RAW_VALUE_ATTRIBUTE_DESCRIPTOR); }
     public Optional<String> getMeterId() { return getAttributes().getValue(METER_ID_ATTRIBUTE_DESCRIPTOR); }
     public Optional<String> getExternalId() { return getAttributes().getValue(EXTERNAL_ID_ATTRIBUTE_DESCRIPTOR); }
+    public Optional<String> getDeliveryPointId() { return getAttributes().getValue(DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR); }
 
     public Optional<Double> getEnergyHeating() { return getAttributes().getValue(ENERGY_HEATING_ATTRIBUTE_DESCRIPTOR); }
     public Optional<Double> getEnergyCooling() { return getAttributes().getValue(ENERGY_COOLING_ATTRIBUTE_DESCRIPTOR); }

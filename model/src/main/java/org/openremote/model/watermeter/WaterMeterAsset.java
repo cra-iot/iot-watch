@@ -8,6 +8,7 @@ import org.openremote.model.Constants;
 import org.openremote.model.asset.Asset;
 import org.openremote.model.asset.AssetDescriptor;
 import org.openremote.model.attribute.MetaItem;
+import org.openremote.model.meter.DeliveryPoint;
 import org.openremote.model.value.AttributeDescriptor;
 import org.openremote.model.value.MetaItemType;
 import org.openremote.model.value.ValueType;
@@ -51,6 +52,12 @@ public class WaterMeterAsset extends Asset<WaterMeterAsset> {
             new AttributeDescriptor<>("external_id", ValueType.TEXT,
                     new MetaItem<>(MetaItemType.LABEL, "Externí identifikátor"))
                     .withOptional(true);
+
+    // Operator-provisioned delivery-point identifier (electricity EAN / gas EIC). Shared name
+    // across every meter type so one asset query finds a delivery point whatever it measures.
+    // Never decoded — the name is reserved in SameNameDecoder.
+    public static final AttributeDescriptor<String> DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR =
+            DeliveryPoint.descriptor();
 
     // ── Volume registers (m³) ──────────────────────────────────────────────────
 
@@ -162,6 +169,7 @@ public class WaterMeterAsset extends Asset<WaterMeterAsset> {
     public Optional<ValueType.ObjectMap> getRawValue() { return getAttributes().getValue(RAW_VALUE_ATTRIBUTE_DESCRIPTOR); }
     public Optional<String> getMeterId() { return getAttributes().getValue(METER_ID_ATTRIBUTE_DESCRIPTOR); }
     public Optional<String> getExternalId() { return getAttributes().getValue(EXTERNAL_ID_ATTRIBUTE_DESCRIPTOR); }
+    public Optional<String> getDeliveryPointId() { return getAttributes().getValue(DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR); }
     public Optional<Double> getCurrentReading() { return getAttributes().getValue(CURRENT_READING_ATTRIBUTE_DESCRIPTOR); }
     public Optional<Double> getVolumeReverse() { return getAttributes().getValue(VOLUME_REVERSE_ATTRIBUTE_DESCRIPTOR); }
     public Optional<Double> getVolumePreviousDay() { return getAttributes().getValue(VOLUME_PREVIOUS_DAY_ATTRIBUTE_DESCRIPTOR); }
