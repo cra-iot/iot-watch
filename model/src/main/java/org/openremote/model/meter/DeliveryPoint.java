@@ -3,7 +3,6 @@ package org.openremote.model.meter;
 import org.openremote.model.attribute.MetaItem;
 import org.openremote.model.value.AttributeDescriptor;
 import org.openremote.model.value.MetaItemType;
-import org.openremote.model.value.ValueConstraint;
 import org.openremote.model.value.ValueType;
 
 /**
@@ -14,19 +13,17 @@ import org.openremote.model.value.ValueType;
  *
  * <p>Operator-provisioned, never decoded — the name is in {@code SameNameDecoder}'s reserved
  * set, so no device payload can overwrite it.
+ *
+ * <p>Free text by design: the attribute carries no format constraint, so the operator may store
+ * whatever the customer supplied, including a code from a scheme this model does not know. The
+ * trade-off is that a mistyped or padded code is accepted and will simply not be found by an
+ * equality search.
  */
 public final class DeliveryPoint {
 
     public static final String ATTRIBUTE_NAME = "delivery_point_id";
 
     public static final String LABEL = "Identifikátor odběrného místa (EAN/EIC)";
-
-    /**
-     * Electricity EAN: exactly 18 digits. Gas EIC: 16 characters — a two-digit issuing-office
-     * number, the object-type letter, 12 free characters and a check character. Codes are
-     * stored uppercase and unpadded; anything else is a typo that no equality search would find.
-     */
-    public static final String PATTERN = "^(\\d{18}|[0-9]{2}[XYZWTAV][A-Z0-9-]{12}[A-Z0-9])$";
 
     private DeliveryPoint() {
     }
@@ -43,7 +40,6 @@ public final class DeliveryPoint {
         return new AttributeDescriptor<>(ATTRIBUTE_NAME, ValueType.TEXT,
                 new MetaItem<>(MetaItemType.LABEL, LABEL),
                 new MetaItem<>(MetaItemType.ACCESS_RESTRICTED_READ))
-                .withOptional(true)
-                .withConstraints(new ValueConstraint.Pattern(PATTERN));
+                .withOptional(true);
     }
 }

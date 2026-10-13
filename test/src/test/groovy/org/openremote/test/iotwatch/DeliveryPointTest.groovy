@@ -6,12 +6,9 @@ import org.openremote.model.heatmeter.HeatMeterAsset
 import org.openremote.model.meter.DeliveryPoint
 import org.openremote.model.util.ValueUtil
 import org.openremote.model.value.MetaItemType
-import org.openremote.model.value.ValueConstraint
 import org.openremote.model.value.ValueType
 import org.openremote.model.watermeter.WaterMeterAsset
 import spock.lang.Specification
-
-import java.util.regex.Pattern
 
 class DeliveryPointTest extends Specification {
 
@@ -21,8 +18,6 @@ class DeliveryPointTest extends Specification {
     def setupSpec() {
         ValueUtil.initialise(null)
     }
-
-    static final Pattern RX = Pattern.compile(DeliveryPoint.PATTERN)
 
     def "every meter type declares the same optional text attribute"() {
         expect:
@@ -40,12 +35,12 @@ class DeliveryPointTest extends Specification {
         ]
     }
 
-    def "the descriptor carries the pattern constraint and the restricted-read meta"() {
+    def "the descriptor carries the expected meta and constrains nothing"() {
         given:
         def d = GasMeterAsset.DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR
 
-        expect: "the format is enforced by the model, not by the operator's care"
-        d.constraints.any { it instanceof ValueConstraint.Pattern && it.regexp == DeliveryPoint.PATTERN }
+        expect: "free text by decision — the operator stores whatever the customer supplied"
+        !d.constraints
 
         and: "the label is the exact Global Constraint, not an approximation of it"
         d.getMetaValue(MetaItemType.LABEL).orElse(null) == "Identifikátor odběrného místa (EAN/EIC)"
@@ -69,34 +64,25 @@ class DeliveryPointTest extends Specification {
         !asset.getDeliveryPointId().isPresent()
     }
 
-    def "the pattern accepts '#code'"() {
-        expect:
-        RX.matcher(code).matches()
+    def "any text is accepted — '#code' is stored as given"() {
+        given:
+        def asset = new GasMeterAsset("g")
+
+        when: "the operator provisions the attribute and types a value"
+        asset.getAttributes().addOrReplace(
+            new org.openremote.model.attribute.Attribute<>(
+                GasMeterAsset.DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR, code))
+
+        then: "nothing in the model rejects or rewrites it"
+        asset.getDeliveryPointId().orElse(null) == code
 
         where:
         code << [
             "859182400000000001",   // electricity EAN
-            "859182400000000002",   // electricity EAN
             "27ZG000Z0000000A",     // gas EIC
-            "27ZG000Z00000000",     // gas EIC ending in a digit
-            "27ZG-00Z0000000A"      // EIC with a hyphen in the free part — legal, must not be rejected
-        ]
-    }
-
-    def "the pattern rejects '#code' — an unsearchable value must not reach the database"() {
-        expect:
-        !RX.matcher(code).matches()
-
-        where:
-        code << [
-            " 859182400000000001",   // leading whitespace
-            "859182400000000001 ",   // trailing whitespace
-            "85918240000000000",     // 17 digits
-            "8591824000000000011",   // 19 digits
-            "27zg000z0000000a",      // lowercase EIC
-            "27ZG000Z0000000",       // 15 characters
-            "859182400000000001|27ZG000Z0000000A",  // two codes in one field
-            ""
+            "27zg000z0000000a",     // lowercase — accepted, but an equality search will not find it
+            "85918240000000000",    // too short for an EAN — accepted, nothing validates the length
+            "whatever the customer wrote"
         ]
     }
 }
