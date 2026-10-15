@@ -70,3 +70,9 @@ docs/water-meter-dictionary.md
 /docs/http-ingest.md
 /docs/decoder-dictionary.md
 /docs/examples/ingest/
+
+# Platform device exports (customer data — never commit to the public mirror)
+/devices.json
+
+# Brainstorming session mockups (local design artefacts)
+/.superpowers/

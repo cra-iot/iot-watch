@@ -72,7 +72,7 @@ to get realm and authentication context helpers (see the built-in
 `@RolesAllowed` the same way the built-in resources do.
 
 Register the singleton in a `ContainerService` (verified against
-OpenRemote 1.27.0 — `ManagerWebService.addApiSingleton`):
+OpenRemote 1.32.1 — `ManagerWebService.addApiSingleton`):
 
 ```java
 package org.openremote.manager.iotwatch;

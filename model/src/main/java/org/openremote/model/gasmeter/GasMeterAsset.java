@@ -187,7 +187,7 @@ public class GasMeterAsset extends Asset<GasMeterAsset> {
             alarm("valve_closed", "Uzavřený ventil");
 
     // "gas-cylinder", not "meter-gas": the Manager UI resolves this name against @mdi/js, and
-    // OpenRemote 1.29.0 pins ^5.9.55, where mdiMeterGas does not exist yet (added in MDI 6.5).
+    // OpenRemote 1.32.1 pins ^5.9.55, where mdiMeterGas does not exist yet (added in MDI 6.5).
     // Teal keeps the type distinct from water blue, electric amber and heat orange.
     public static final AssetDescriptor<GasMeterAsset> GAS_METER_ASSET_DESCRIPTOR =
             new AssetDescriptor<>("gas-cylinder", "00897B", GasMeterAsset.class);

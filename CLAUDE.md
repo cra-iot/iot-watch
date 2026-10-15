@@ -54,7 +54,9 @@ Removed template examples are preserved as how-to guides in `docs/examples/` —
 
 ## Version pinning
 
-The OpenRemote version (currently 1.29.0) is pinned in three places that must stay in sync when upgrading: `gradle/libs.versions.toml` (`openremote = "..."`), `@openremote/*` dependency versions in `ui/app/*/package.json`, and the `x-base` URL anchors in `profile/dev-*.yml`. The project's own version comes from git tags via the axion-release plugin (`./gradlew currentVersion`).
+The OpenRemote version (currently 1.32.1) is pinned in three places that must stay in sync when upgrading: `gradle/libs.versions.toml` (`openremote = "..."`), `@openremote/*` dependency versions in `ui/app/*/package.json`, and the `x-base` URL anchors in `profile/dev-*.yml`. The project's own version comes from git tags via the axion-release plugin (`./gradlew currentVersion`).
+
+The manager also checks the Keycloak version at startup: 1.32.x refuses to start against anything older than Keycloak 26.7.0, so the Keycloak image must be bumped alongside it (Helm charts for TEST/PROD, `openremote/keycloak:latest` locally).
 
 ## Communication
 
