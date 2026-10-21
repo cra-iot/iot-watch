@@ -46,8 +46,10 @@ public final class FleetColumns {
      * Boolean attributes that report a state, not a fault, so a true value is not an alarm.
      * Every other boolean on an asset is treated as an alarm flag. Add a name here when a new
      * type declares a state boolean; never encode alarms themselves as a list.
+     *
+     * active: a tracker's assignment flag, true whenever the tracker is in use.
      */
-    public static final Set<String> STATE_BOOLEANS = Set.of("valve_closed");
+    public static final Set<String> STATE_BOOLEANS = Set.of("valve_closed", "active");
 
     private FleetColumns() {
     }

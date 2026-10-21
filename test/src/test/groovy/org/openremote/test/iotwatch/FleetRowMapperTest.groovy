@@ -5,6 +5,7 @@ import org.openremote.manager.iotwatch.FleetRowMapper
 import org.openremote.model.attribute.Attribute
 import org.openremote.model.electricmeter.ElectricMeterAsset
 import org.openremote.model.gasmeter.GasMeterAsset
+import org.openremote.model.tracker.TrackerAsset
 import org.openremote.model.util.ValueUtil
 import org.openremote.model.value.ValueType
 import org.openremote.model.watermeter.WaterMeterAsset
@@ -170,5 +171,19 @@ class FleetRowMapperTest extends Specification {
         row.devEui == "70B3D5"
         row.meterId == "21345118"
         row.deliveryPointId == null
+    }
+
+    def "a tracker in use is not in alarm"() {
+        given: "active is the tracker's assignment state, true whenever it is in use"
+        def asset = new TrackerAsset("Tracker")
+        asset.setId("0123456789012345678906")
+        asset.getAttributes().addOrReplace(
+                new Attribute<>(TrackerAsset.ACTIVE_ATTRIBUTE_DESCRIPTOR, true, T))
+
+        when:
+        def row = FleetRowMapper.map(asset, RESOLVER, [], null)
+
+        then:
+        row.alarms.isEmpty()
     }
 }
