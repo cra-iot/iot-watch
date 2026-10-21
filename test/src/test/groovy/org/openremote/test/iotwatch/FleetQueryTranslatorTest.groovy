@@ -2,6 +2,8 @@ package org.openremote.test.iotwatch
 
 import org.openremote.manager.iotwatch.FleetColumnResolver
 import org.openremote.manager.iotwatch.FleetQueryTranslator
+import org.openremote.model.asset.Asset
+import org.openremote.model.asset.impl.ThingAsset
 import org.openremote.model.iotwatch.FleetQuery
 import org.openremote.model.query.filter.BooleanPredicate
 import org.openremote.model.query.filter.NumberPredicate
@@ -227,5 +229,51 @@ class FleetQueryTranslatorTest extends Specification {
         !items[0].negated
         ((StringPredicate) items[0].value).match == AssetQuery.Match.EXACT
         items[1].negated
+    }
+
+    def "with a site, the name match leaves SQL: names apply only to the first recursion level"() {
+        given:
+        def fq = new FleetQuery()
+        fq.text = "kotelna"
+        fq.parentIds = ["building-1"]
+        fq.recursive = true
+
+        when:
+        def nameQuery = FleetQueryTranslator.nameTextQuery(fq, "acme", SELECT)
+
+        then: "the query still carries the site and the tokens, but no names"
+        FleetQueryTranslator.matchesNameInJava(fq)
+        nameQuery.names == null
+        nameQuery.parents*.id == ["building-1"]
+        nameQuery.recursive
+
+        and: "the identifier branch is unchanged"
+        FleetQueryTranslator.identifierTextQuery(fq, "acme", SELECT).attributes.operator ==
+                org.openremote.model.query.LogicGroup.Operator.OR
+    }
+
+    def "without a site, or without text, the name match stays in SQL"() {
+        given:
+        def textOnly = new FleetQuery()
+        textOnly.text = "kotelna"
+        def siteOnly = new FleetQuery()
+        siteOnly.parentIds = ["building-1"]
+        siteOnly.recursive = true
+
+        expect:
+        !FleetQueryTranslator.matchesNameInJava(textOnly)
+        FleetQueryTranslator.nameTextQuery(textOnly, "acme", SELECT).names[0].value == "kotelna"
+        !FleetQueryTranslator.matchesNameInJava(siteOnly)
+        FleetQueryTranslator.nameTextQuery(siteOnly, "acme", SELECT) == null
+    }
+
+    def "the Java name filter keeps names containing the text, ignoring case"() {
+        given:
+        List<Asset<?>> assets = [new ThingAsset("Kotelna sever"), new ThingAsset("Meter in KOTELNA"),
+                                 new ThingAsset("Hall")]
+
+        expect:
+        FleetQueryTranslator.filterByName(assets, "kotelna")*.name == ["Kotelna sever", "Meter in KOTELNA"]
+        FleetQueryTranslator.filterByName(assets, "missing").isEmpty()
     }
 }

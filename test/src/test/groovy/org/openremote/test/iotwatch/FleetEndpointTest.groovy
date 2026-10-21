@@ -45,6 +45,8 @@ class FleetEndpointTest extends Specification implements ManagerContainerTrait {
     @Shared FleetResource restrictedResource
     @Shared FleetResource outsiderResource
     @Shared String linkedAssetId
+    @Shared String buildingId
+    @Shared String floorId
     @Shared int port
     @Shared String readerToken
     @Shared String restrictedToken
@@ -65,6 +67,18 @@ class FleetEndpointTest extends Specification implements ManagerContainerTrait {
         def building = new ThingAsset("Building")
         building.setRealm(REALM)
         building = assetStorageService.merge(building)
+        buildingId = building.getId()
+
+        // One level deeper: a free-text name match under a site must reach below the site's children
+        def floor = new ThingAsset("Floor")
+        floor.setRealm(REALM)
+        floor.setParentId(buildingId)
+        floorId = assetStorageService.merge(floor).getId()
+
+        def waterNested = new WaterMeterAsset("Water meter C")
+        waterNested.setRealm(REALM)
+        waterNested.setParentId(floorId)
+        assetStorageService.merge(waterNested)
 
         def waterWithRaw = new WaterMeterAsset("Water meter A")
         waterWithRaw.setRealm(REALM)
@@ -246,8 +260,9 @@ class FleetEndpointTest extends Specification implements ManagerContainerTrait {
         def result = readerResource.query(new FleetQuery())
 
         then:
-        result.rows.findAll { it.parentId != null }.every { it.parentName == "Building" }
-        result.facets.parents.every { it.label == "Building" }
+        def names = [(buildingId): "Building", (floorId): "Floor"]
+        result.rows.findAll { it.parentId != null }.every { it.parentName == names[it.parentId] }
+        result.facets.parents.every { it.label == names[it.key] }
     }
 
     def "a restricted user only sees their own linked assets, with a usable row"() {
@@ -336,5 +351,37 @@ class FleetEndpointTest extends Specification implements ManagerContainerTrait {
 
         then:
         thrown(BadRequestException)
+    }
+
+    static FleetQuery siteText(String parentId, String text) {
+        def query = new FleetQuery()
+        query.parentIds = [parentId]
+        query.recursive = true
+        query.text = text
+        return query
+    }
+
+    def "free text under a site matches names at every level below it"() {
+        when: "the meter sits under Floor, not directly under Building"
+        def nested = readerResource.query(siteText(buildingId, "meter c"))
+
+        then:
+        nested.total == 1
+        nested.rows[0].name == "Water meter C"
+
+        when: "the text names an intermediate location, not a device"
+        def intermediate = readerResource.query(siteText(buildingId, "Floor"))
+
+        then: "the meter below it does not match by inheritance"
+        intermediate.total == 0
+    }
+
+    def "a restricted user's free text under a site returns their linked meter"() {
+        when:
+        def result = restrictedResource.query(siteText(buildingId, "meter A"))
+
+        then:
+        result.total == 1
+        result.rows[0].id == linkedAssetId
     }
 }

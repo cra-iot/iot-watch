@@ -2,7 +2,9 @@ package org.openremote.manager.iotwatch;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
+import org.openremote.model.asset.Asset;
 import org.openremote.model.iotwatch.FleetQuery;
 import org.openremote.model.query.AssetQuery;
 import org.openremote.model.query.LogicGroup;
@@ -40,16 +42,45 @@ public final class FleetQueryTranslator {
         return baseQuery(fleetQuery, realm, select, null);
     }
 
-    /** Tokens plus a name CONTAINS match, or null when there is no free text. */
+    /**
+     * Tokens plus a name CONTAINS match, or null when there is no free text. When
+     * {@link #matchesNameInJava} is true the name match is left out of the query and the caller
+     * applies {@link #filterByName} to its result instead.
+     */
     public static AssetQuery nameTextQuery(FleetQuery fleetQuery, String realm, String[] select) {
         if (isBlank(fleetQuery.text)) {
             return null;
         }
         AssetQuery query = baseQuery(fleetQuery, realm, select, null);
-        query.names = new StringPredicate[]{
-                new StringPredicate(AssetQuery.Match.CONTAINS, false, fleetQuery.text)
-        };
+        if (!matchesNameInJava(fleetQuery)) {
+            query.names = new StringPredicate[]{
+                    new StringPredicate(AssetQuery.Match.CONTAINS, false, fleetQuery.text)
+            };
+        }
         return query;
+    }
+
+    /**
+     * True when the free-text name match cannot go into SQL. AssetStorageService (1.32.1) applies
+     * AssetQuery.names only to the first level of a recursive parent query, so combined with a
+     * site the names would match the site's direct children and return everything below a
+     * matching child - a name match at the wrong level.
+     */
+    public static boolean matchesNameInJava(FleetQuery fleetQuery) {
+        return !isBlank(fleetQuery.text) && fleetQuery.parentIds != null && !fleetQuery.parentIds.isEmpty();
+    }
+
+    /**
+     * The assets whose name contains {@code text}, ignoring case: the Java equivalent of the
+     * name predicate {@link #nameTextQuery} would otherwise send. Applied only to assets an
+     * authorized query returned.
+     */
+    public static List<Asset<?>> filterByName(List<Asset<?>> assets, String text) {
+        String needle = text.toUpperCase(Locale.ROOT);
+        return assets.stream()
+                .filter(asset -> asset.getName() != null
+                        && asset.getName().toUpperCase(Locale.ROOT).contains(needle))
+                .toList();
     }
 
     /** Tokens plus an OR over the identity attributes, or null when there is no free text. */

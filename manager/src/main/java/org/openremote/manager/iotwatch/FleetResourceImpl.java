@@ -50,22 +50,19 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
         // actually found, below.
         String[] select = columnResolver.selectAttributes(fleetQuery, fleetQuery.types);
 
-        List<AssetQuery> assetQueries = new ArrayList<>();
+        List<Asset<?>> assets = new ArrayList<>();
         AssetQuery nameQuery = FleetQueryTranslator.nameTextQuery(fleetQuery, realm, select);
         if (nameQuery != null) {
-            assetQueries.add(nameQuery);
-            assetQueries.add(FleetQueryTranslator.identifierTextQuery(fleetQuery, realm, select));
-        } else {
-            assetQueries.add(FleetQueryTranslator.filterQuery(fleetQuery, realm, select));
-        }
-
-        List<Asset<?>> assets = new ArrayList<>();
-        for (AssetQuery assetQuery : assetQueries) {
-            // The single most important line here: core's own authorization gate, never bypassed.
-            if (!assetStorageService.authorizeAssetQuery(assetQuery, getAuthContext(), realm)) {
-                throw new ForbiddenException("User not authorized to execute specified query");
+            List<Asset<?>> byName = authorizedFindAll(nameQuery, realm);
+            if (FleetQueryTranslator.matchesNameInJava(fleetQuery)) {
+                // The name half of the union is matched here, over the authorized result only.
+                byName = FleetQueryTranslator.filterByName(byName, fleetQuery.text);
             }
-            assets.addAll(assetStorageService.findAll(assetQuery));
+            assets.addAll(byName);
+            assets.addAll(authorizedFindAll(
+                    FleetQueryTranslator.identifierTextQuery(fleetQuery, realm, select), realm));
+        } else {
+            assets.addAll(authorizedFindAll(FleetQueryTranslator.filterQuery(fleetQuery, realm, select), realm));
         }
 
         Set<String> resultTypes = new LinkedHashSet<>();
@@ -95,6 +92,14 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
         result.facets.parents.forEach(facet -> facet.label = parentNames.get(facet.key));
         result.columns = columns;
         return result;
+    }
+
+    protected List<Asset<?>> authorizedFindAll(AssetQuery assetQuery, String realm) {
+        // The single most important line here: core's own authorization gate, never bypassed.
+        if (!assetStorageService.authorizeAssetQuery(assetQuery, getAuthContext(), realm)) {
+            throw new ForbiddenException("User not authorized to execute specified query");
+        }
+        return assetStorageService.findAll(assetQuery);
     }
 
     /**
