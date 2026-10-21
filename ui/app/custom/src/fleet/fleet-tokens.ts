@@ -254,3 +254,112 @@ export function fromUrlParams(params: URLSearchParams): { tokens: Token[] } {
         return { tokens: [] };
     }
 }
+
+export interface TokenSuggestion {
+    label: string;
+    /** Replaces the input text when picked. */
+    input: string;
+    /** True when picking it completes a token and should be committed straight away. */
+    commit?: boolean;
+}
+
+export type TokenValidation =
+    | { ok: true }
+    | {
+        ok: false;
+        reason: "emptyValue" | "unknownValue" | "unknownAttribute" | "unknownKind" | "notNumeric" | "invalidDuration";
+        suggestions: TokenSuggestion[];
+    };
+
+/** Classic Levenshtein distance; inputs are short kind names. */
+function editDistance(a: string, b: string): number {
+    let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+        const current = [i];
+        for (let j = 1; j <= b.length; j++) {
+            current[j] = Math.min(
+                previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+            );
+        }
+        previous = current;
+    }
+    return previous[b.length];
+}
+
+function kindSuggestions(definitions: TokenDefinition[], word?: string): TokenSuggestion[] {
+    return definitions
+        .filter((d) => !word || d.kind.startsWith(word.slice(0, 3)) || editDistance(word, d.kind) <= 2)
+        .map((d) => ({ label: `${d.kind}:`, input: `${d.kind}:` }));
+}
+
+/**
+ * Checks a token against the known kinds, value lists and attribute names, so the bar never
+ * emits a query the server would silently answer with "no matches". Pure: the caller supplies
+ * the descriptors and the attribute names.
+ */
+export function validateToken(
+    token: Token, definitions: TokenDefinition[], knownAttributeNames: string[],
+): TokenValidation {
+    if (token.kind === "text") {
+        const colon = token.value.indexOf(":");
+        const word = colon > 0 ? token.value.slice(0, colon).toLowerCase() : "";
+        // A "word:" that is not a kind but looks like a mistyped one is not free text.
+        if (word.length >= 2 && !definitions.some((d) => d.kind === word)) {
+            const close = definitions.filter((d) =>
+                (word.length >= 3 && d.kind.startsWith(word.slice(0, 3))) || editDistance(word, d.kind) <= 2);
+            if (close.length) {
+                return {
+                    ok: false, reason: "unknownKind",
+                    suggestions: close.map((d) => ({ label: `${d.kind}:`, input: `${d.kind}:` })),
+                };
+            }
+        }
+        return { ok: true };
+    }
+
+    const definition = definitions.find((d) => d.kind === token.kind);
+    if (!definition) {
+        return { ok: false, reason: "unknownKind", suggestions: kindSuggestions(definitions) };
+    }
+    if (token.kind === "attr") {
+        const [name, value] = token.value.split("=");
+        if (!name || !value) {
+            return { ok: false, reason: "emptyValue", suggestions: [] };
+        }
+        if (!knownAttributeNames.includes(name)) {
+            const needle = name.toLowerCase();
+            return {
+                ok: false, reason: "unknownAttribute",
+                suggestions: knownAttributeNames
+                    .filter((n) => n.toLowerCase().includes(needle) || editDistance(n.toLowerCase(), needle) <= 2)
+                    .slice(0, 20)
+                    .map((n) => ({ label: n, input: `attr:${n}=` })),
+            };
+        }
+        return { ok: true };
+    }
+    if (token.value.trim() === "") {
+        return {
+            ok: false, reason: "emptyValue",
+            suggestions: (definition.values ?? []).map((v) => ({
+                label: v.label, input: `${token.kind}:${v.value}`, commit: true,
+            })),
+        };
+    }
+    if (definition.values && !definition.values.some((v) => v.value === token.value)) {
+        const needle = token.value.toLowerCase();
+        return {
+            ok: false, reason: "unknownValue",
+            suggestions: definition.values
+                .filter((v) => v.value.toLowerCase().includes(needle) || v.label.toLowerCase().includes(needle))
+                .map((v) => ({ label: v.label, input: `${token.kind}:${v.value}`, commit: true })),
+        };
+    }
+    if (definition.numeric && !(isNumeric(token.value) && rangeOk(token))) {
+        return { ok: false, reason: "notNumeric", suggestions: [] };
+    }
+    if (token.kind === "seen" && !toIsoDuration(token.value)) {
+        return { ok: false, reason: "invalidDuration", suggestions: [] };
+    }
+    return { ok: true };
+}

@@ -1,13 +1,14 @@
 import { css, html, nothing, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { AssetModelUtil } from "@openremote/model";
 import { OrElement } from "@openremote/or-element";
 import { i18next } from "@openremote/or-translate";
 import "@openremote/or-vaadin-components/or-vaadin-text-field";
 import "@openremote/or-vaadin-components/or-vaadin-number-field";
 import "@openremote/or-vaadin-components/or-vaadin-select";
 import {
-    formatSearch, parseSearch, tokenDefinitions,
-    type Token, type TokenDefinition, type TokenOperator,
+    formatSearch, parseSearch, tokenDefinitions, validateToken,
+    type Token, type TokenDefinition, type TokenOperator, type TokenSuggestion,
 } from "./fleet-tokens";
 
 export class OrFleetSearchChangeEvent extends CustomEvent<{ tokens: Token[] }> {
@@ -73,6 +74,8 @@ export class OrFleetSearch extends OrElement {
                 border-radius: 4px; box-shadow: 0 2px 8px rgba(0, 0, 0, .2);
                 max-height: 320px; overflow-y: auto;
             }
+            .panel:focus { outline: none; }
+            .error { padding: 8px 12px; color: var(--or-app-color4, #e3000a); }
             .option { padding: 8px 12px; cursor: pointer; }
             .option:hover { background: var(--or-app-color2, #f0f0f0); }
             .editor { display: flex; align-items: end; gap: 8px; padding: 8px 12px; }
@@ -88,6 +91,13 @@ export class OrFleetSearch extends OrElement {
     @state() protected _operator: TokenOperator = "EQUALS";
     @state() protected _number = "";
     @state() protected _rangeNumber = "";
+    @state() protected _error?: { reason: string; suggestions: TokenSuggestion[] };
+
+    constructor() {
+        super();
+        // Host-level so the bar and the panel (siblings in the shadow root) share one focus scope.
+        this.addEventListener("focusout", (ev) => this._onFocusOut(ev as FocusEvent));
+    }
 
     protected _definitions(): TokenDefinition[] {
         return tokenDefinitions();
@@ -107,8 +117,31 @@ export class OrFleetSearch extends OrElement {
         this.dispatchEvent(new OrFleetSearchChangeEvent(tokens));
     }
 
+    protected _attributeNames(): string[] {
+        const names = new Set<string>();
+        AssetModelUtil.getAssetDescriptors()
+            .filter((descriptor) => descriptor.descriptorType === "asset")
+            .forEach((descriptor) => {
+                (AssetModelUtil.getAssetTypeInfo(descriptor.name!)?.attributeDescriptors ?? [])
+                    .forEach((attribute) => attribute.name && names.add(attribute.name));
+            });
+        return [...names];
+    }
+
+    /** Refuses the whole batch when any token is invalid: the input stays, the error is shown, nothing is emitted. */
     protected _add(added: Token[]) {
         if (!added.length) { return; }
+        const definitions = this._definitions();
+        const names = this._attributeNames();
+        for (const token of added) {
+            const result = validateToken(token, definitions, names);
+            if (result.ok === false) {
+                this._error = { reason: result.reason, suggestions: result.suggestions };
+                this._open = true;
+                return;
+            }
+        }
+        this._error = undefined;
         this._input = "";
         this._number = "";
         this._rangeNumber = "";
@@ -164,6 +197,14 @@ export class OrFleetSearch extends OrElement {
         }
     }
 
+    /** Closes the panel only when focus leaves the component; the select overlay lives outside our shadow DOM. */
+    protected _onFocusOut(ev: FocusEvent) {
+        const next = ev.relatedTarget as Node | null;
+        if (next && (this.shadowRoot!.contains(next) || this.contains(next))) { return; }
+        if (next instanceof Element && next.closest("vaadin-select-overlay, vaadin-select-item, vaadin-select-list-box")) { return; }
+        this._open = false;
+    }
+
     protected _chipLabel(token: Token): string {
         if (token.kind === "text") { return token.value; }
         const definition = this._definitions().find((d) => d.kind === token.kind);
@@ -181,6 +222,18 @@ export class OrFleetSearch extends OrElement {
         const keepFocus = (ev: Event) => {
             if ((ev.target as HTMLElement).closest(".option")) { ev.preventDefault(); }
         };
+
+        if (this._error) {
+            return html`<div class="panel" tabindex="-1" @mousedown=${keepFocus}>
+                <div class="error" role="alert">${translate(`fleet.token.error.${this._error.reason}`)}</div>
+                ${this._error.suggestions.map((s) => html`
+                    <div class="option" @click=${() => {
+                        this._error = undefined;
+                        this._input = s.input;
+                        if (s.commit) { this._commitInput(); }
+                    }}>${s.label}</div>`)}
+            </div>`;
+        }
 
         if (!active) {
             const needle = this._input.trim().toLowerCase();
@@ -207,7 +260,7 @@ export class OrFleetSearch extends OrElement {
         }
         if (definition.numeric) {
             const between = this._operator === "BETWEEN";
-            return html`<div class="panel">
+            return html`<div class="panel" tabindex="-1">
                 <div class="editor">
                     <or-vaadin-select
                         style="width: 90px"
@@ -247,9 +300,12 @@ export class OrFleetSearch extends OrElement {
                 <or-vaadin-text-field
                     .value=${this._input}
                     placeholder=${translate("fleet.token.placeholder")}
-                    @value-changed=${(ev: CustomEvent) => { this._input = ev.detail.value ?? ""; }}
+                    @value-changed=${(ev: CustomEvent) => {
+                        const value = ev.detail.value ?? "";
+                        if (value !== this._input) { this._error = undefined; }
+                        this._input = value;
+                    }}
                     @focus=${() => { this._open = true; }}
-                    @blur=${() => { this._open = false; }}
                     @keydown=${(ev: KeyboardEvent) => this._onKeydown(ev)}
                 ></or-vaadin-text-field>
             </div>

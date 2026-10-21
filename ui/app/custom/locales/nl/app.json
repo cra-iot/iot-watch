@@ -32,7 +32,15 @@
       "attr": "Attribute",
       "placeholder": "Search or add a filter",
       "remove": "Remove filter",
-      "add": "Add"
+      "add": "Add",
+      "error": {
+        "emptyValue": "Enter a value for this filter.",
+        "unknownValue": "Unknown value. Pick one from the list.",
+        "unknownAttribute": "Unknown attribute. Pick one from the list.",
+        "unknownKind": "Unknown filter. Did you mean one of these?",
+        "notNumeric": "Enter a number.",
+        "invalidDuration": "Enter a duration such as 30m, 24h or 7d."
+      }
     }
   }
 }

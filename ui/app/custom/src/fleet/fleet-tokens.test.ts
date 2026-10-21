@@ -1,6 +1,6 @@
 import { AssetModelUtil } from "@openremote/model";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { formatSearch, fromUrlParams, parseSearch, toFleetQuery, toUrlParams, tokenDefinitions } from "./fleet-tokens";
+import { formatSearch, fromUrlParams, parseSearch, toFleetQuery, toUrlParams, tokenDefinitions, validateToken } from "./fleet-tokens";
 
 describe("parseSearch", () => {
     it("reads a bare word as free text", () => {
@@ -158,5 +158,76 @@ describe("tokenDefinitions", () => {
             { value: "leakage", label: "Leakage" },
             { value: "tamper", label: "tamper" },
         ]);
+    });
+});
+
+describe("validateToken", () => {
+    const definitions = [
+        { kind: "type", labelKey: "k", values: [{ value: "GasMeterAsset", label: "Gas meter" }] },
+        { kind: "alarm", labelKey: "k", values: [{ value: "leak", label: "Leak" }] },
+        { kind: "seen", labelKey: "k" },
+        { kind: "serial", labelKey: "k" },
+        { kind: "deveui", labelKey: "k" },
+        { kind: "delivery", labelKey: "k" },
+        { kind: "site", labelKey: "k" },
+        { kind: "battery", labelKey: "k", numeric: true },
+        { kind: "reading", labelKey: "k", numeric: true },
+        { kind: "attr", labelKey: "k" },
+    ] as any[];
+    const names = ["meter_id", "battery_level"];
+    const check = (token: any) => validateToken(token, definitions, names);
+
+    it("accepts a valid token of every kind", () => {
+        const valid = [
+            { kind: "text", value: "kotelna" },
+            { kind: "text", value: "10:30" },
+            { kind: "type", value: "GasMeterAsset" },
+            { kind: "alarm", value: "leak" },
+            { kind: "seen", operator: "GREATER_THAN", value: "24h" },
+            { kind: "serial", value: "123" },
+            { kind: "deveui", value: "abc" },
+            { kind: "delivery", value: "42" },
+            { kind: "site", value: "someId" },
+            { kind: "battery", operator: "LESS_THAN", value: "20" },
+            { kind: "reading", operator: "BETWEEN", value: "1", rangeValue: "5" },
+            { kind: "attr", value: "meter_id=7" },
+        ];
+        valid.forEach((token) => expect(check(token)).toEqual({ ok: true }));
+    });
+
+    it("rejects an empty value for a non-text kind", () => {
+        ["alarm", "serial", "attr", "battery"].forEach((kind) => {
+            const result = check({ kind, value: "" });
+            expect(result.ok).toBe(false);
+            expect((result as any).reason).toBe("emptyValue");
+        });
+    });
+
+    it("rejects a value outside the listed values and suggests the close ones", () => {
+        const result = check({ kind: "alarm", value: "lea" }) as any;
+        expect(result.ok).toBe(false);
+        expect(result.reason).toBe("unknownValue");
+        expect(result.suggestions).toEqual([{ label: "Leak", input: "alarm:leak", commit: true }]);
+        expect((check({ kind: "type", value: "Nope" }) as any).reason).toBe("unknownValue");
+    });
+
+    it("rejects an unknown attribute name and suggests known ones", () => {
+        const result = check({ kind: "attr", value: "meter_idd=1" }) as any;
+        expect(result.reason).toBe("unknownAttribute");
+        expect(result.suggestions.map((s: any) => s.label)).toContain("meter_id");
+    });
+
+    it("rejects a mistyped kind prefix instead of treating it as free text", () => {
+        const result = check({ kind: "text", value: "alarmm:x" }) as any;
+        expect(result.ok).toBe(false);
+        expect(result.reason).toBe("unknownKind");
+        expect(result.suggestions.map((s: any) => s.input)).toContain("alarm:");
+        expect((check({ kind: "text", value: "serail:1" }) as any).reason).toBe("unknownKind");
+    });
+
+    it("rejects a non-numeric number and a malformed duration", () => {
+        expect((check({ kind: "battery", value: "abc" }) as any).reason).toBe("notNumeric");
+        expect((check({ kind: "reading", operator: "BETWEEN", value: "1" }) as any).reason).toBe("notNumeric");
+        expect((check({ kind: "seen", value: "soon" }) as any).reason).toBe("invalidDuration");
     });
 });
