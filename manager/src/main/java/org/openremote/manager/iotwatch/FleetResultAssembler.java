@@ -133,11 +133,17 @@ public final class FleetResultAssembler {
             case "type" -> nullSafeString(row -> row.type, descending);
             // Sorting by a register: "reading" means each row's own primary register, so a
             // mixed-type result sorts gas volume against electric kWh - which is why the UI only
-            // offers it when one type is selected. Any other field name sorts that attribute.
+            // offers it when one type is selected.
             case "reading" -> numericComparator(row -> numeric(row.values.get(row.primaryName)), descending);
-            default -> field.startsWith("values.")
-                    ? numericComparator(row -> numeric(row.values.get(field.substring(7))), descending)
-                    : nullSafeString(row -> row.name, descending);
+            // FleetRow carries no creation time, so createdOn stays a name sort until it does.
+            case "name", "createdOn" -> nullSafeString(row -> row.name, descending);
+            // Any other field is an attribute name - the UI's column key is the bare descriptor
+            // name - sorted numerically from row.values with missing values last. "values.<name>"
+            // is kept as an alias.
+            default -> {
+                String attribute = field.startsWith("values.") ? field.substring(7) : field;
+                yield numericComparator(row -> numeric(row.values.get(attribute)), descending);
+            }
         };
         return comparator.thenComparing(row -> row.id, Comparator.nullsLast(Comparator.naturalOrder()));
     }

@@ -84,6 +84,41 @@ class FleetResultAssemblerTest extends Specification {
         descending.rows*.id == ["new", "old", "never"]
     }
 
+    static List<FleetRow> volumeRows() {
+        // Names deliberately in the opposite order to the volumes, so a name sort is visible.
+        def a = row("a", "C", "GasMeterAsset", NOW); a.values = [volume: 5d]
+        def b = row("b", "B", "GasMeterAsset", NOW); b.values = [volume: 20]
+        def c = row("c", "A", "GasMeterAsset", NOW); c.values = [volume: null]
+        def d = row("d", "D", "GasMeterAsset", NOW)
+        return [a, b, c, d]
+    }
+
+    static FleetQuery sortedBy(String field, boolean descending) {
+        def query = new FleetQuery()
+        query.sort = new FleetQuery.Sort()
+        query.sort.field = field
+        query.sort.descending = descending
+        return query
+    }
+
+    def "a bare attribute name sorts numerically by that value, missing values last in both directions"() {
+        expect: "the UI's column key is the bare descriptor name, not values.<name>"
+        FleetResultAssembler.assemble(volumeRows(), sortedBy("volume", false), NOW).rows*.id == ["a", "b", "c", "d"]
+        FleetResultAssembler.assemble(volumeRows(), sortedBy("volume", true), NOW).rows*.id == ["b", "a", "c", "d"]
+    }
+
+    def "the values.<name> alias sorts the same attribute"() {
+        expect:
+        FleetResultAssembler.assemble(volumeRows(), sortedBy("values.volume", false), NOW).rows*.id == ["a", "b", "c", "d"]
+        FleetResultAssembler.assemble(volumeRows(), sortedBy("values.volume", true), NOW).rows*.id == ["b", "a", "c", "d"]
+    }
+
+    def "name and createdOn sort by name"() {
+        expect:
+        FleetResultAssembler.assemble(volumeRows(), sortedBy("name", false), NOW).rows*.id == ["c", "b", "a", "d"]
+        FleetResultAssembler.assemble(volumeRows(), sortedBy("createdOn", true), NOW).rows*.id == ["d", "a", "b", "c"]
+    }
+
     def "facets and total count the whole match, not the returned page"() {
         given:
         def rows = (1..10).collect {
