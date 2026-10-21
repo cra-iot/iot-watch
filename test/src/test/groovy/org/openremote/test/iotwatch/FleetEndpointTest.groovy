@@ -2,6 +2,9 @@ package org.openremote.test.iotwatch
 
 import jakarta.ws.rs.BadRequestException
 import jakarta.ws.rs.NotAuthorizedException
+import jakarta.ws.rs.client.Entity
+import jakarta.ws.rs.core.MediaType
+import org.openremote.manager.security.ManagerIdentityProvider
 import org.openremote.manager.asset.AssetStorageService
 import org.openremote.manager.security.ManagerIdentityService
 import org.openremote.model.Constants
@@ -10,10 +13,11 @@ import org.openremote.model.asset.impl.ThingAsset
 import org.openremote.model.gasmeter.GasMeterAsset
 import org.openremote.model.iotwatch.FleetQuery
 import org.openremote.model.iotwatch.FleetResource
+import org.openremote.model.query.AssetQuery
+import org.openremote.model.query.filter.RealmPredicate
 import org.openremote.model.security.Realm
 import org.openremote.model.security.User
 import org.openremote.model.tracker.TrackerAsset
-import org.openremote.model.util.ValueUtil
 import org.openremote.model.value.ValueType
 import org.openremote.model.watermeter.WaterMeterAsset
 import org.openremote.test.ManagerContainerTrait
@@ -21,29 +25,39 @@ import spock.lang.IgnoreIf
 import spock.lang.Shared
 import spock.lang.Specification
 
+import java.util.concurrent.TimeUnit
+
 // Boots the OpenRemote container (ManagerContainerTrait), which needs a running PostgreSQL and Keycloak.
 // Runs only when OR_CONTAINER_TESTS=true (i.e. the dev stack is up); otherwise the spec is skipped.
 // Fixtures use their own realms and users; all identifiers are fixture values, never real device or delivery-point codes.
+// Rerunnable against a persistent dev database: leftovers of an aborted run are purged before the
+// fixtures are created, and cleanupSpec removes both fixture realms with their assets.
 @IgnoreIf({ env['OR_CONTAINER_TESTS'] != 'true' })
 class FleetEndpointTest extends Specification implements ManagerContainerTrait {
 
     static final String REALM = "fleet-test"
     static final String OTHER_REALM = "fleet-other"
     static final String PASSWORD = "dummy-test-password-not-a-secret"
+    /** Distinctive fixture payload text, so its absence from a response body is meaningful. */
+    static final String RAW_PAYLOAD_MARKER = "fleet-fixture-raw-payload"
 
     @Shared FleetResource readerResource
     @Shared FleetResource restrictedResource
     @Shared FleetResource outsiderResource
     @Shared String linkedAssetId
+    @Shared int port
+    @Shared String readerToken
+    @Shared String restrictedToken
 
     def setupSpec() {
-        def serverPort = findEphemeralPort()
-        def container = startContainer(defaultConfig(serverPort), defaultServices())
+        port = findEphemeralPort()
+        def container = startContainer(defaultConfig(port), defaultServices())
         def identityProvider = container.getService(ManagerIdentityService).getIdentityProvider()
         def assetStorageService = container.getService(AssetStorageService)
 
-        // Realms
+        // Realms: start from a clean slate even if an earlier run was aborted before cleanupSpec
         [REALM, OTHER_REALM].each { name ->
+            removeFixtureRealm(identityProvider, assetStorageService, name)
             identityProvider.createRealm(new Realm().setName(name).setDisplayName(name).setEnabled(true))
         }
 
@@ -60,7 +74,7 @@ class FleetEndpointTest extends Specification implements ManagerContainerTrait {
         waterWithRaw.getAttributes().getOrCreate(WaterMeterAsset.LEAKAGE_ATTRIBUTE_DESCRIPTOR).setValue(true)
         // rawValue with an explicit timestamp taken from the container clock (not older than the merge)
         def rawValue = new ValueType.ObjectMap()
-        rawValue.put("cmd", "gw")
+        rawValue.put("cmd", RAW_PAYLOAD_MARKER)
         waterWithRaw.getAttributes().getOrCreate(WaterMeterAsset.RAW_VALUE_ATTRIBUTE_DESCRIPTOR)
             .setValue(rawValue, getClockTimeOf(container))
         waterWithRaw = assetStorageService.merge(waterWithRaw)
@@ -84,26 +98,76 @@ class FleetEndpointTest extends Specification implements ManagerContainerTrait {
         assetStorageService.merge(tracker)
 
         // Users
-        def reader = identityProvider.createUpdateUser(REALM, new User().setUsername("fleet-reader").setEnabled(true), PASSWORD, false)
+        def reader = fixtureUser(identityProvider, REALM, "fleet-reader")
         identityProvider.updateUserClientRoles(REALM, reader.getId(), Constants.KEYCLOAK_CLIENT_ID, "read:assets")
 
-        def restricted = identityProvider.createUpdateUser(REALM, new User().setUsername("fleet-restricted").setEnabled(true), PASSWORD, false)
+        def restricted = fixtureUser(identityProvider, REALM, "fleet-restricted")
         identityProvider.updateUserRealmRoles(REALM, restricted.getId(), Constants.RESTRICTED_USER_REALM_ROLE)
         identityProvider.updateUserClientRoles(REALM, restricted.getId(), Constants.KEYCLOAK_CLIENT_ID, "read:assets")
         // Linked to the meter with rawValue only, deliberately not to "Building"
         assetStorageService.storeUserAssetLinks([new UserAssetLink(REALM, restricted.getId(), linkedAssetId)])
 
-        def outsider = identityProvider.createUpdateUser(OTHER_REALM, new User().setUsername("fleet-outsider").setEnabled(true), PASSWORD, false)
+        def outsider = fixtureUser(identityProvider, OTHER_REALM, "fleet-outsider")
         identityProvider.updateUserClientRoles(OTHER_REALM, outsider.getId(), Constants.KEYCLOAK_CLIENT_ID, "read:assets")
 
         // Tokens and proxies; the outsider calls the fleet-test path with a fleet-other token
-        def proxy = { String tokenRealm, String username ->
-            def token = authenticate(container, tokenRealm, Constants.KEYCLOAK_CLIENT_ID, username, PASSWORD)
-            getClientApiTarget(serverUri(serverPort), REALM, token).proxy(FleetResource)
+        def token = { String tokenRealm, String username ->
+            authenticate(container, tokenRealm, Constants.KEYCLOAK_CLIENT_ID, username, PASSWORD)
         }
-        readerResource = proxy(REALM, "fleet-reader")
-        restrictedResource = proxy(REALM, "fleet-restricted")
-        outsiderResource = proxy(OTHER_REALM, "fleet-outsider")
+        readerToken = token(REALM, "fleet-reader")
+        restrictedToken = token(REALM, "fleet-restricted")
+        def proxy = { String accessToken ->
+            getClientApiTarget(serverUri(port), REALM, accessToken).proxy(FleetResource)
+        }
+        readerResource = proxy(readerToken)
+        restrictedResource = proxy(restrictedToken)
+        outsiderResource = proxy(token(OTHER_REALM, "fleet-outsider"))
+    }
+
+    def cleanupSpec() {
+        if (container == null) {
+            return
+        }
+        def identityProvider = container.getService(ManagerIdentityService).getIdentityProvider()
+        def assetStorageService = container.getService(AssetStorageService)
+        [REALM, OTHER_REALM].each { name ->
+            removeFixtureRealm(identityProvider, assetStorageService, name)
+        }
+    }
+
+    /** Deletes a fixture realm and every asset in it; the identity provider refuses a non-empty realm. */
+    static void removeFixtureRealm(ManagerIdentityProvider identityProvider,
+                                   AssetStorageService assetStorageService, String name) {
+        if (!identityProvider.realmExists(name)) {
+            return
+        }
+        List<String> ids = assetStorageService.findAll(new AssetQuery()
+                .realm(new RealmPredicate(name))
+                .select(new AssetQuery.Select().excludeAttributes()))*.id
+        if (!ids.isEmpty()) {
+            assert assetStorageService.deleteUntilFinished(ids, true).get(60, TimeUnit.SECONDS)
+        }
+        identityProvider.deleteRealm(name)
+    }
+
+    /** Reuses the user when present (resetting its password), so setup never fails on a duplicate username. */
+    static User fixtureUser(ManagerIdentityProvider identityProvider, String realm, String username) {
+        def user = identityProvider.getUserByUsername(realm, username) ?: new User().setUsername(username)
+        return identityProvider.createUpdateUser(realm, user.setEnabled(true), PASSWORD, false)
+    }
+
+    /** POSTs the query with a plain JAX-RS client and returns the response body exactly as sent. */
+    String rawQueryBody(String accessToken, String queryJson) {
+        def response = getClientApiTarget(serverUri(port), REALM, accessToken)
+                .path("fleet").path("query")
+                .request(MediaType.APPLICATION_JSON)
+                .post(Entity.json(queryJson))
+        try {
+            assert response.status == 200
+            return response.readEntity(String)
+        } finally {
+            response.close()
+        }
     }
 
     def "a query without free text returns the realm's meters with their primary values"() {
@@ -120,6 +184,9 @@ class FleetEndpointTest extends Specification implements ManagerContainerTrait {
 
         and: "columns come from the types in the result, not from every registered type"
         result.columns*.assetType.toSet().every { it in result.rows*.type.toSet() }
+
+        and: "an empty type filter lists devices only: the building is not a silent device"
+        !result.rows.any { it.type == "ThingAsset" }
     }
 
     def "an alarm set on a fixture asset reaches the row"() {
@@ -211,13 +278,19 @@ class FleetEndpointTest extends Specification implements ManagerContainerTrait {
     }
 
     def "rawValue never appears in the response payload, for any caller"() {
-        when:
-        def readerJson = ValueUtil.JSON.writeValueAsString(readerResource.query(new FleetQuery()))
-        def restrictedJson = ValueUtil.JSON.writeValueAsString(restrictedResource.query(new FleetQuery()))
+        when: "the bytes the server sent, not a client DTO re-serialised (which would drop unknown fields)"
+        def readerJson = rawQueryBody(readerToken, "{}")
+        def restrictedJson = rawQueryBody(restrictedToken, "{}")
 
-        then:
+        then: "the response really carries the meter whose rawValue was stored"
+        readerJson.contains(linkedAssetId)
+        restrictedJson.contains(linkedAssetId)
+
+        and: "neither the attribute name nor the payload leaves the server"
         !readerJson.contains("rawValue")
         !restrictedJson.contains("rawValue")
+        !readerJson.contains(RAW_PAYLOAD_MARKER)
+        !restrictedJson.contains(RAW_PAYLOAD_MARKER)
     }
 
     def "filtering on rawValue is rejected rather than used as an oracle"() {
