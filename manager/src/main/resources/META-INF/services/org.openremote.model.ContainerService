@@ -1,3 +1,4 @@
 org.openremote.manager.custom.CustomService
 org.openremote.manager.iotwatch.IotWatchIngestService
 org.openremote.manager.iotwatch.IotWatchDecodeService
+org.openremote.manager.iotwatch.IotWatchFleetService
