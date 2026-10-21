@@ -12,9 +12,6 @@ import java.util.Map;
 import java.util.Set;
 
 import org.openremote.model.Container;
-import org.openremote.model.asset.AssetDescriptor;
-import org.openremote.model.asset.AssetTypeInfo;
-import org.openremote.model.asset.agent.AgentDescriptor;
 import org.openremote.model.attribute.MetaItem;
 import org.openremote.model.iotwatch.FleetColumns;
 import org.openremote.model.iotwatch.FleetQuery;
@@ -113,6 +110,9 @@ public class FleetColumnResolver {
 
     /**
      * Every column these types offer: the selected ones first, then the rest for the picker.
+     * The picker is broader than the primary rule: any numeric descriptor carrying units is
+     * offered, so a type whose values are not stored as datapoints (a tracker's battery) still
+     * has something to show, while only a measurement can become the primary register.
      * Pass the types actually present in the result, not the query's type filter: an empty
      * filter means "whole realm", and resolving over every registered type would offer the
      * columns of OpenRemote built-ins nobody has.
@@ -126,7 +126,7 @@ public class FleetColumnResolver {
             String primary = primaryRegister(type);
             ValueUtil.getAssetInfo(type).ifPresent(info ->
                     info.getAttributeDescriptors().values().stream()
-                            .filter(FleetColumnResolver::isMeasurement)
+                            .filter(FleetColumnResolver::isOffered)
                             .forEach(descriptor -> {
                                 boolean isPrimary = descriptor.getName().equals(primary);
                                 boolean selected = isPrimary
@@ -145,12 +145,22 @@ public class FleetColumnResolver {
         if (types != null && !types.isEmpty()) {
             return types;
         }
-        // An empty type filter means the whole realm, so the types are not known before the
-        // query runs. The registered model is finite, so resolving the select over all of it is
-        // bounded. Agents are not fleet devices and are skipped.
-        return Arrays.stream(ValueUtil.getAssetDescriptors(null))
-                .filter(descriptor -> !(descriptor instanceof AgentDescriptor))
-                .map(AssetDescriptor::getName)
+        return deviceTypes();
+    }
+
+    /**
+     * The types an empty type filter stands for: every registered asset type that declares
+     * rawValue, i.e. every type the ingest writes to. Buildings, agents and other structural
+     * assets declare no rawValue and would otherwise all show up as silent devices. Resolved
+     * from the model, never listed, so a new device type joins without a code change; an
+     * explicit type filter still reaches any type. Sorted, because the registry map is not.
+     */
+    public static List<String> deviceTypes() {
+        return Arrays.stream(ValueUtil.getAssetInfos(null))
+                .filter(info -> !info.isAgent())
+                .filter(info -> info.getAttributeDescriptors().containsKey(FleetColumns.RAW_VALUE))
+                .map(info -> info.getAssetDescriptor().getName())
+                .sorted()
                 .toList();
     }
 
@@ -168,6 +178,18 @@ public class FleetColumnResolver {
         column.selected = selected;
         column.assetType = assetType;
         return column;
+    }
+
+    /**
+     * A picker column: numeric with units. Infrastructure attributes (battery_level) have their
+     * own row fields and rawValue is never a column.
+     */
+    private static boolean isOffered(AttributeDescriptor<?> descriptor) {
+        String name = descriptor.getName();
+        return isNumeric(descriptor)
+                && descriptor.getUnits() != null && descriptor.getUnits().length > 0
+                && !FleetColumns.RAW_VALUE.equals(name)
+                && !Arrays.asList(FleetColumns.INFRASTRUCTURE_ATTRIBUTES).contains(name);
     }
 
     private static boolean isMeasurement(AttributeDescriptor<?> descriptor) {

@@ -35,4 +35,32 @@ class FleetHiddenFilterTest extends Specification {
         then:
         noExceptionThrown()
     }
+
+    def "a null filter element or a filter without a name is a 400, not a 500"() {
+        given:
+        def query = new FleetQuery()
+        query.attributes = [filter]
+
+        when:
+        FleetResourceImpl.validateFilters(query)
+
+        then:
+        thrown(BadRequestException)
+
+        where:
+        filter << [null, new FleetQuery.AttributeFilter(), queryOn("  ").attributes[0]]
+    }
+
+    def "well-formed filters, a null operator and no filters pass validation"() {
+        given:
+        def withNullOperator = queryOn("battery_level")
+        withNullOperator.attributes[0].operator = null
+
+        when:
+        FleetResourceImpl.validateFilters(withNullOperator)
+        FleetResourceImpl.validateFilters(new FleetQuery())
+
+        then:
+        noExceptionThrown()
+    }
 }

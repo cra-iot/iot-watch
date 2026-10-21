@@ -41,9 +41,10 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
     public FleetQueryResult query(FleetQuery query) {
         FleetQuery fleetQuery = query == null ? new FleetQuery() : query;
         String realm = getRequestRealmName();
+        validateFilters(fleetQuery);
         rejectHiddenFilters(fleetQuery);
 
-        // The select covers the query's types (or every type for an empty filter) and has to
+        // The select covers the query's types (or every device type for an empty filter) and has to
         // reach every branch of the union; the displayed columns are narrowed to the types
         // actually found, below.
         String[] select = columnResolver.selectAttributes(fleetQuery, fleetQuery.types);
@@ -93,6 +94,24 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
         result.facets.parents.forEach(facet -> facet.label = parentNames.get(facet.key));
         result.columns = columns;
         return result;
+    }
+
+    /**
+     * Malformed attribute filters are the caller's error: a null element or a filter without a
+     * name would otherwise surface as a NullPointerException, i.e. a 500.
+     */
+    public static void validateFilters(FleetQuery fleetQuery) {
+        if (fleetQuery.attributes == null) {
+            return;
+        }
+        for (FleetQuery.AttributeFilter filter : fleetQuery.attributes) {
+            if (filter == null) {
+                throw new BadRequestException("Attribute filter must not be null");
+            }
+            if (filter.name == null || filter.name.isBlank()) {
+                throw new BadRequestException("Attribute filter requires a name");
+            }
+        }
     }
 
     /**

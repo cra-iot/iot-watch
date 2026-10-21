@@ -176,6 +176,19 @@ class FleetResultAssemblerTest extends Specification {
         thrown(IllegalArgumentException)
     }
 
+    def "a malformed duration is rejected even when nothing matched"() {
+        given:
+        def query = new FleetQuery()
+        query.seen = new FleetQuery.SeenFilter()
+        query.seen.newerThan = "yesterday"
+
+        when: "zero rows, so a per-row parse would never run"
+        FleetResultAssembler.match([], query, NOW)
+
+        then:
+        thrown(IllegalArgumentException)
+    }
+
     def "grouping keeps each group contiguous across pages"() {
         given: "two parents whose rows would interleave if sorted by name only"
         def rows = [row("1", "A", "GasMeterAsset", NOW), row("2", "B", "GasMeterAsset", NOW),

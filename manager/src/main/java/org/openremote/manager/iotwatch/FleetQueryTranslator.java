@@ -75,9 +75,11 @@ public final class FleetQueryTranslator {
         query.realm(new org.openremote.model.query.filter.RealmPredicate(realm));
         query.select(new AssetQuery.Select().attributes(select));
 
-        if (fleetQuery.types != null && !fleetQuery.types.isEmpty()) {
-            query.types = fleetQuery.types.toArray(new String[0]);
-        }
+        // An empty type filter means "every device type", not "every asset": buildings and
+        // agents are not devices. The same set FleetColumnResolver resolves the select over.
+        query.types = (fleetQuery.types != null && !fleetQuery.types.isEmpty()
+                ? fleetQuery.types
+                : FleetColumnResolver.deviceTypes()).toArray(new String[0]);
         if (fleetQuery.parentIds != null && !fleetQuery.parentIds.isEmpty()) {
             ParentPredicate[] parents = fleetQuery.parentIds.stream()
                     .map(ParentPredicate::new)
@@ -130,7 +132,8 @@ public final class FleetQueryTranslator {
     }
 
     private static AssetQuery.Operator toAssetQueryOperator(FleetQuery.Operator operator) {
-        return switch (operator) {
+        // An explicit null on the wire overrides the field default; it means EQUALS.
+        return switch (operator == null ? FleetQuery.Operator.EQUALS : operator) {
             case LESS_THAN -> AssetQuery.Operator.LESS_THAN;
             case LESS_EQUALS -> AssetQuery.Operator.LESS_EQUALS;
             case GREATER_THAN -> AssetQuery.Operator.GREATER_THAN;
@@ -141,7 +144,7 @@ public final class FleetQueryTranslator {
     }
 
     private static AssetQuery.Match toMatch(FleetQuery.Operator operator) {
-        return switch (operator) {
+        return switch (operator == null ? FleetQuery.Operator.EQUALS : operator) {
             case CONTAINS -> AssetQuery.Match.CONTAINS;
             case STARTS_WITH -> AssetQuery.Match.BEGIN;
             default -> AssetQuery.Match.EXACT;

@@ -1,5 +1,6 @@
 package org.openremote.test.iotwatch
 
+import org.openremote.manager.iotwatch.FleetColumnResolver
 import org.openremote.manager.iotwatch.FleetQueryTranslator
 import org.openremote.model.iotwatch.FleetQuery
 import org.openremote.model.query.filter.BooleanPredicate
@@ -150,5 +151,44 @@ class FleetQueryTranslatorTest extends Specification {
         expect:
         FleetQueryTranslator.nameTextQuery(new FleetQuery(), "acme", SELECT) == null
         FleetQueryTranslator.identifierTextQuery(new FleetQuery(), "acme", SELECT) == null
+    }
+
+    def "an empty type filter is narrowed to the device types, an explicit one is kept"() {
+        when:
+        def emptyFilter = FleetQueryTranslator.filterQuery(new FleetQuery(), "acme", SELECT)
+        def fq = new FleetQuery()
+        fq.types = ["ThingAsset"]
+        def explicit = FleetQueryTranslator.filterQuery(fq, "acme", SELECT)
+
+        then: "buildings and other non-device assets are not listed as silent devices"
+        emptyFilter.types as List == FleetColumnResolver.deviceTypes()
+        (emptyFilter.types as List).containsAll(["WaterMeterAsset", "GasMeterAsset", "TrackerAsset"])
+        !(emptyFilter.types as List).contains("ThingAsset")
+
+        and: "an explicit type token still reaches any type"
+        explicit.types == ["ThingAsset"] as String[]
+    }
+
+    def "the free-text branches carry the same narrowed types"() {
+        given:
+        def fq = new FleetQuery()
+        fq.text = "kotelna"
+
+        expect:
+        FleetQueryTranslator.nameTextQuery(fq, "acme", SELECT).types as List == FleetColumnResolver.deviceTypes()
+        FleetQueryTranslator.identifierTextQuery(fq, "acme", SELECT).types as List == FleetColumnResolver.deviceTypes()
+    }
+
+    def "an explicit null operator means EQUALS rather than a server error"() {
+        given:
+        def fq = new FleetQuery()
+        fq.attributes = [filter("battery_level", null, 20), filter("meter_id", null, "TEST")]
+
+        when:
+        def items = FleetQueryTranslator.filterQuery(fq, "acme", SELECT).attributes.items
+
+        then:
+        ((NumberPredicate) items[0].value).operator == AssetQuery.Operator.EQUALS
+        ((StringPredicate) items[1].value).match == AssetQuery.Match.EXACT
     }
 }

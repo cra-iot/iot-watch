@@ -161,4 +161,51 @@ class FleetColumnResolverTest extends Specification {
         then:
         columns.find { it.name == "gas_temperature" }.selected
     }
+
+    def "a type whose numbers are not stored as datapoints still offers picker columns, none primary"() {
+        when: "a tracker: its battery has units but no STORE_DATA_POINTS"
+        def columns = resolver().columnsFor(["TrackerAsset"], null)
+
+        then: "it is offered for the picker"
+        columns.any { it.assetType == "TrackerAsset" && it.name == "battery" }
+
+        and: "but the strict measurement rule still decides the primary register"
+        columns.every { !it.primary && !it.selected }
+        resolver().primaryRegister("TrackerAsset") == null
+    }
+
+    def "infrastructure attributes and rawValue are never offered as picker columns"() {
+        when:
+        def names = resolver().columnsFor(["GasMeterAsset", "WaterMeterAsset", "TrackerAsset"], null)*.name
+
+        then:
+        !names.contains("battery_level")
+        !names.contains("rawValue")
+    }
+
+    def "an empty type filter stands for exactly the types that declare rawValue"() {
+        when:
+        def types = FleetColumnResolver.deviceTypes()
+
+        then: "every device type the ingest writes to"
+        types.containsAll(["WaterMeterAsset", "GasMeterAsset", "ElectricMeterAsset", "HeatMeterAsset", "TrackerAsset"])
+
+        and: "resolved from the model: each one declares rawValue, and no other type is included"
+        types == ValueUtil.getAssetInfos(null)
+                .findAll { !it.isAgent() && it.attributeDescriptors.containsKey(FleetColumns.RAW_VALUE) }
+                .collect { it.assetDescriptor.name }
+                .sort()
+
+        and: "structural assets are not devices"
+        !types.contains("ThingAsset")
+        !types.contains("BuildingAsset")
+    }
+
+    def "the empty-filter select resolves over the device types only"() {
+        when:
+        def select = resolver().selectAttributes(new FleetQuery(), null) as Set
+
+        then: "a device type's alarm is fetched"
+        select.contains("leakage")
+    }
 }

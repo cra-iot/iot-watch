@@ -36,8 +36,13 @@ public final class FleetResultAssembler {
      * The overview pages this; the CSV export consumes it whole.
      */
     public static List<FleetRow> match(List<FleetRow> rows, FleetQuery query, long nowMillis) {
+        // Parsed once, before any row: a malformed duration is rejected even for an empty match.
+        Long olderThreshold = query.seen == null || query.seen.olderThan == null
+                ? null : nowMillis - parseDuration(query.seen.olderThan).toMillis();
+        Long newerThreshold = query.seen == null || query.seen.newerThan == null
+                ? null : nowMillis - parseDuration(query.seen.newerThan).toMillis();
         List<FleetRow> matched = new ArrayList<>(deduplicate(rows));
-        matched.removeIf(row -> !matchesSeen(row, query.seen, nowMillis));
+        matched.removeIf(row -> !matchesSeen(row, olderThreshold, newerThreshold));
         // When grouping, the group key sorts first, so each group's rows are contiguous across
         // server pages and the UI can label a group with its facet count rather than counting
         // the rows of one page.
@@ -99,23 +104,13 @@ public final class FleetResultAssembler {
         return new ArrayList<>(byId.values());
     }
 
-    private static boolean matchesSeen(FleetRow row, FleetQuery.SeenFilter seen, long nowMillis) {
-        if (seen == null) {
-            return true;
+    private static boolean matchesSeen(FleetRow row, Long olderThreshold, Long newerThreshold) {
+        // A device that never reported is the most stale thing there is, so olderThan matches it.
+        if (olderThreshold != null && row.lastSeen != null && row.lastSeen > olderThreshold) {
+            return false;
         }
-        if (seen.olderThan != null) {
-            // A device that never reported is the most stale thing there is, so it matches.
-            long threshold = nowMillis - parseDuration(seen.olderThan).toMillis();
-            if (row.lastSeen != null && row.lastSeen > threshold) {
-                return false;
-            }
-        }
-        if (seen.newerThan != null) {
-            if (row.lastSeen == null) {
-                return false;
-            }
-            long threshold = nowMillis - parseDuration(seen.newerThan).toMillis();
-            return row.lastSeen >= threshold;
+        if (newerThreshold != null) {
+            return row.lastSeen != null && row.lastSeen >= newerThreshold;
         }
         return true;
     }
