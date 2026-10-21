@@ -39,7 +39,9 @@ const TRAILING: FleetColumn[] = [
     { key: "alarms", label: "Alarms", labelKey: "fleet.column.alarms" },
 ];
 
-function toColumn(descriptor: NonNullable<FleetQueryResult["columns"]>[number],
+type Descriptor = NonNullable<FleetQueryResult["columns"]>[number];
+
+function toColumn(descriptor: Descriptor,
                   formatUnits: UnitFormatter): FleetColumn {
     return {
         key: descriptor.name!,
@@ -52,43 +54,34 @@ function toColumn(descriptor: NonNullable<FleetQueryResult["columns"]>[number],
 }
 
 /**
- * The columns to render: the identity columns, then whichever registers the server selected.
- * Deduplicated by name, because two asset types may offer a register under the same name and the
- * table needs one column for it, not two.
+ * Named descriptors with the given selection state, deduplicated by name, because two asset types
+ * may offer a register under the same name and the table needs one column for it, not two.
  */
-export function columnsFrom(result: FleetQueryResult, formatUnits: UnitFormatter): FleetColumn[] {
+function uniqueByName(result: FleetQueryResult, selected: boolean): Descriptor[] {
     const seen = new Set<string>();
-    const registers = (result.columns ?? [])
-        .filter((descriptor) => descriptor.selected && descriptor.name)
-        .filter((descriptor) => {
-            if (seen.has(descriptor.name!)) {
-                return false;
-            }
-            seen.add(descriptor.name!);
-            return true;
-        })
-        .map((descriptor) => toColumn(descriptor, formatUnits));
+    return (result.columns ?? []).filter((descriptor) => {
+        if (!descriptor.name || !!descriptor.selected !== selected || seen.has(descriptor.name)) {
+            return false;
+        }
+        seen.add(descriptor.name);
+        return true;
+    });
+}
+
+/** The columns to render: the identity columns, then whichever registers the server selected. */
+export function columnsFrom(result: FleetQueryResult, formatUnits: UnitFormatter): FleetColumn[] {
+    const registers = uniqueByName(result, true).map((descriptor) => toColumn(descriptor, formatUnits));
     return [...LEADING, ...registers, ...TRAILING];
 }
 
 /** Everything the result offers but has not selected: the contents of the column picker. */
 export function offeredColumns(result: FleetQueryResult, formatUnits: UnitFormatter): FleetColumn[] {
-    const seen = new Set<string>();
-    return (result.columns ?? [])
-        .filter((descriptor) => !descriptor.selected && descriptor.name)
-        .filter((descriptor) => {
-            if (seen.has(descriptor.name!)) {
-                return false;
-            }
-            seen.add(descriptor.name!);
-            return true;
-        })
-        .map((descriptor) => toColumn(descriptor, formatUnits));
+    return uniqueByName(result, false).map((descriptor) => toColumn(descriptor, formatUnits));
 }
 
 /** Renders one register cell. Identity columns are rendered by the results component itself. */
 export function cellValue(row: FleetRow, column: FleetColumn): string {
-    const values = (row as { values?: Record<string, unknown> }).values;
+    const values = row.values;
     if (!values || !(column.key in values)) {
         return EM_DASH;
     }

@@ -48,6 +48,14 @@ describe("columnsFrom", () => {
         expect(columns.find((c) => c.key === "volume")?.units).toBe("m³");
     });
 
+    it("renders one column when two asset types offer a register under the same name", () => {
+        const columns = columnsFrom(result([
+            column("volume", { primary: true }),
+            column("volume", { primary: true, assetType: "WaterMeterAsset" }),
+        ]), units);
+        expect(columns.filter((c) => c.key === "volume")).toHaveLength(1);
+    });
+
     it("renders without a register column when the server resolved none", () => {
         const columns = columnsFrom(result([]), units);
         expect(columns.map((c) => c.key)).toContain("name");
@@ -60,6 +68,16 @@ describe("offeredColumns", () => {
         const columns = offeredColumns(result([
             column("volume", { primary: true }),
             column("gas_temperature", { selected: false, label: "Teplota plynu" }),
+        ]), units);
+        expect(columns.map((c) => c.key)).toEqual(["gas_temperature"]);
+    });
+});
+
+describe("offeredColumns deduplication", () => {
+    it("offers one column when two asset types offer the same unselected register", () => {
+        const columns = offeredColumns(result([
+            column("gas_temperature", { selected: false }),
+            column("gas_temperature", { selected: false, assetType: "OtherMeterAsset" }),
         ]), units);
         expect(columns.map((c) => c.key)).toEqual(["gas_temperature"]);
     });
