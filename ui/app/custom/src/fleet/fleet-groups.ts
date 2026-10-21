@@ -91,25 +91,13 @@ export function segmentGroups(result: FleetQueryResult, groupBy: string, now: nu
     return groups;
 }
 
-/** Device count (from facets, never from this page) and the facet label, when there is one. */
-export function groupInfo(result: FleetQueryResult, groupBy: string, key: string): { label?: string; count?: number } {
+/** Device and problem counts (from facets, never from this page) and the facet label, when there is one. */
+export function groupInfo(result: FleetQueryResult, groupBy: string, key: string): { label?: string; count?: number; problems?: number } {
     const facet = facetsFor(result, groupBy).find((f) => (f.key ?? "") === key);
     if (facet) {
-        return { label: facet.label ?? undefined, count: facet.count };
+        return { label: facet.label ?? undefined, count: facet.count, problems: facet.problems };
     }
-    const count = groupCounts(result, groupBy).get(key);
-    return { count };
-}
-
-/**
- * Devices with an alarm in the group, only when it is certain: the whole group is on this page.
- * A partial page count would understate the problem count, so otherwise it is undefined.
- */
-export function problemCount(group: RowGroup, deviceCount: number | undefined, now: number): number | undefined {
-    if (deviceCount === undefined || group.rows.length !== deviceCount) {
-        return undefined;
-    }
-    return group.rows.filter((row) => rowStatus(row, now) === "alarm").length;
+    return { count: groupCounts(result, groupBy).get(key) };
 }
 
 export interface Age {

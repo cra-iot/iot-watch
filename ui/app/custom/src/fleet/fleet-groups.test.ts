@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupInfo, problemCount, relativeAge, rowStatus, segmentGroups } from "./fleet-groups";
+import { groupInfo, relativeAge, rowStatus, segmentGroups } from "./fleet-groups";
 
 const NOW = 1_000_000_000_000;
 const row = (id: string, over: Record<string, unknown> = {}) =>
@@ -48,18 +48,15 @@ describe("segmentGroups", () => {
     });
 });
 
-describe("groupInfo and problemCount", () => {
-    const facets = { parents: [{ key: "p1", label: "North", count: 2 }] };
+describe("groupInfo", () => {
+    const facets = { parents: [{ key: "p1", label: "North", count: 2, problems: 1 }, { key: "p2", count: 3 }] };
 
-    it("takes label and count from facets", () => {
-        expect(groupInfo(result([], { facets }), "PARENT", "p1")).toEqual({ label: "North", count: 2 });
+    it("takes label, count and problems from facets", () => {
+        expect(groupInfo(result([], { facets }), "PARENT", "p1")).toEqual({ label: "North", count: 2, problems: 1 });
     });
 
-    it("counts problems only when the whole group is on the page", () => {
-        const group = { key: "p1", continued: false, rows: [row("a", { alarms: ["x"] }), row("b")] as never[] };
-        expect(problemCount(group, 2, NOW)).toBe(1);
-        expect(problemCount(group, 5, NOW)).toBeUndefined();
-        expect(problemCount(group, undefined, NOW)).toBeUndefined();
+    it("leaves problems undefined when the wire omits it", () => {
+        expect(groupInfo(result([], { facets }), "PARENT", "p2").problems).toBeUndefined();
     });
 });
 

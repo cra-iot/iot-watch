@@ -168,34 +168,40 @@ public final class FleetResultAssembler {
 
     private static FleetQueryResult.Facets facets(List<FleetRow> rows, long nowMillis) {
         FleetQueryResult.Facets facets = new FleetQueryResult.Facets();
-        facets.types = counted(rows, row -> List.of(nullToEmpty(row.type)));
-        facets.alarms = counted(rows, row -> row.alarms);
-        facets.parents = counted(rows, row -> List.of(nullToEmpty(row.parentId)));
-
-        Map<String, Integer> status = new LinkedHashMap<>();
-        for (FleetRow row : rows) {
-            status.merge(status(row, nowMillis), 1, Integer::sum);
-        }
-        facets.status = toFacets(status);
+        facets.types = counted(rows, nowMillis, row -> List.of(nullToEmpty(row.type)));
+        // Every row under an alarm key has an alarm, so each of them is a problem.
+        facets.alarms = counted(rows, nowMillis, row -> row.alarms);
+        facets.parents = counted(rows, nowMillis, row -> List.of(nullToEmpty(row.parentId)));
+        facets.status = counted(rows, nowMillis, row -> List.of(status(row, nowMillis)));
         return facets;
     }
 
+    /** A problem is an alarm or a silent device, computed over the whole match like every facet. */
+    private static boolean isProblem(FleetRow row, long nowMillis) {
+        return !"ok".equals(status(row, nowMillis));
+    }
+
     private static List<FleetQueryResult.Facet> counted(
-            List<FleetRow> rows, java.util.function.Function<FleetRow, List<String>> keys) {
-        Map<String, Integer> counts = new LinkedHashMap<>();
+            List<FleetRow> rows, long nowMillis, java.util.function.Function<FleetRow, List<String>> keys) {
+        Map<String, int[]> counts = new LinkedHashMap<>();
         for (FleetRow row : rows) {
+            boolean problem = isProblem(row, nowMillis);
             for (String key : keys.apply(row)) {
                 if (!key.isEmpty()) {
-                    counts.merge(key, 1, Integer::sum);
+                    int[] entry = counts.computeIfAbsent(key, k -> new int[2]);
+                    entry[0]++;
+                    if (problem) {
+                        entry[1]++;
+                    }
                 }
             }
         }
         return toFacets(counts);
     }
 
-    private static List<FleetQueryResult.Facet> toFacets(Map<String, Integer> counts) {
+    private static List<FleetQueryResult.Facet> toFacets(Map<String, int[]> counts) {
         List<FleetQueryResult.Facet> facets = new ArrayList<>();
-        counts.forEach((key, count) -> facets.add(new FleetQueryResult.Facet(key, null, count)));
+        counts.forEach((key, entry) -> facets.add(new FleetQueryResult.Facet(key, null, entry[0], entry[1])));
         facets.sort(Comparator.comparingInt((FleetQueryResult.Facet facet) -> facet.count).reversed()
                 .thenComparing(facet -> facet.key));
         return facets;

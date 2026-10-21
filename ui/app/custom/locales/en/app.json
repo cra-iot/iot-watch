@@ -60,7 +60,7 @@
     },
     "group": {
       "devices": "{{n}} devices",
-      "problems": "{{n}} with alarms",
+      "problems": "{{n}} problems",
       "continued": "continued",
       "noParent": "No location"
     },

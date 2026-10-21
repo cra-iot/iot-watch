@@ -7,7 +7,7 @@ import { i18next } from "@openremote/or-translate";
 import "@openremote/or-vaadin-components/or-vaadin-select";
 import type { FleetQueryResult, FleetRow } from "model";
 import { cellValue, columnsFrom, EM_DASH, offeredColumns, type FleetColumn } from "./fleet-columns";
-import { groupInfo, problemCount, relativeAge, segmentGroups, type RowGroup } from "./fleet-groups";
+import { groupInfo, relativeAge, segmentGroups, type RowGroup } from "./fleet-groups";
 
 export class OrFleetRowClickEvent extends CustomEvent<{ assetId: string }> {
     public static readonly NAME = "or-fleet-row-click";
@@ -273,7 +273,7 @@ export class OrFleetResults extends OrElement {
 
     protected _renderGroup(result: FleetQueryResult, group: RowGroup, columns: FleetColumn[], now: number): TemplateResult {
         const info = groupInfo(result, this.groupBy, group.key);
-        const problems = problemCount(group, info.count, now);
+        const problems = info.problems;
         const open = !this._collapsed.has(group.key);
         return html`
             <section>

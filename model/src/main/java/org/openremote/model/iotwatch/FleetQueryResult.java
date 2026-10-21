@@ -10,6 +10,8 @@ public class FleetQueryResult {
         /** Human label when one exists (parent asset name); null means the UI resolves it. */
         public String label;
         public int count;
+        /** Rows in this facet whose status is alarm or silent; for the alarms facet every row counts. */
+        public int problems;
 
         public Facet() {
         }
@@ -18,6 +20,11 @@ public class FleetQueryResult {
             this.key = key;
             this.label = label;
             this.count = count;
+        }
+
+        public Facet(String key, String label, int count, int problems) {
+            this(key, label, count);
+            this.problems = problems;
         }
     }
 

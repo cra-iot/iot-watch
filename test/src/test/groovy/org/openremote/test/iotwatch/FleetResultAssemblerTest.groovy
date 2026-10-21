@@ -104,6 +104,30 @@ class FleetResultAssemblerTest extends Specification {
         result.facets.alarms.find { it.key == "leakage" }.count == 1
     }
 
+    def "facet problems count alarm and silent rows over the whole match, not the page"() {
+        given:
+        def rows = (1..6).collect {
+            row("id$it", "Meter $it", "GasMeterAsset",
+                    it == 5 ? NOW - 48 * HOUR : NOW, it <= 2 ? ["leakage"] : [])
+        } + [row("w1", "Water", "WaterMeterAsset", NOW)]
+        def query = new FleetQuery()
+        query.limit = 2
+
+        when:
+        def result = FleetResultAssembler.assemble(rows, query, NOW)
+        def gas = result.facets.types.find { it.key == "GasMeterAsset" }
+        def water = result.facets.types.find { it.key == "WaterMeterAsset" }
+
+        then:
+        result.rows.size() == 2
+        gas.count == 6
+        gas.problems == 3
+        water.problems == 0
+        result.facets.status.find { it.key == "ok" }.problems == 0
+        result.facets.status.find { it.key == "alarm" }.problems == 2
+        result.facets.alarms.find { it.key == "leakage" }.problems == 2
+    }
+
     def "status facet buckets alarm, silent and ok without double counting ok"() {
         given:
         def rows = [row("alarm", "A", "GasMeterAsset", NOW, ["leakage"]),
