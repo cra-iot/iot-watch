@@ -239,20 +239,44 @@ export function toFleetQuery(tokens: Token[], extras: Record<string, unknown>): 
     return query;
 }
 
-export function toUrlParams(tokens: Token[], extras: Record<string, string>): URLSearchParams {
+export interface FleetView {
+    groupBy?: string;
+    sort?: { field: string; descending: boolean };
+    columns?: string[];
+}
+
+const GROUP_VALUES = new Set(["NONE", "PARENT", "TYPE", "STATUS"]);
+
+/** Writes the search (q) and, when given, its view: group, sort ("-field" = descending) and columns. */
+export function toUrlParams(tokens: Token[], extras: Record<string, string>, view: FleetView = {}): URLSearchParams {
     const params = new URLSearchParams(extras);
     const q = formatSearch(tokens);
     if (q) { params.set("q", q); }
+    if (view.groupBy) { params.set("group", view.groupBy); }
+    if (view.sort?.field) { params.set("sort", `${view.sort.descending ? "-" : ""}${view.sort.field}`); }
+    if (view.columns?.length) { params.set("columns", view.columns.join(",")); }
     return params;
 }
 
-export function fromUrlParams(params: URLSearchParams): { tokens: Token[] } {
+/** Never throws; a missing or invalid parameter is simply absent from the result. */
+export function fromUrlParams(params: URLSearchParams): { tokens: Token[] } & FleetView {
+    const result: { tokens: Token[] } & FleetView = { tokens: [] };
     try {
-        return { tokens: parseSearch(params.get("q") ?? "") };
+        result.tokens = parseSearch(params.get("q") ?? "");
     } catch {
         // A hand-edited or truncated URL must not blank the page.
-        return { tokens: [] };
     }
+    const group = params.get("group");
+    if (group && GROUP_VALUES.has(group)) { result.groupBy = group; }
+    const sort = params.get("sort");
+    if (sort) {
+        const descending = sort.startsWith("-");
+        const field = descending ? sort.slice(1) : sort;
+        if (field) { result.sort = { field, descending }; }
+    }
+    const columns = (params.get("columns") ?? "").split(",").map((c) => c.trim()).filter(Boolean);
+    if (columns.length) { result.columns = columns; }
+    return result;
 }
 
 export interface TokenSuggestion {

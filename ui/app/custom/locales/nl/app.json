@@ -73,6 +73,12 @@
       "previous": "Previous",
       "next": "Next"
     },
-    "empty": "No devices found"
+    "empty": "No devices found",
+    "views": {
+      "label": "Opgeslagen weergaven",
+      "all": "Alle meters",
+      "alarms": "Alarmen",
+      "silent": "Stil langer dan 24 u"
+    }
   }
 }

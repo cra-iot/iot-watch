@@ -8,6 +8,8 @@ import {pageAssetsReducer, pageAssetsProvider} from "@openremote/manager/pages/p
 import {pageMapReducer, pageMapProvider} from "@openremote/manager/pages/page-map";
 import "./pages/page-custom";
 import {pageCustomProvider} from "./pages/page-custom";
+import "./pages/page-fleet";
+import {pageFleetProvider} from "./pages/page-fleet";
 
 const rootReducer = combineReducers({
     app: appReducer,
@@ -26,7 +28,8 @@ const orApp = new OrApp(store);
 export const DefaultPagesConfig: PageProvider<any>[] = [
     pageMapProvider(store), // Standard manager map page
     pageAssetsProvider(store), // Standard manager asset page
-    pageCustomProvider(store) // Custom page
+    pageCustomProvider(store), // Custom page
+    pageFleetProvider(store) // Fleet search and overview page
 ];
 
 // A new header for our custom page
@@ -38,10 +41,20 @@ export function headerItemCustom<S extends AppStateKeyed, A extends AnyAction>(o
     };
 }
 
+// Header entry for the fleet search and overview page
+export function headerItemFleet<S extends AppStateKeyed, A extends AnyAction>(orApp: OrApp<S>): HeaderItem {
+    return {
+        icon: "magnify",
+        href: "fleet",
+        text: "app:fleetPage",
+    };
+}
+
 export const DefaultHeaderMainMenu: {[name: string]: HeaderItem} = {
     map: headerItemMap(orApp),
     assets: headerItemAssets(orApp),
-    custom: headerItemCustom(orApp)
+    custom: headerItemCustom(orApp),
+    fleet: headerItemFleet(orApp)
 };
 
 export const DefaultHeaderSecondaryMenu: {[name: string]: HeaderItem} = {

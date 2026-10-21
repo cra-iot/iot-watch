@@ -75,6 +75,16 @@ describe("url round-trip", () => {
         expect(fromUrlParams(toUrlParams(tokens, {})).tokens).toEqual(tokens);
     });
 
+    it("restores group, sort and columns", () => {
+        const view = { groupBy: "TYPE", sort: { field: "lastSeen", descending: true }, columns: ["name", "battery"] };
+        const restored = fromUrlParams(toUrlParams([], {}, view));
+        expect(restored).toEqual({ tokens: [], ...view });
+    });
+
+    it("ignores invalid group, sort and columns values", () => {
+        expect(fromUrlParams(new URLSearchParams("group=BOGUS&sort=-&columns=,,"))).toEqual({ tokens: [] });
+    });
+
     it("tolerates a malformed q parameter without throwing", () => {
         expect(() => fromUrlParams(new URLSearchParams("q=%E0%A4%A"))).not.toThrow();
     });

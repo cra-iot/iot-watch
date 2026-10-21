@@ -74,6 +74,12 @@
       "previous": "Previous",
       "next": "Next"
     },
-    "empty": "No devices found"
+    "empty": "No devices found",
+    "views": {
+      "label": "Saved views",
+      "all": "All meters",
+      "alarms": "Alarms",
+      "silent": "Silent over 24 h"
+    }
   }
 }
