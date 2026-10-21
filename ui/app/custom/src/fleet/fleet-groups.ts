@@ -91,13 +91,20 @@ export function segmentGroups(result: FleetQueryResult, groupBy: string, now: nu
     return groups;
 }
 
-/** Device and problem counts (from facets, never from this page) and the facet label, when there is one. */
-export function groupInfo(result: FleetQueryResult, groupBy: string, key: string): { label?: string; count?: number; problems?: number } {
+/**
+ * Device and problem counts (from facets, never from this page) and the facet label, when there is one.
+ * A location the caller may not read comes without a label; it is shown as `unnamedLocation`, never
+ * by its asset id.
+ */
+export function groupInfo(
+    result: FleetQueryResult, groupBy: string, key: string, unnamedLocation?: string,
+): { label?: string; count?: number; problems?: number } {
     const facet = facetsFor(result, groupBy).find((f) => (f.key ?? "") === key);
+    const fallback = groupBy === "PARENT" && key ? unnamedLocation : undefined;
     if (facet) {
-        return { label: facet.label ?? undefined, count: facet.count, problems: facet.problems };
+        return { label: facet.label ?? fallback, count: facet.count, problems: facet.problems };
     }
-    return { count: groupCounts(result, groupBy).get(key) };
+    return { ...(fallback !== undefined ? { label: fallback } : {}), count: groupCounts(result, groupBy).get(key) };
 }
 
 export interface Age {

@@ -61,7 +61,8 @@
       "devices": "{{n}} devices",
       "problems": "{{n}} problems",
       "continued": "continued",
-      "noParent": "No location"
+      "noParent": "No location",
+      "unnamedLocation": "Naamloze locatie"
     },
     "status": {
       "alarm": "Alarm",

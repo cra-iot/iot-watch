@@ -268,11 +268,13 @@ export class OrFleetResults extends OrElement {
     protected _groupName(result: FleetQueryResult, key: string, label?: string): string {
         if (this.groupBy === "STATUS") { return this._statusLabel(key); }
         if (this.groupBy === "PARENT" && !key) { return translate("fleet.group.noParent"); }
+        // A location the caller may not read has no label; its asset id is never shown.
+        if (this.groupBy === "PARENT") { return label ?? translate("fleet.group.unnamedLocation"); }
         return label ?? (key || EM_DASH);
     }
 
     protected _renderGroup(result: FleetQueryResult, group: RowGroup, columns: FleetColumn[], now: number): TemplateResult {
-        const info = groupInfo(result, this.groupBy, group.key);
+        const info = groupInfo(result, this.groupBy, group.key, translate("fleet.group.unnamedLocation"));
         const problems = info.problems;
         const open = !this._collapsed.has(group.key);
         return html`

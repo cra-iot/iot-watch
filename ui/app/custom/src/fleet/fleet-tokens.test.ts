@@ -1,8 +1,8 @@
 import { AssetModelUtil } from "@openremote/model";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-    formatSearch, fromUrlParams, parseSearch, readingFollowUp, singlePrimaryRegister, toFleetQuery, toUrlParams,
-    tokenDefinitions, validateToken,
+    formatSearch, fromUrlParams, mergeSiteOptions, parseSearch, readingFollowUp, siteLabel, singlePrimaryRegister,
+    toFleetQuery, toUrlParams, tokenDefinitions, validateToken,
 } from "./fleet-tokens";
 
 describe("parseSearch", () => {
@@ -321,5 +321,28 @@ describe("reading follow-up", () => {
 
     it("is unresolved when nothing names a register", () => {
         expect(readingFollowUp(parseSearch("reading:>5"), undefined, [])).toEqual({ action: "unresolved" });
+    });
+});
+
+describe("site options", () => {
+    const UNNAMED = "Unnamed location";
+
+    it("names an unreadable parent as unnamed, never by its id", () => {
+        const sites = mergeSiteOptions([], [{ key: "id-north", label: "North" }, { key: "id-hidden" }], UNNAMED);
+        expect(sites).toEqual([{ value: "id-north", label: "North" }, { value: "id-hidden", label: UNNAMED }]);
+        expect(sites.some((site) => site.label.startsWith("id-"))).toBe(false);
+    });
+
+    it("keeps a name learnt earlier and ignores facets without a key", () => {
+        const known = [{ value: "id-north", label: "North" }];
+        expect(mergeSiteOptions(known, [{ key: "id-north" }, { label: "Nowhere" }], UNNAMED))
+            .toEqual([{ value: "id-north", label: "North" }]);
+    });
+
+    it("labels a site chip by name, or as unnamed when the page does not know it", () => {
+        const sites = [{ value: "id-north", label: "North" }];
+        expect(siteLabel(sites, "id-north", UNNAMED)).toBe("North");
+        expect(siteLabel(sites, "id-unknown", UNNAMED)).toBe(UNNAMED);
+        expect(siteLabel([], "id-north", UNNAMED)).toBe(UNNAMED);
     });
 });

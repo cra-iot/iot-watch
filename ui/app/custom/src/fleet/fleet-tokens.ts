@@ -46,6 +46,28 @@ export interface SiteOption {
 }
 
 /**
+ * Adds the parent facets of a result to the locations already known, by id. A facet without a
+ * label is a location the caller may not read: it keeps a name learnt earlier, otherwise it is
+ * shown as `unnamed` - never by its id, which stays in the token and the URL only.
+ */
+export function mergeSiteOptions(
+    known: SiteOption[], parents: { key?: string; label?: string }[], unnamed: string,
+): SiteOption[] {
+    const byId = new Map(known.map((site) => [site.value, site.label]));
+    parents.forEach((facet) => {
+        if (facet.key) { byId.set(facet.key, facet.label ?? byId.get(facet.key) ?? unnamed); }
+    });
+    return [...byId]
+        .map(([value, label]) => ({ value, label }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** The name a site: chip shows for a parent id; `unnamed` when the page does not know it. */
+export function siteLabel(sites: SiteOption[], id: string, unnamed: string): string {
+    return sites.find((site) => site.value === id)?.label ?? unnamed;
+}
+
+/**
  * Token categories offered by the bar; alarm values come from the registered asset types.
  * `sites` are the locations the page knows (from the last result's parent facet); when
  * given, site: picks from them by name instead of taking a raw asset id.

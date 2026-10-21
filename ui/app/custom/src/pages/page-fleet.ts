@@ -10,7 +10,7 @@ import type { FleetQueryResult } from "model";
 // client and has no FleetResource.
 import rest from "rest";
 import {
-    fromUrlParams, parseSearch, readingFollowUp, singlePrimaryRegister, toFleetQuery, toUrlParams,
+    fromUrlParams, mergeSiteOptions, parseSearch, readingFollowUp, singlePrimaryRegister, toFleetQuery, toUrlParams,
     type SiteOption, type Token,
 } from "../fleet/fleet-tokens";
 import "../fleet/or-fleet-search";
@@ -175,15 +175,9 @@ export class PageFleet extends Page<AppStateKeyed> {
         }
     }
 
-    /** Parent facets name the locations; a parent the caller may not read keeps its id as label. */
+    /** Parent facets name the locations; a parent the caller may not read is an unnamed location. */
     protected _rememberSites(result: FleetQueryResult): void {
-        const known = new Map(this._sites.map((site) => [site.value, site.label]));
-        (result.facets?.parents ?? []).forEach((facet) => {
-            if (facet.key) { known.set(facet.key, facet.label ?? known.get(facet.key) ?? facet.key); }
-        });
-        this._sites = [...known]
-            .map(([value, label]) => ({ value, label }))
-            .sort((a, b) => a.label.localeCompare(b.label));
+        this._sites = mergeSiteOptions(this._sites, result.facets?.parents ?? [], t("fleet.group.unnamedLocation"));
     }
 
     protected _applyView(index: number): void {

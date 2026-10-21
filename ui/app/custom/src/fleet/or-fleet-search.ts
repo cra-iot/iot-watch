@@ -7,7 +7,7 @@ import "@openremote/or-vaadin-components/or-vaadin-text-field";
 import "@openremote/or-vaadin-components/or-vaadin-number-field";
 import "@openremote/or-vaadin-components/or-vaadin-select";
 import {
-    formatSearch, parseSearch, tokenDefinitions, validateToken,
+    formatSearch, parseSearch, siteLabel, tokenDefinitions, validateToken,
     type SiteOption, type Token, type TokenDefinition, type TokenOperator, type TokenSuggestion,
 } from "./fleet-tokens";
 
@@ -213,7 +213,10 @@ export class OrFleetSearch extends OrElement {
         if (token.kind === "text") { return token.value; }
         const definition = this._definitions().find((d) => d.kind === token.kind);
         const label = definition ? translate(definition.labelKey) : token.kind;
-        const valueLabel = definition?.values?.find((v) => v.value === token.value)?.label;
+        // A site chip never shows the parent id, even before the page knows the location's name.
+        const valueLabel = token.kind === "site"
+            ? siteLabel(this.sites, token.value, translate("fleet.group.unnamedLocation"))
+            : definition?.values?.find((v) => v.value === token.value)?.label;
         // formatSearch renders `kind:<operator><value>`; reuse it for the operator part.
         const rendered = formatSearch([valueLabel ? { ...token, value: valueLabel } : token]);
         return `${label}: ${rendered.slice(token.kind.length + 1)}`;

@@ -58,6 +58,20 @@ describe("groupInfo", () => {
     it("leaves problems undefined when the wire omits it", () => {
         expect(groupInfo(result([], { facets }), "PARENT", "p2").problems).toBeUndefined();
     });
+
+    it("labels a location the caller may not read as unnamed, never by its id", () => {
+        const info = groupInfo(result([], { facets }), "PARENT", "p2", "Unnamed location");
+        expect(info).toEqual({ label: "Unnamed location", count: 3 });
+        // A parent missing from the facets entirely still gets no id as label.
+        expect(groupInfo(result([], { facets }), "PARENT", "p9", "Unnamed location").label).toBe("Unnamed location");
+    });
+
+    it("keeps a known label and leaves the no-parent group and other dimensions alone", () => {
+        expect(groupInfo(result([], { facets }), "PARENT", "p1", "Unnamed location").label).toBe("North");
+        expect(groupInfo(result([], { facets }), "PARENT", "", "Unnamed location").label).toBeUndefined();
+        const types = { types: [{ key: "GasMeterAsset", count: 3 }] };
+        expect(groupInfo(result([], { facets: types }), "TYPE", "GasMeterAsset", "Unnamed location").label).toBeUndefined();
+    });
 });
 
 describe("relativeAge", () => {
