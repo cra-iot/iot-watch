@@ -30,8 +30,38 @@ tasks.register('license') {
     }
 }
 
+// Keycloak loads themes packaged as a JAR from /opt/keycloak/providers, so the themes in
+// keycloak/themes can be delivered to a Keycloak pod as a single file.
+def keycloakThemesDir = file('keycloak/themes')
+
+def keycloakThemeDescriptor = tasks.register('keycloakThemeDescriptor') {
+    def descriptor = layout.buildDirectory.file('keycloak-theme/keycloak-themes.json')
+    inputs.dir(keycloakThemesDir)
+    outputs.file(descriptor)
+    doLast {
+        // Every theme directory, with every theme type (login, email, ...) it contains
+        def themes = keycloakThemesDir.listFiles().findAll { it.directory }.sort { it.name }.collect { theme ->
+            [name: theme.name, types: theme.listFiles().findAll { it.directory }*.name.sort()]
+        }
+        descriptor.get().asFile.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson([themes: themes])) + '\n'
+    }
+}
+
+tasks.register('keycloakThemeJar', Jar) {
+    archiveFileName = 'cra-keycloak-theme.jar'
+    destinationDirectory = layout.buildDirectory.dir('keycloak')
+    from(keycloakThemeDescriptor) {
+        into 'META-INF'
+    }
+    from(keycloakThemesDir) {
+        into 'theme'
+        exclude '*.md'
+    }
+}
+
 tasks.register('installDist', Copy) {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    dependsOn('keycloakThemeJar')
     dependsOn(parent.getTasksByName('installDist', true).findAll {
         // Don't create circular dependency
         it.project != project
