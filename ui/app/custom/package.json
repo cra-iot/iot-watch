@@ -23,6 +23,7 @@
     "@openremote/model": "1.32.1",
     "@openremote/or-app": "~1.32.1",
     "@openremote/or-element": "1.32.1",
+    "@openremote/or-icon": "1.32.1",
     "@openremote/or-translate": "1.32.1",
     "@openremote/or-vaadin-components": "1.32.1",
     "lit": "^3.3.1",

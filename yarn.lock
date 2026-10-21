@@ -1473,6 +1473,7 @@ __metadata:
     "@openremote/model": "npm:1.32.1"
     "@openremote/or-app": "npm:~1.32.1"
     "@openremote/or-element": "npm:1.32.1"
+    "@openremote/or-icon": "npm:1.32.1"
     "@openremote/or-translate": "npm:1.32.1"
     "@openremote/or-vaadin-components": "npm:1.32.1"
     "@openremote/util": "npm:~1.32.1"
