@@ -6,8 +6,11 @@ import { OrElement } from "@openremote/or-element";
 import { i18next } from "@openremote/or-translate";
 import "@openremote/or-vaadin-components/or-vaadin-select";
 import type { FleetQueryResult, FleetRow } from "model";
-import { cellValue, columnsFrom, EM_DASH, offeredColumns, type FleetColumn } from "./fleet-columns";
-import { groupInfo, relativeAge, segmentGroups, type RowGroup } from "./fleet-groups";
+import {
+    allColumns, cellValue, DEFAULT_HIDDEN, DEVICE_DETAILS, EM_DASH, identityLine, offeredColumns, readingValue,
+    selectedRegisters, visibleColumns, type FleetColumn, type HideKey,
+} from "./fleet-columns";
+import { GROUP_OPTIONS, groupInfo, problemCount, relativeAge, rowStatus, segmentGroups, type RowGroup } from "./fleet-groups";
 
 export class OrFleetRowClickEvent extends CustomEvent<{ assetId: string }> {
     public static readonly NAME = "or-fleet-row-click";
@@ -49,6 +52,14 @@ export class OrFleetGroupEvent extends CustomEvent<{ groupBy: string }> {
     }
 }
 
+export class OrFleetHiddenEvent extends CustomEvent<{ hidden: string[] }> {
+    public static readonly NAME = "or-fleet-hidden";
+
+    constructor(hidden: string[]) {
+        super(OrFleetHiddenEvent.NAME, { bubbles: true, composed: true, detail: { hidden } });
+    }
+}
+
 declare global {
     interface HTMLElementEventMap {
         [OrFleetRowClickEvent.NAME]: OrFleetRowClickEvent;
@@ -56,10 +67,20 @@ declare global {
         [OrFleetColumnsEvent.NAME]: OrFleetColumnsEvent;
         [OrFleetSortEvent.NAME]: OrFleetSortEvent;
         [OrFleetGroupEvent.NAME]: OrFleetGroupEvent;
+        [OrFleetHiddenEvent.NAME]: OrFleetHiddenEvent;
     }
 }
 
-const GROUP_OPTIONS = ["NONE", "PARENT", "TYPE", "STATUS"];
+/** Columns menu labels of the device details; "identity" is the meter's second line, not a column. */
+const DETAIL_LABELS: Record<string, string> = {
+    type: "fleet.column.type",
+    deliveryPoint: "fleet.column.deliveryPoint",
+    identity: "fleet.column.identity",
+    location: "fleet.column.location",
+    battery: "fleet.column.battery",
+    lastSeen: "fleet.column.lastSeen",
+    alarms: "fleet.column.alarms",
+};
 
 function translate(key: string, options?: Record<string, unknown>): string {
     return i18next.t(key.includes(":") ? key : `app:${key}`, options);
@@ -70,17 +91,30 @@ const formatUnits = (units?: string[]) => Util.resolveUnits(units);
 
 /**
  * Server-paged, server-sorted, optionally grouped result table. It only renders and emits events;
- * sorting, grouping, paging and column selection are applied by whoever owns the query.
+ * sorting, grouping, paging, column selection and hidden columns are applied by whoever owns the query.
  */
 @customElement("or-fleet-results")
 export class OrFleetResults extends OrElement {
 
     static get styles() {
         return css`
-            :host { display: block; width: 100%; color: var(--or-app-color3, #222); }
+            :host {
+                display: block; width: 100%; color: var(--or-app-color3, #222);
+                /* The app has no amber of its own; this one keeps 4.5:1 on white. */
+                --fleet-alarm-color: var(--or-app-color4, #e3000a);
+                --fleet-silent-color: #9a5b00;
+                --fleet-muted-color: #6b6b6b;
+            }
+            .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+                clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+            button:focus-visible, summary:focus-visible, input:focus-visible {
+                outline: 2px solid var(--or-app-color4, #e3000a); outline-offset: 2px; }
             .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 0; }
             .bar .spacer { flex: 1; }
+            .bar .label { color: var(--fleet-muted-color); }
             .count { font-weight: 600; }
+            .count .problems { font-weight: normal; color: var(--fleet-alarm-color); }
+            .control { display: inline-flex; align-items: center; gap: 6px; }
             .toggle { display: inline-flex; border: 1px solid var(--or-app-color5, #ccc); border-radius: 4px; overflow: hidden; }
             .toggle button { border: none; background: var(--or-app-color1, #fff); padding: 6px 10px; cursor: pointer; color: inherit; }
             .toggle button[aria-pressed="true"] { background: var(--or-app-color4, #4d9d2a); color: #fff; }
@@ -89,28 +123,53 @@ export class OrFleetResults extends OrElement {
             .picker { position: relative; }
             .picker summary { cursor: pointer; list-style: none; border: 1px solid var(--or-app-color5, #ccc); border-radius: 4px; padding: 6px 10px; background: var(--or-app-color1, #fff); }
             .picker .menu {
-                position: absolute; right: 0; z-index: 10; min-width: 220px; max-height: 320px; overflow-y: auto;
+                position: absolute; right: 0; z-index: 10; min-width: 240px; max-height: 420px; overflow-y: auto;
                 background: var(--or-app-color1, #fff); border: 1px solid var(--or-app-color5, #ccc);
-                border-radius: 4px; box-shadow: 0 2px 8px rgba(0, 0, 0, .2); padding: 8px;
+                border-radius: 4px; box-shadow: 0 2px 8px rgba(0, 0, 0, .2); padding: 8px 12px;
             }
+            .picker fieldset { border: none; margin: 0 0 8px; padding: 0; }
+            .picker legend { padding: 4px 0; font-size: 12px; font-weight: 600; text-transform: uppercase;
+                letter-spacing: .04em; color: var(--fleet-muted-color); }
             .picker label { display: flex; align-items: center; gap: 8px; padding: 4px 0; white-space: nowrap; }
-            .picker .reset { margin-top: 6px; width: 100%; }
-            .scroll { overflow-x: auto; }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--or-app-color2, #eee); white-space: nowrap; }
-            th { font-weight: 600; background: var(--or-app-color2, #f5f5f5); }
-            td.numeric, th.numeric { text-align: right; }
-            tbody tr.row { cursor: pointer; }
-            tbody tr.row:hover, tbody tr.row:focus { background: var(--or-app-color2, #f0f0f0); outline: none; }
-            .group-header { display: flex; align-items: center; gap: 12px; width: 100%; border: none; cursor: pointer;
-                background: var(--or-app-color2, #f5f5f5); color: inherit; padding: 8px 12px; text-align: left; font-size: 15px; }
+            .picker label.locked { color: var(--fleet-muted-color); }
+            .picker .reset { margin-top: 4px; width: 100%; }
+            /* Its own scroll box, so the header stays put vertically and the meter column horizontally. */
+            .scroll { overflow: auto; max-height: max(320px, calc(100vh - 260px));
+                border: 1px solid var(--or-app-color5, #ccc); border-radius: 4px; }
+            table { width: 100%; border-collapse: separate; border-spacing: 0; }
+            th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--or-app-color2, #eee);
+                white-space: nowrap; vertical-align: top; }
+            thead th { position: sticky; top: 0; z-index: 2; font-weight: 600; font-size: 13px;
+                background: var(--or-app-color2, #f5f5f5); border-bottom-color: var(--or-app-color5, #ccc); }
+            th.numeric, td.numeric { text-align: right; font-variant-numeric: tabular-nums; }
+            th.sorted { color: var(--or-app-color3, #222); }
+            .meter { position: sticky; left: 0; z-index: 1; background: var(--or-app-color1, #fff); }
+            thead th.meter { z-index: 3; background: var(--or-app-color2, #f5f5f5); }
+            .meter .name { font-weight: 500; }
+            .meter .identity { margin-top: 2px; font-size: 12px; color: var(--fleet-muted-color); font-variant-numeric: tabular-nums; }
+            /* Status as a left edge: alarm red, silent amber, ok nothing. */
+            tr.row td.meter { box-shadow: inset 3px 0 0 transparent; }
+            tr.row.alarm td.meter { box-shadow: inset 3px 0 0 var(--fleet-alarm-color); }
+            tr.row.silent td.meter { box-shadow: inset 3px 0 0 var(--fleet-silent-color); }
+            td.age.silent { color: var(--fleet-silent-color); }
+            tr.row { cursor: pointer; }
+            tr.row:hover td, tr.row:focus td { background: var(--or-app-color2, #f5f5f5); }
+            tr.row:focus { outline: none; }
+            tr.row:focus-visible td { box-shadow: inset 0 2px 0 var(--or-app-color4, #e3000a), inset 0 -2px 0 var(--or-app-color4, #e3000a); }
+            tr.row:focus-visible td.meter { box-shadow: inset 3px 0 0 var(--or-app-color4, #e3000a),
+                inset 0 2px 0 var(--or-app-color4, #e3000a), inset 0 -2px 0 var(--or-app-color4, #e3000a); }
+            tr.divider th { padding: 0; background: var(--or-app-color1, #fff); border-bottom-color: var(--or-app-color5, #ccc); }
+            tbody + tbody tr.divider th { border-top: 12px solid var(--or-app-color1, #fff); }
+            .group-header { position: sticky; left: 0; display: inline-flex; align-items: baseline; gap: 12px;
+                border: none; cursor: pointer; background: transparent; color: inherit; padding: 8px 12px;
+                text-align: left; font-size: 14px; }
             .group-header .name { font-weight: 600; }
-            .group-header .meta { color: var(--or-app-color5, #777); }
-            .group-header .problems { color: var(--or-app-color4, #e3000a); }
-            .group-header .continued { font-style: italic; color: var(--or-app-color5, #777); }
-            .chip { display: inline-block; margin-right: 4px; padding: 1px 8px; border-radius: 12px;
-                background: var(--or-app-color4, #e3000a); color: #fff; font-size: 12px; }
-            .empty { padding: 24px; text-align: center; color: var(--or-app-color5, #777); }
+            .group-header .meta { color: var(--fleet-muted-color); font-weight: normal; }
+            .group-header .problems { color: var(--fleet-alarm-color); font-weight: normal; }
+            .group-header .continued { font-style: italic; color: var(--fleet-muted-color); font-weight: normal; }
+            .chip { display: inline-block; margin-right: 4px; padding: 0 8px; border-radius: 12px;
+                border: 1px solid var(--fleet-alarm-color); color: inherit; font-size: 12px; line-height: 20px; }
+            .empty { padding: 24px; text-align: center; color: var(--fleet-muted-color); }
             .pager { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 8px 0; }
             .loading { opacity: .5; pointer-events: none; }
         `;
@@ -129,6 +188,10 @@ export class OrFleetResults extends OrElement {
     @property({ attribute: false })
     public sort?: { field: string; descending: boolean };
 
+    /** Hidden columns (fleet-columns HIDE_KEYS); the page owns, persists and shares them. */
+    @property({ attribute: false })
+    public hiddenColumns: string[] = [...DEFAULT_HIDDEN];
+
     /** Groups the user collapsed, by key. Reset when the grouping dimension changes. */
     protected _collapsed = new Set<string>();
 
@@ -145,13 +208,19 @@ export class OrFleetResults extends OrElement {
         this.requestUpdate();
     }
 
-    protected _selectedAttributes(result: FleetQueryResult): string[] {
-        return columnsFrom(result, formatUnits).filter((c) => c.attribute).map((c) => c.key);
+    protected _toggleColumn(result: FleetQueryResult, key: string, checked: boolean) {
+        const selected = selectedRegisters(result).filter((k) => k !== key);
+        this.dispatchEvent(new OrFleetColumnsEvent(checked ? [...selected, key] : selected));
     }
 
-    protected _toggleColumn(result: FleetQueryResult, key: string, checked: boolean) {
-        const selected = this._selectedAttributes(result).filter((k) => k !== key);
-        this.dispatchEvent(new OrFleetColumnsEvent(checked ? [...selected, key] : selected));
+    protected _toggleHidden(key: HideKey, shown: boolean) {
+        const rest = this.hiddenColumns.filter((k) => k !== key);
+        this.dispatchEvent(new OrFleetHiddenEvent(shown ? rest : [...rest, key]));
+    }
+
+    protected _reset() {
+        this.dispatchEvent(new OrFleetHiddenEvent([...DEFAULT_HIDDEN]));
+        this.dispatchEvent(new OrFleetColumnsEvent([]));
     }
 
     protected _alarmLabel(row: FleetRow, name: string): string {
@@ -163,6 +232,10 @@ export class OrFleetResults extends OrElement {
         return translate(`fleet.status.${key}`);
     }
 
+    protected _columnLabel(column: FleetColumn): string {
+        return column.labelKey ? translate(column.labelKey) : column.label;
+    }
+
     protected _renderAge(lastSeen: unknown, now: number): string {
         const age = relativeAge(lastSeen, now);
         if (!age) { return EM_DASH; }
@@ -170,11 +243,23 @@ export class OrFleetResults extends OrElement {
         return formatter.format(-age.value, age.unit);
     }
 
-    protected _renderCell(row: FleetRow, column: FleetColumn, now: number): TemplateResult | string {
+    protected _renderMeter(row: FleetRow, status: string): TemplateResult {
+        const identity = this.hiddenColumns.includes("identity") ? undefined : identityLine(row);
+        const name = row.name === undefined || row.name === null || row.name === "" ? EM_DASH : String(row.name);
+        return html`
+            <div class="name">${name}${status !== "ok" ? html`<span class="sr-only">, ${this._statusLabel(status)}</span>` : nothing}</div>
+            ${identity ? html`<div class="identity">${identity}</div>` : nothing}`;
+    }
+
+    protected _renderCell(result: FleetQueryResult, row: FleetRow, column: FleetColumn, status: string, now: number): TemplateResult | string {
         if (column.attribute) {
             return cellValue(row, column);
         }
         switch (column.key) {
+            case "name":
+                return this._renderMeter(row, status);
+            case "reading":
+                return readingValue(row, result, formatUnits);
             case "lastSeen":
                 return this._renderAge(row.lastSeen, now);
             case "batteryLevel":
@@ -192,105 +277,163 @@ export class OrFleetResults extends OrElement {
         }
     }
 
-    protected _renderResultBar(result: FleetQueryResult, columns: FleetColumn[]): TemplateResult {
-        const sortable = columns.filter((c) => c.sortable);
-        const field = this.sort?.field ?? "";
-        const items = sortable.map((c) => ({ value: c.key, label: c.labelKey ? translate(c.labelKey) : c.label }));
-        const offered = offeredColumns(result, formatUnits);
-        const selected = columns.filter((c) => c.attribute);
-        const shown = (result.rows ?? []).length;
+    protected _cellClass(column: FleetColumn, status: string): string {
+        return [
+            column.key === "name" ? "meter" : "",
+            column.numeric ? "numeric" : "",
+            column.key === "lastSeen" ? `age ${status}` : "",
+        ].filter(Boolean).join(" ");
+    }
+
+    protected _renderColumnsMenu(result: FleetQueryResult): TemplateResult {
+        const registers = [
+            ...allColumns(result, formatUnits).filter((c) => c.attribute).map((column) => ({ column, checked: true })),
+            ...offeredColumns(result, formatUnits).map((column) => ({ column, checked: false })),
+        ];
         return html`
-            <div class="bar">
-                <span class="count">${translate("fleet.result.count", { shown, total: result.total ?? 0 })}</span>
-                <span class="spacer"></span>
-                <or-vaadin-select
-                    style="width: 180px"
-                    aria-label=${translate("fleet.sort.label")}
-                    .items=${items}
-                    .value=${field}
-                    @value-changed=${(ev: CustomEvent) => {
-                        const next = ev.detail.value as string;
-                        if (next && next !== field) { this.dispatchEvent(new OrFleetSortEvent(next, false)); }
-                    }}
-                ></or-vaadin-select>
-                <button type="button" class="plain" ?disabled=${!field}
-                        aria-label=${translate(this.sort?.descending ? "fleet.sort.descending" : "fleet.sort.ascending")}
-                        @click=${() => this.dispatchEvent(new OrFleetSortEvent(field, !this.sort?.descending))}>
-                    ${this.sort?.descending ? "↓" : "↑"}
-                </button>
-                <span class="toggle" role="group" aria-label=${translate("fleet.groupBy.label")}>
-                    ${GROUP_OPTIONS.map((option) => html`
-                        <button type="button" aria-pressed=${this.groupBy === option ? "true" : "false"}
-                                @click=${() => { if (this.groupBy !== option) { this.dispatchEvent(new OrFleetGroupEvent(option)); } }}>
-                            ${translate(`fleet.groupBy.${option.toLowerCase()}`)}
-                        </button>`)}
-                </span>
-                <details class="picker">
-                    <summary>${translate("fleet.columns.picker")}</summary>
-                    <div class="menu">
-                        ${[...selected.map((c) => ({ column: c, checked: true })), ...offered.map((c) => ({ column: c, checked: false }))].map(({ column, checked }) => html`
+            <details class="picker">
+                <summary>${translate("fleet.columns.picker")}</summary>
+                <div class="menu">
+                    <fieldset>
+                        <legend>${translate("fleet.columns.details")}</legend>
+                        <label class="locked"><input type="checkbox" checked disabled>${translate("fleet.column.meter")}</label>
+                        ${DEVICE_DETAILS.map((key) => html`
+                            <label>
+                                <input type="checkbox" .checked=${!this.hiddenColumns.includes(key)}
+                                       @change=${(ev: Event) => this._toggleHidden(key, (ev.target as HTMLInputElement).checked)}>
+                                ${translate(DETAIL_LABELS[key])}
+                            </label>`)}
+                    </fieldset>
+                    <fieldset>
+                        <legend>${translate("fleet.columns.measurements")}</legend>
+                        <label>
+                            <input type="checkbox" .checked=${!this.hiddenColumns.includes("reading")}
+                                   @change=${(ev: Event) => this._toggleHidden("reading", (ev.target as HTMLInputElement).checked)}>
+                            ${translate("fleet.column.reading")}
+                        </label>
+                        ${registers.map(({ column, checked }) => html`
                             <label>
                                 <input type="checkbox" .checked=${checked}
                                        @change=${(ev: Event) => this._toggleColumn(result, column.key, (ev.target as HTMLInputElement).checked)}>
-                                ${column.label}
+                                ${column.label}${column.units ? html` <small>(${column.units})</small>` : nothing}
                             </label>`)}
-                        <button type="button" class="plain reset"
-                                @click=${() => this.dispatchEvent(new OrFleetColumnsEvent([]))}>
-                            ${translate("fleet.columns.reset")}
-                        </button>
-                    </div>
-                </details>
+                    </fieldset>
+                    <button type="button" class="plain reset" @click=${() => this._reset()}>
+                        ${translate("fleet.columns.reset")}
+                    </button>
+                </div>
+            </details>`;
+    }
+
+    protected _renderResultBar(result: FleetQueryResult): TemplateResult {
+        // Every sortable column, hidden or not, so the select never loses the current sort.
+        const items = allColumns(result, formatUnits).filter((c) => c.sortable)
+            .map((c) => ({ value: c.key, label: this._columnLabel(c) }));
+        const field = this.sort?.field ?? "";
+        const problems = problemCount(result);
+        return html`
+            <div class="bar">
+                <span class="count">
+                    ${translate("fleet.result.count", { n: result.total ?? 0 })}${problems
+                        ? html` · <span class="problems">${translate("fleet.result.problems", { n: problems })}</span>`
+                        : nothing}
+                </span>
+                <span class="spacer"></span>
+                <span class="control">
+                    <span class="label" id="group-label">${translate("fleet.groupBy.label")}</span>
+                    <span class="toggle" role="group" aria-labelledby="group-label">
+                        ${GROUP_OPTIONS.map((option) => html`
+                            <button type="button" aria-pressed=${this.groupBy === option ? "true" : "false"}
+                                    @click=${() => { if (this.groupBy !== option) { this.dispatchEvent(new OrFleetGroupEvent(option)); } }}>
+                                ${translate(`fleet.groupBy.${option.toLowerCase()}`)}
+                            </button>`)}
+                    </span>
+                </span>
+                <span class="control">
+                    <span class="label">${translate("fleet.sort.label")}</span>
+                    <or-vaadin-select
+                        style="width: 170px"
+                        aria-label=${translate("fleet.sort.label")}
+                        .items=${items}
+                        .value=${field}
+                        @value-changed=${(ev: CustomEvent) => {
+                            const next = ev.detail.value as string;
+                            if (next && next !== field) { this.dispatchEvent(new OrFleetSortEvent(next, false)); }
+                        }}
+                    ></or-vaadin-select>
+                    <button type="button" class="plain" ?disabled=${!field}
+                            aria-label=${translate(this.sort?.descending ? "fleet.sort.descending" : "fleet.sort.ascending")}
+                            @click=${() => this.dispatchEvent(new OrFleetSortEvent(field, !this.sort?.descending))}>
+                        ${this.sort?.descending ? "↓" : "↑"}
+                    </button>
+                </span>
+                ${this._renderColumnsMenu(result)}
             </div>`;
     }
 
-    protected _renderTable(rows: FleetRow[], columns: FleetColumn[], now: number): TemplateResult {
+    protected _renderRows(result: FleetQueryResult, rows: FleetRow[], columns: FleetColumn[], now: number): TemplateResult[] {
+        return rows.map((row) => {
+            const status = rowStatus(row, now);
+            return html`
+                <tr class="row ${status}" tabindex="0"
+                    @click=${() => this.dispatchEvent(new OrFleetRowClickEvent(row.id))}
+                    @keydown=${(ev: KeyboardEvent) => { if (ev.key === "Enter") { this.dispatchEvent(new OrFleetRowClickEvent(row.id)); } }}>
+                    ${columns.map((c) => html`<td class=${this._cellClass(c, status)}>${this._renderCell(result, row, c, status, now)}</td>`)}
+                </tr>`;
+        });
+    }
+
+    protected _groupName(key: string, label?: string): string {
+        if (this.groupBy === "STATUS") { return this._statusLabel(key); }
+        return label ?? (key || EM_DASH);
+    }
+
+    /** A group is a tbody whose first row is a full-width divider, so columns align across groups. */
+    protected _renderGroup(result: FleetQueryResult, group: RowGroup, columns: FleetColumn[], now: number): TemplateResult {
+        const info = groupInfo(result, this.groupBy, group.key);
+        const problems = info.problems;
+        const open = !this._collapsed.has(group.key);
+        const name = this._groupName(group.key, info.label);
+        return html`
+            <tbody>
+                <tr class="divider">
+                    <th scope="rowgroup" colspan=${columns.length}>
+                        <button type="button" class="group-header" aria-expanded=${open ? "true" : "false"}
+                                @click=${() => this._toggleGroup(group.key)}>
+                            <span aria-hidden="true">${open ? "▾" : "▸"}</span>
+                            <span class="name">${name}</span>
+                            ${group.continued
+                                ? html`<span class="continued">${translate("fleet.group.continued")}</span>`
+                                : html`
+                                    ${info.count !== undefined ? html`<span class="meta">${translate("fleet.group.devices", { n: info.count })}</span>` : nothing}
+                                    ${problems ? html`<span class="problems">${translate("fleet.group.problems", { n: problems })}</span>` : nothing}`}
+                        </button>
+                    </th>
+                </tr>
+                ${open ? this._renderRows(result, group.rows, columns, now) : nothing}
+            </tbody>`;
+    }
+
+    protected _renderTable(result: FleetQueryResult, groups: RowGroup[], columns: FleetColumn[], now: number): TemplateResult {
+        const sortField = this.sort?.field;
         return html`
             <div class="scroll">
                 <table>
                     <thead><tr>
-                        ${columns.map((c) => html`
-                            <th class=${c.numeric ? "numeric" : ""}>
-                                ${c.labelKey ? translate(c.labelKey) : c.label}${c.units ? html` <small>(${c.units})</small>` : nothing}
-                            </th>`)}
+                        ${columns.map((c) => {
+                            const sorted = sortField === c.key;
+                            return html`
+                                <th scope="col" class="${this._cellClass(c, "")}${sorted ? " sorted" : ""}"
+                                    aria-sort=${sorted ? (this.sort?.descending ? "descending" : "ascending") : "none"}>
+                                    ${this._columnLabel(c)}${c.units ? html` <small>(${c.units})</small>` : nothing}${sorted ? (this.sort?.descending ? " ↓" : " ↑") : nothing}
+                                </th>`;
+                        })}
                     </tr></thead>
-                    <tbody>
-                        ${rows.map((row) => html`
-                            <tr class="row" tabindex="0"
-                                @click=${() => this.dispatchEvent(new OrFleetRowClickEvent(row.id))}
-                                @keydown=${(ev: KeyboardEvent) => { if (ev.key === "Enter") { this.dispatchEvent(new OrFleetRowClickEvent(row.id)); } }}>
-                                ${columns.map((c) => html`<td class=${c.numeric ? "numeric" : ""}>${this._renderCell(row, c, now)}</td>`)}
-                            </tr>`)}
-                    </tbody>
+                    ${this.groupBy === "NONE"
+                        ? html`<tbody>${this._renderRows(result, groups[0].rows, columns, now)}</tbody>`
+                        : groups.map((group) => this._renderGroup(result, group, columns, now))}
                 </table>
             </div>`;
-    }
-
-    protected _groupName(result: FleetQueryResult, key: string, label?: string): string {
-        if (this.groupBy === "STATUS") { return this._statusLabel(key); }
-        if (this.groupBy === "PARENT" && !key) { return translate("fleet.group.noParent"); }
-        // A location the caller may not read has no label; its asset id is never shown.
-        if (this.groupBy === "PARENT") { return label ?? translate("fleet.group.unnamedLocation"); }
-        return label ?? (key || EM_DASH);
-    }
-
-    protected _renderGroup(result: FleetQueryResult, group: RowGroup, columns: FleetColumn[], now: number): TemplateResult {
-        const info = groupInfo(result, this.groupBy, group.key, translate("fleet.group.unnamedLocation"));
-        const problems = info.problems;
-        const open = !this._collapsed.has(group.key);
-        return html`
-            <section>
-                <button type="button" class="group-header" aria-expanded=${open ? "true" : "false"}
-                        @click=${() => this._toggleGroup(group.key)}>
-                    <span>${open ? "▾" : "▸"}</span>
-                    ${group.continued
-                        ? html`<span class="name">${this._groupName(result, group.key, info.label)}</span>
-                               <span class="continued">${translate("fleet.group.continued")}</span>`
-                        : html`<span class="name">${this._groupName(result, group.key, info.label)}</span>
-                               ${info.count !== undefined ? html`<span class="meta">${translate("fleet.group.devices", { n: info.count })}</span>` : nothing}
-                               ${problems ? html`<span class="problems">${translate("fleet.group.problems", { n: problems })}</span>` : nothing}`}
-                </button>
-                ${open ? this._renderTable(group.rows, columns, now) : nothing}
-            </section>`;
     }
 
     protected _renderPager(result: FleetQueryResult): TemplateResult | typeof nothing {
@@ -318,16 +461,14 @@ export class OrFleetResults extends OrElement {
         const result = this.result;
         if (!result) { return nothing; }
         const now = Date.now();
-        const columns = columnsFrom(result, formatUnits);
+        const columns = visibleColumns(result, this.hiddenColumns, formatUnits);
         const groups = segmentGroups(result, this.groupBy, now);
         return html`
-            ${this._renderResultBar(result, columns)}
+            ${this._renderResultBar(result)}
             <div class=${this.loading ? "loading" : ""} aria-busy=${this.loading ? "true" : "false"}>
                 ${groups.length === 0
                     ? html`<div class="empty">${translate("fleet.empty")}</div>`
-                    : this.groupBy === "NONE"
-                        ? this._renderTable(groups[0].rows, columns, now)
-                        : groups.map((group) => this._renderGroup(result, group, columns, now))}
+                    : this._renderTable(result, groups, columns, now)}
             </div>
             ${this._renderPager(result)}`;
     }

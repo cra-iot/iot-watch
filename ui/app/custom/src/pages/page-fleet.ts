@@ -1,6 +1,5 @@
 import { css, html, nothing, TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import { manager } from "@openremote/core";
 import { AppStateKeyed, Page, PageProvider, router } from "@openremote/or-app";
 import { getAssetsRoute } from "@openremote/manager/routes";
 import { i18next } from "@openremote/or-translate";
@@ -9,18 +8,13 @@ import type { FleetQueryResult } from "model";
 // The project's generated client: manager.rest from @openremote/core is the stock OpenRemote
 // client and has no FleetResource.
 import rest from "rest";
+import { resolveHidden } from "../fleet/fleet-columns";
 import {
-    fromUrlParams, mergeSiteOptions, parseSearch, readingFollowUp, singlePrimaryRegister, toFleetQuery, toUrlParams,
+    fromUrlParams, mergeSiteOptions, readingFollowUp, singlePrimaryRegister, toFleetQuery, toUrlParams,
     type SiteOption, type Token,
 } from "../fleet/fleet-tokens";
 import "../fleet/or-fleet-search";
 import "../fleet/or-fleet-results";
-
-interface SavedView {
-    name: string;
-    q: string;
-    groupBy: string;
-}
 
 export function pageFleetProvider(store: EnhancedStore<AppStateKeyed>): PageProvider<AppStateKeyed> {
     return {
@@ -32,14 +26,8 @@ export function pageFleetProvider(store: EnhancedStore<AppStateKeyed>): PageProv
 
 const t = (key: string) => i18next.t(`app:${key}`);
 
-/** Built-in views, used while a realm has none stored. Attribute names stay out: they come from the model. */
-function defaultViews(): SavedView[] {
-    return [
-        { name: t("fleet.views.all"), q: "", groupBy: "PARENT" },
-        { name: t("fleet.views.byStatus"), q: "", groupBy: "STATUS" },
-        { name: t("fleet.views.silent"), q: "seen:>24h", groupBy: "NONE" },
-    ];
-}
+/** Hidden table columns of this browser; the share URL's hide= wins over it. */
+const HIDDEN_COLUMNS_KEY = "iot-watch.fleet.hiddenColumns";
 
 @customElement("page-fleet")
 export class PageFleet extends Page<AppStateKeyed> {
@@ -48,8 +36,6 @@ export class PageFleet extends Page<AppStateKeyed> {
         // language=CSS
         return css`
             :host { display: flex; flex-direction: column; width: 100%; padding: 12px 24px; box-sizing: border-box; }
-            .views { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
-            .views select { padding: 6px; border: 1px solid var(--or-app-color5, #ccc); border-radius: 4px; }
             .error { color: var(--or-app-color4, #e3000a); padding: 8px 0; }
             .note { color: var(--or-app-color3, #4c4c4c); padding: 8px 0; }
         `;
@@ -58,12 +44,12 @@ export class PageFleet extends Page<AppStateKeyed> {
     @state() protected _tokens: Token[] = [];
     @state() protected _result?: FleetQueryResult;
     @state() protected _loading = false;
-    @state() protected _groupBy = "PARENT";
+    @state() protected _groupBy = "NONE";
     @state() protected _offset = 0;
     @state() protected _sort = { field: "name", descending: false };
     @state() protected _columns?: string[];
     @state() protected _error?: string;
-    @state() protected _views: SavedView[] = [];
+    @state() protected _hidden: string[] = [];
     /** Set when a reading: token could not be applied because no single primary register is known. */
     @state() protected _readingNote = false;
     /** Locations seen in results so far, for the site: token; keeps a chosen site's name after narrowing. */
@@ -83,34 +69,25 @@ export class PageFleet extends Page<AppStateKeyed> {
     stateChanged(_state: AppStateKeyed): void {
     }
 
-    protected get _viewsKey(): string {
-        return `iot-watch.fleet.views.${manager.displayRealm}`;
+    protected _storedHidden(): string | null {
+        try {
+            return window.localStorage.getItem(HIDDEN_COLUMNS_KEY);
+        } catch {
+            // Storage unavailable: the defaults apply.
+            return null;
+        }
     }
 
-    protected _loadViews(): SavedView[] {
+    protected _storeHidden(hidden: string[]): void {
         try {
-            const stored = window.localStorage.getItem(this._viewsKey);
-            if (stored) {
-                const parsed = JSON.parse(stored);
-                if (Array.isArray(parsed)) {
-                    return parsed.filter((v) => v && typeof v.name === "string" && typeof v.q === "string");
-                }
-            }
+            window.localStorage.setItem(HIDDEN_COLUMNS_KEY, hidden.join(","));
         } catch {
-            // Storage unavailable or corrupt: fall through to the defaults.
+            // Remembering the choice is best effort; the URL still carries it.
         }
-        const views = defaultViews();
-        try {
-            window.localStorage.setItem(this._viewsKey, JSON.stringify(views));
-        } catch {
-            // Seeding is best effort.
-        }
-        return views;
     }
 
     protected firstUpdated(changedProperties: Map<string, any>): void {
         super.firstUpdated?.(changedProperties as any);
-        this._views = this._loadViews();
         // The route hash looks like "#/fleet?q=...": the query string belongs to the page.
         const hash = window.location.hash;
         const restored = fromUrlParams(new URLSearchParams(hash.includes("?") ? hash.slice(hash.indexOf("?") + 1) : ""));
@@ -118,12 +95,13 @@ export class PageFleet extends Page<AppStateKeyed> {
         if (restored.groupBy) { this._groupBy = restored.groupBy; }
         if (restored.sort) { this._sort = restored.sort; }
         if (restored.columns) { this._columns = restored.columns; }
+        this._hidden = resolveHidden(restored.hidden, this._storedHidden());
         this._runQuery();
     }
 
     protected _pushUrl(): void {
         const params = toUrlParams(this._tokens, {}, {
-            groupBy: this._groupBy, sort: this._sort, columns: this._columns,
+            groupBy: this._groupBy, sort: this._sort, columns: this._columns, hidden: this._hidden,
         });
         try {
             // replaceState does not fire hashchange, so the router leaves the page alone.
@@ -180,30 +158,8 @@ export class PageFleet extends Page<AppStateKeyed> {
         this._sites = mergeSiteOptions(this._sites, result.facets?.parents ?? [], t("fleet.group.unnamedLocation"));
     }
 
-    protected _applyView(index: number): void {
-        const view = this._views[index];
-        if (!view) { return; }
-        this._tokens = parseSearch(view.q);
-        this._groupBy = view.groupBy;
-        this._offset = 0;
-        this._pushUrl();
-        this._runQuery();
-    }
-
     protected render(): TemplateResult {
         return html`
-            ${this._views.length ? html`
-                <div class="views">
-                    <label for="views"><or-translate value="app:fleet.views.label"></or-translate></label>
-                    <select id="views" @change=${(e: Event) => {
-                        const select = e.target as HTMLSelectElement;
-                        this._applyView(Number(select.value));
-                        select.value = "";
-                    }}>
-                        <option value="" selected disabled></option>
-                        ${this._views.map((view, i) => html`<option value=${i}>${view.name}</option>`)}
-                    </select>
-                </div>` : nothing}
             <or-fleet-search .tokens=${this._tokens} .sites=${this._sites}
                              @or-fleet-search-change=${(e: CustomEvent) => {
                                  this._tokens = e.detail.tokens;
@@ -214,7 +170,7 @@ export class PageFleet extends Page<AppStateKeyed> {
             ${this._error ? html`<div class="error"><or-translate value=${this._error}></or-translate></div>` : nothing}
             ${this._readingNote ? html`<div class="note" role="status"><or-translate value="app:fleet.reading.needsOneType"></or-translate></div>` : nothing}
             <or-fleet-results .result=${this._result} .groupBy=${this._groupBy} .loading=${this._loading}
-                              .sort=${this._sort}
+                              .sort=${this._sort} .hiddenColumns=${this._hidden}
                               @or-fleet-row-click=${(e: CustomEvent) =>
                                   router.navigate(getAssetsRoute(false, e.detail.assetId))}
                               @or-fleet-page=${(e: CustomEvent) => {
@@ -231,6 +187,12 @@ export class PageFleet extends Page<AppStateKeyed> {
                                   this._offset = 0;
                                   this._pushUrl();
                                   this._runQuery();
+                              }}
+                              @or-fleet-hidden=${(e: CustomEvent) => {
+                                  // Display only: no query, the result already holds every column.
+                                  this._hidden = e.detail.hidden;
+                                  this._storeHidden(this._hidden);
+                                  this._pushUrl();
                               }}
                               @or-fleet-group=${(e: CustomEvent) => {
                                   this._groupBy = e.detail.groupBy;

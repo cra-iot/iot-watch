@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { cellValue, columnsFrom, EM_DASH, formatValue, offeredColumns } from "./fleet-columns";
+import {
+    allColumns, cellValue, DEFAULT_HIDDEN, EM_DASH, formatValue, identityLine, offeredColumns, parseHidden, readingValue,
+    resolveHidden, selectedRegisters, serializeHidden, visibleColumns,
+} from "./fleet-columns";
 
 const column = (name: string, over: Record<string, unknown> = {}) => ({
     name,
@@ -19,47 +22,75 @@ const result = (columns: unknown[], rows: unknown[] = []) =>
 const units = (keys?: string[]) =>
     keys?.map((key) => ({ metre: "m", cubed: "³", celsius: "°C" } as Record<string, string>)[key] ?? key).join("") ?? "";
 
-describe("columnsFrom", () => {
-    it("renders the identity columns plus whatever the server selected", () => {
-        const columns = columnsFrom(result([column("volume", { primary: true, units: ["metre", "cubed"] })]), units);
-        const keys = columns.map((c) => c.key);
-        expect(keys).toContain("name");
-        expect(keys).toContain("lastSeen");
-        expect(keys).toContain("volume");
+describe("visibleColumns", () => {
+    const keys = (columns: { key: string }[]) => columns.map((c) => c.key);
+
+    it("shows meter, reading, last seen, battery and alarms by default", () => {
+        const columns = visibleColumns(result([column("volume", { primary: true })]), DEFAULT_HIDDEN, units);
+        expect(keys(columns)).toEqual(["name", "reading", "lastSeen", "batteryLevel", "alarms"]);
     });
 
-    it("ignores a column the server offered but did not select", () => {
-        const columns = columnsFrom(result([
+    it("shows every detail column when nothing is hidden, the meter always first", () => {
+        const columns = visibleColumns(result([]), [], units);
+        expect(keys(columns)).toEqual(["name", "type", "deliveryPointId", "parentName", "reading", "lastSeen", "batteryLevel", "alarms"]);
+    });
+
+    it("never hides the meter; identity hides no column, only the meter's second line", () => {
+        const all = ["type", "deliveryPoint", "identity", "location", "battery", "lastSeen", "alarms", "reading"];
+        expect(keys(visibleColumns(result([]), all, units))).toEqual(["name"]);
+        expect(keys(visibleColumns(result([]), ["identity"], units))).toHaveLength(8);
+    });
+
+    it("renders a primary register in Reading, not as a column of its own", () => {
+        const columns = visibleColumns(result([
             column("volume", { primary: true }),
+            column("energy", { primary: true, assetType: "HeatMeterAsset" }),
+        ]), DEFAULT_HIDDEN, units);
+        expect(keys(columns)).not.toContain("volume");
+        expect(keys(columns)).not.toContain("energy");
+    });
+
+    it("renders user-selected registers after Reading, once per name, with their units", () => {
+        const columns = visibleColumns(result([
+            column("volume", { primary: true }),
+            column("gas_temperature", { units: ["celsius"] }),
+            column("gas_temperature", { units: ["celsius"], assetType: "OtherMeterAsset" }),
             column("volume_standard", { selected: false }),
-        ]), units);
-        expect(columns.map((c) => c.key)).not.toContain("volume_standard");
+        ]), DEFAULT_HIDDEN, units);
+        expect(keys(columns)).toEqual(["name", "reading", "gas_temperature", "lastSeen", "batteryLevel", "alarms"]);
+        expect(columns.find((c) => c.key === "gas_temperature")?.units).toBe("°C");
+    });
+
+    it("hides Reading on request but keeps selected registers", () => {
+        const columns = visibleColumns(result([column("gas_temperature")]), ["reading"], units);
+        expect(keys(columns)).toContain("gas_temperature");
+        expect(keys(columns)).not.toContain("reading");
     });
 
     it("works for a type the client has never heard of", () => {
-        const columns = columnsFrom(result([
+        const columns = visibleColumns(result([
             column("temperature", { primary: true, units: ["celsius"], assetType: "ThermometerAsset" }),
-        ]), units);
-        expect(columns.map((c) => c.key)).toContain("temperature");
+            column("humidity", { assetType: "ThermometerAsset" }),
+        ]), DEFAULT_HIDDEN, units);
+        expect(keys(columns)).toContain("humidity");
     });
+});
 
-    it("formats the server's unit keys for display", () => {
-        const columns = columnsFrom(result([column("volume", { primary: true, units: ["metre", "cubed"] })]), units);
-        expect(columns.find((c) => c.key === "volume")?.units).toBe("m³");
+describe("allColumns", () => {
+    it("makes Reading sortable under the server's reading field", () => {
+        const reading = allColumns(result([]), units).find((c) => c.key === "reading");
+        expect(reading?.sortable).toBe(true);
+        expect(reading?.numeric).toBe(true);
     });
+});
 
-    it("renders one column when two asset types offer a register under the same name", () => {
-        const columns = columnsFrom(result([
+describe("selectedRegisters", () => {
+    it("lists the user-selected registers, never the primary ones the server always selects", () => {
+        expect(selectedRegisters(result([
             column("volume", { primary: true }),
-            column("volume", { primary: true, assetType: "WaterMeterAsset" }),
-        ]), units);
-        expect(columns.filter((c) => c.key === "volume")).toHaveLength(1);
-    });
-
-    it("renders without a register column when the server resolved none", () => {
-        const columns = columnsFrom(result([]), units);
-        expect(columns.map((c) => c.key)).toContain("name");
-        expect(columns.every((c) => c.key !== undefined)).toBe(true);
+            column("gas_temperature"),
+            column("pressure", { selected: false }),
+        ]))).toEqual(["gas_temperature"]);
     });
 });
 
@@ -71,15 +102,94 @@ describe("offeredColumns", () => {
         ]), units);
         expect(columns.map((c) => c.key)).toEqual(["gas_temperature"]);
     });
-});
 
-describe("offeredColumns deduplication", () => {
     it("offers one column when two asset types offer the same unselected register", () => {
         const columns = offeredColumns(result([
             column("gas_temperature", { selected: false }),
             column("gas_temperature", { selected: false, assetType: "OtherMeterAsset" }),
         ]), units);
         expect(columns.map((c) => c.key)).toEqual(["gas_temperature"]);
+    });
+
+    it("does not offer a register another type already has selected", () => {
+        const columns = offeredColumns(result([
+            column("gas_temperature"),
+            column("gas_temperature", { selected: false, assetType: "OtherMeterAsset" }),
+        ]), units);
+        expect(columns).toEqual([]);
+    });
+});
+
+describe("hidden columns", () => {
+    it("parses a comma list, dropping unknown keys and keeping a stable order", () => {
+        expect(parseHidden("battery, type,bogus,type")).toEqual(["type", "battery"]);
+    });
+
+    it("tells an absent value from an empty one", () => {
+        expect(parseHidden(null)).toBeUndefined();
+        expect(parseHidden(undefined)).toBeUndefined();
+        expect(parseHidden("")).toEqual([]);
+    });
+
+    it("serializes nothing for the defaults, in any order", () => {
+        expect(serializeHidden(["location", "type", "deliveryPoint"])).toBeUndefined();
+    });
+
+    it("serializes an empty list when everything is shown, and a non-default list as is", () => {
+        expect(serializeHidden([])).toBe("");
+        expect(serializeHidden(["reading", "type"])).toBe("type,reading");
+    });
+
+    it("lets the URL win over browser storage, and falls back to the defaults", () => {
+        expect(resolveHidden(["battery"], "type")).toEqual(["battery"]);
+        expect(resolveHidden([], "type")).toEqual([]);
+        expect(resolveHidden(undefined, "type,alarms")).toEqual(["type", "alarms"]);
+        expect(resolveHidden(undefined, null)).toEqual(DEFAULT_HIDDEN);
+    });
+});
+
+describe("readingValue", () => {
+    const columns = [
+        column("volume", { primary: true, units: ["metre", "cubed"], assetType: "WaterMeterAsset" }),
+        column("volume", { primary: true, units: ["litre"], assetType: "GasMeterAsset" }),
+        column("energy", { primary: true, units: ["kilo", "watt", "hour"], assetType: "HeatMeterAsset" }),
+    ];
+
+    it("renders the row's primary register with the units of its own type", () => {
+        const row = { type: "GasMeterAsset", primaryName: "volume", values: { volume: 12 } } as never;
+        expect(readingValue(row, result(columns), units)).toBe("12 litre");
+        const water = { type: "WaterMeterAsset", primaryName: "volume", values: { volume: 201 } } as never;
+        expect(readingValue(water, result(columns), units)).toBe("201 m³");
+    });
+
+    it("falls back to any descriptor of that name when the row's type has none", () => {
+        const row = { type: "UnknownAsset", primaryName: "energy", values: { energy: 7 } } as never;
+        expect(readingValue(row, result(columns), units)).toBe("7 kilowatthour");
+    });
+
+    it("renders an em dash without a primary register, value or value map", () => {
+        expect(readingValue({ values: { volume: 1 } } as never, result(columns), units)).toBe(EM_DASH);
+        expect(readingValue({ primaryName: "volume", values: {} } as never, result(columns), units)).toBe(EM_DASH);
+        expect(readingValue({ primaryName: "volume", values: { volume: null } } as never, result(columns), units)).toBe(EM_DASH);
+        expect(readingValue({ primaryName: "volume" } as never, result(columns), units)).toBe(EM_DASH);
+    });
+
+    it("treats zero as a reading", () => {
+        const row = { type: "WaterMeterAsset", primaryName: "volume", values: { volume: 0 } } as never;
+        expect(readingValue(row, result(columns), units)).toBe("0 m³");
+    });
+});
+
+describe("identityLine", () => {
+    it("joins serial and devEUI, omitting the missing part", () => {
+        expect(identityLine({ meterId: "S-1", devEui: "00AA" } as never)).toBe("S-1 · 00AA");
+        expect(identityLine({ devEui: "00AA" } as never)).toBe("00AA");
+        expect(identityLine({ meterId: "S-1", devEui: "" } as never)).toBe("S-1");
+    });
+
+    it("is undefined when both are missing", () => {
+        expect(identityLine({} as never)).toBeUndefined();
+        expect(identityLine({ meterId: null, devEui: " " } as never)).toBeUndefined();
     });
 });
 

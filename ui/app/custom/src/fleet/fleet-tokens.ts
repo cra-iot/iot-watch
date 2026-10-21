@@ -2,6 +2,8 @@
 // manager populates the @openremote/model copy at startup, and the local copy stays empty.
 import { AssetModelUtil } from "@openremote/model";
 import type { FleetQuery, FleetQueryAttributeFilter, FleetQueryOperator } from "model";
+import { parseHidden, serializeHidden } from "./fleet-columns";
+import { GROUP_OPTIONS } from "./fleet-groups";
 
 export type TokenKind =
     | "text" | "type" | "alarm" | "seen" | "delivery" | "serial"
@@ -327,11 +329,17 @@ export interface FleetView {
     groupBy?: string;
     sort?: { field: string; descending: boolean };
     columns?: string[];
+    /** Hidden table columns (fleet-columns HIDE_KEYS); an empty list means "show all". */
+    hidden?: string[];
 }
 
-const GROUP_VALUES = new Set(["NONE", "PARENT", "TYPE", "STATUS"]);
+// PARENT is a server grouping the page no longer offers; an old link with it falls back to none.
+const GROUP_VALUES = new Set<string>(GROUP_OPTIONS);
 
-/** Writes the search (q) and, when given, its view: group, sort ("-field" = descending) and columns. */
+/**
+ * Writes the search (q) and, when given, its view: group, sort ("-field" = descending), columns and
+ * hidden columns (hide, omitted while it equals the defaults).
+ */
 export function toUrlParams(tokens: Token[], extras: Record<string, string>, view: FleetView = {}): URLSearchParams {
     const params = new URLSearchParams(extras);
     const q = formatSearch(tokens);
@@ -339,6 +347,8 @@ export function toUrlParams(tokens: Token[], extras: Record<string, string>, vie
     if (view.groupBy) { params.set("group", view.groupBy); }
     if (view.sort?.field) { params.set("sort", `${view.sort.descending ? "-" : ""}${view.sort.field}`); }
     if (view.columns?.length) { params.set("columns", view.columns.join(",")); }
+    const hide = view.hidden ? serializeHidden(view.hidden) : undefined;
+    if (hide !== undefined) { params.set("hide", hide); }
     return params;
 }
 
@@ -360,6 +370,9 @@ export function fromUrlParams(params: URLSearchParams): { tokens: Token[] } & Fl
     }
     const columns = (params.get("columns") ?? "").split(",").map((c) => c.trim()).filter(Boolean);
     if (columns.length) { result.columns = columns; }
+    // "hide=" (empty) is meaningful: every column shown.
+    const hidden = parseHidden(params.get("hide"));
+    if (hidden) { result.hidden = hidden; }
     return result;
 }
 

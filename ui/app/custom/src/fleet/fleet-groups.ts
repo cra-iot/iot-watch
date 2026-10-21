@@ -1,11 +1,14 @@
 import type { FleetQueryResult, FleetRow } from "model";
 
-type Facet = NonNullable<NonNullable<FleetQueryResult["facets"]>["parents"]>[number];
+type Facet = NonNullable<NonNullable<FleetQueryResult["facets"]>["types"]>[number];
 
 /** Mirrors FleetResultAssembler.SILENT_AFTER: nothing heard for this long means "silent". */
 export const SILENT_AFTER_MS = 24 * 60 * 60 * 1000;
 
-export type GroupBy = "NONE" | "PARENT" | "TYPE" | "STATUS";
+/** The server also groups by PARENT; the page does not offer it. */
+export type GroupBy = "NONE" | "TYPE" | "STATUS";
+
+export const GROUP_OPTIONS: GroupBy[] = ["NONE", "TYPE", "STATUS"];
 
 export interface RowGroup {
     key: string;
@@ -24,7 +27,6 @@ export function rowStatus(row: FleetRow, now: number): "alarm" | "silent" | "ok"
 /** Same key the server groups and sorts by (FleetResultAssembler.groupKey). */
 export function groupKey(row: FleetRow, groupBy: string, now: number): string {
     switch (groupBy) {
-        case "PARENT": return row.parentId ?? "";
         case "TYPE": return row.type ?? "";
         case "STATUS": return rowStatus(row, now);
         default: return "";
@@ -34,14 +36,13 @@ export function groupKey(row: FleetRow, groupBy: string, now: number): string {
 function facetsFor(result: FleetQueryResult, groupBy: string): Facet[] {
     const facets = result.facets;
     switch (groupBy) {
-        case "PARENT": return facets?.parents ?? [];
         case "TYPE": return facets?.types ?? [];
         case "STATUS": return facets?.status ?? [];
         default: return [];
     }
 }
 
-/** Facet counts by group key; rows without a group key (no parent) fill the gap to `total`. */
+/** Facet counts by group key; rows without a group key fill the gap to `total`. */
 function groupCounts(result: FleetQueryResult, groupBy: string): Map<string, number> {
     const counts = new Map<string, number>();
     let sum = 0;
@@ -91,20 +92,22 @@ export function segmentGroups(result: FleetQueryResult, groupBy: string, now: nu
     return groups;
 }
 
-/**
- * Device and problem counts (from facets, never from this page) and the facet label, when there is one.
- * A location the caller may not read comes without a label; it is shown as `unnamedLocation`, never
- * by its asset id.
- */
+/** Device and problem counts (from facets, never from this page) and the facet label, when there is one. */
 export function groupInfo(
-    result: FleetQueryResult, groupBy: string, key: string, unnamedLocation?: string,
+    result: FleetQueryResult, groupBy: string, key: string,
 ): { label?: string; count?: number; problems?: number } {
     const facet = facetsFor(result, groupBy).find((f) => (f.key ?? "") === key);
-    const fallback = groupBy === "PARENT" && key ? unnamedLocation : undefined;
     if (facet) {
-        return { label: facet.label ?? fallback, count: facet.count, problems: facet.problems };
+        return { label: facet.label, count: facet.count, problems: facet.problems };
     }
-    return { ...(fallback !== undefined ? { label: fallback } : {}), count: groupCounts(result, groupBy).get(key) };
+    return { count: groupCounts(result, groupBy).get(key) };
+}
+
+/** Devices of the whole result (not this page) that are in alarm or silent, from the status facets. */
+export function problemCount(result: FleetQueryResult): number {
+    return (result.facets?.status ?? [])
+        .filter((facet) => facet.key === "alarm" || facet.key === "silent")
+        .reduce((sum, facet) => sum + (facet.count ?? 0), 0);
 }
 
 export interface Age {

@@ -4,17 +4,20 @@
   "fleetPage": "Fleet",
   "fleet": {
     "column": {
-      "name": "Name",
+      "meter": "Meter",
       "type": "Type",
       "deliveryPoint": "Delivery point",
-      "serial": "Serial",
+      "identity": "Serial & devEUI",
       "location": "Location",
+      "reading": "Reading",
       "lastSeen": "Last seen",
       "battery": "Battery",
       "alarms": "Alarms"
     },
     "columns": {
       "picker": "Columns",
+      "details": "Device details",
+      "measurements": "Measurements",
       "reset": "Reset to default"
     },
     "error": {
@@ -45,7 +48,8 @@
       }
     },
     "result": {
-      "count": "{{shown}} of {{total}}"
+      "count": "{{n}} meters",
+      "problems": "{{n}} with problems"
     },
     "sort": {
       "label": "Sort by",
@@ -55,15 +59,13 @@
     "groupBy": {
       "label": "Group by",
       "none": "None",
-      "parent": "Location",
       "type": "Type",
       "status": "Status"
     },
     "group": {
-      "devices": "{{n}} devices",
+      "devices": "{{n}} meters",
       "problems": "{{n}} problems",
       "continued": "continued",
-      "noParent": "No location",
       "unnamedLocation": "Unnamed location"
     },
     "status": {
@@ -77,12 +79,6 @@
       "next": "Next"
     },
     "empty": "No devices found",
-    "views": {
-      "label": "Saved views",
-      "all": "All meters",
-      "byStatus": "By status",
-      "silent": "Silent over 24 h"
-    },
     "reading": {
       "needsOneType": "The reading filter needs exactly one asset type. Add a type: filter."
     }

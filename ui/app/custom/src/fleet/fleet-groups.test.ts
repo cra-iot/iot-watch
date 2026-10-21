@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { groupInfo, relativeAge, rowStatus, segmentGroups } from "./fleet-groups";
+import { GROUP_OPTIONS, groupInfo, problemCount, relativeAge, rowStatus, segmentGroups } from "./fleet-groups";
 
 const NOW = 1_000_000_000_000;
 const row = (id: string, over: Record<string, unknown> = {}) =>
-    ({ id, name: id, type: "GasMeterAsset", parentId: "p1", lastSeen: NOW - 1000, ...over });
+    ({ id, name: id, type: "GasMeterAsset", lastSeen: NOW - 1000, ...over });
 const result = (rows: unknown[], over: Record<string, unknown> = {}) =>
     ({ total: 10, offset: 0, limit: 50, rows, facets: {}, columns: [], ...over }) as never;
 
@@ -17,7 +17,7 @@ describe("rowStatus", () => {
 });
 
 describe("segmentGroups", () => {
-    const facets = { parents: [{ key: "p1", label: "North", count: 4 }, { key: "p2", label: "South", count: 6 }] };
+    const facets = { types: [{ key: "GasMeterAsset", label: "Gas meter", count: 4 }, { key: "WaterMeterAsset", label: "Water meter", count: 6 }] };
 
     it("returns one group without grouping", () => {
         const groups = segmentGroups(result([row("a"), row("b")]), "NONE", NOW);
@@ -26,51 +26,65 @@ describe("segmentGroups", () => {
     });
 
     it("splits contiguous rows by group key", () => {
-        const rows = [row("a"), row("b"), row("c", { parentId: "p2" })];
-        const groups = segmentGroups(result(rows, { facets }), "PARENT", NOW);
-        expect(groups.map((g) => [g.key, g.rows.length, g.continued])).toEqual([["p1", 2, false], ["p2", 1, false]]);
+        const rows = [row("a"), row("b"), row("c", { type: "WaterMeterAsset" })];
+        const groups = segmentGroups(result(rows, { facets }), "TYPE", NOW);
+        expect(groups.map((g) => [g.key, g.rows.length, g.continued])).toEqual([["GasMeterAsset", 2, false], ["WaterMeterAsset", 1, false]]);
+    });
+
+    it("groups by status", () => {
+        const rows = [row("a", { alarms: ["x"] }), row("b", { lastSeen: undefined }), row("c")];
+        expect(segmentGroups(result(rows), "STATUS", NOW).map((g) => g.key)).toEqual(["alarm", "silent", "ok"]);
     });
 
     it("marks the first group continued when earlier rows are on the previous page", () => {
-        const groups = segmentGroups(result([row("c", { parentId: "p1" })], { facets, offset: 3 }), "PARENT", NOW);
+        const groups = segmentGroups(result([row("c")], { facets, offset: 3 }), "TYPE", NOW);
         expect(groups[0].continued).toBe(true);
     });
 
     it("does not mark continued when a group starts exactly at the page boundary", () => {
-        const groups = segmentGroups(result([row("c", { parentId: "p2" })], { facets, offset: 4 }), "PARENT", NOW);
+        const groups = segmentGroups(result([row("c", { type: "WaterMeterAsset" })], { facets, offset: 4 }), "TYPE", NOW);
         expect(groups[0].continued).toBe(false);
     });
 
-    it("accounts for assets without a parent, which sort first", () => {
-        const noParent = result([row("c", { parentId: "p1" })], { facets, offset: 4, total: 12 });
-        // 2 unparented rows + 4 in p1 sort before p2; offset 4 is inside p1 (starts at 2).
-        expect(segmentGroups(noParent, "PARENT", NOW)[0].continued).toBe(true);
+    it("accounts for rows without a group key, which sort first", () => {
+        const untyped = result([row("c")], { facets, offset: 4, total: 12 });
+        // 2 untyped rows + 4 gas meters sort before water; offset 4 is inside the gas meters (start at 2).
+        expect(segmentGroups(untyped, "TYPE", NOW)[0].continued).toBe(true);
     });
 });
 
 describe("groupInfo", () => {
-    const facets = { parents: [{ key: "p1", label: "North", count: 2, problems: 1 }, { key: "p2", count: 3 }] };
+    const facets = { types: [{ key: "GasMeterAsset", label: "Gas meter", count: 2, problems: 1 }, { key: "WaterMeterAsset", count: 3 }] };
 
     it("takes label, count and problems from facets", () => {
-        expect(groupInfo(result([], { facets }), "PARENT", "p1")).toEqual({ label: "North", count: 2, problems: 1 });
+        expect(groupInfo(result([], { facets }), "TYPE", "GasMeterAsset")).toEqual({ label: "Gas meter", count: 2, problems: 1 });
     });
 
-    it("leaves problems undefined when the wire omits it", () => {
-        expect(groupInfo(result([], { facets }), "PARENT", "p2").problems).toBeUndefined();
+    it("leaves label and problems undefined when the wire omits them", () => {
+        const info = groupInfo(result([], { facets }), "TYPE", "WaterMeterAsset");
+        expect(info.problems).toBeUndefined();
+        expect(info.label).toBeUndefined();
     });
 
-    it("labels a location the caller may not read as unnamed, never by its id", () => {
-        const info = groupInfo(result([], { facets }), "PARENT", "p2", "Unnamed location");
-        expect(info).toEqual({ label: "Unnamed location", count: 3 });
-        // A parent missing from the facets entirely still gets no id as label.
-        expect(groupInfo(result([], { facets }), "PARENT", "p9", "Unnamed location").label).toBe("Unnamed location");
+    it("falls back to the gap to total for a key without a facet", () => {
+        expect(groupInfo(result([], { facets }), "TYPE", "")).toEqual({ count: 5 });
+    });
+});
+
+describe("GROUP_OPTIONS", () => {
+    it("offers none, type and status; location grouping is not offered", () => {
+        expect(GROUP_OPTIONS).toEqual(["NONE", "TYPE", "STATUS"]);
+    });
+});
+
+describe("problemCount", () => {
+    it("adds up alarm and silent devices of the whole result", () => {
+        const facets = { status: [{ key: "alarm", count: 2 }, { key: "silent", count: 3 }, { key: "ok", count: 9 }] };
+        expect(problemCount(result([], { facets }))).toBe(5);
     });
 
-    it("keeps a known label and leaves the no-parent group and other dimensions alone", () => {
-        expect(groupInfo(result([], { facets }), "PARENT", "p1", "Unnamed location").label).toBe("North");
-        expect(groupInfo(result([], { facets }), "PARENT", "", "Unnamed location").label).toBeUndefined();
-        const types = { types: [{ key: "GasMeterAsset", count: 3 }] };
-        expect(groupInfo(result([], { facets: types }), "TYPE", "GasMeterAsset", "Unnamed location").label).toBeUndefined();
+    it("is zero without status facets", () => {
+        expect(problemCount(result([]))).toBe(0);
     });
 });
 

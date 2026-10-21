@@ -88,6 +88,24 @@ describe("url round-trip", () => {
         expect(fromUrlParams(new URLSearchParams("group=BOGUS&sort=-&columns=,,"))).toEqual({ tokens: [] });
     });
 
+    it("falls back to no grouping for a link grouped by location", () => {
+        expect(fromUrlParams(new URLSearchParams("group=PARENT")).groupBy).toBeUndefined();
+    });
+
+    it("carries hidden columns as hide=, omitting the defaults", () => {
+        expect(toUrlParams([], {}, { hidden: ["type", "deliveryPoint", "location"] }).has("hide")).toBe(false);
+        const params = toUrlParams([], {}, { hidden: ["battery"] });
+        expect(params.get("hide")).toBe("battery");
+        expect(fromUrlParams(params).hidden).toEqual(["battery"]);
+    });
+
+    it("keeps an empty hide= as \"show every column\" and leaves an absent one to storage", () => {
+        const params = toUrlParams([], {}, { hidden: [] });
+        expect(params.get("hide")).toBe("");
+        expect(fromUrlParams(params).hidden).toEqual([]);
+        expect(fromUrlParams(new URLSearchParams("q=x")).hidden).toBeUndefined();
+    });
+
     it("tolerates a malformed q parameter without throwing", () => {
         expect(() => fromUrlParams(new URLSearchParams("q=%E0%A4%A"))).not.toThrow();
     });
