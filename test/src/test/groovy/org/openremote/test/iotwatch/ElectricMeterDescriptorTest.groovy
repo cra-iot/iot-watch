@@ -1,6 +1,7 @@
 package org.openremote.test.iotwatch
 
 import org.openremote.model.electricmeter.ElectricMeterAsset
+import org.openremote.model.value.MetaItemType
 import org.openremote.model.value.ValueType
 import spock.lang.Specification
 
@@ -55,5 +56,13 @@ class ElectricMeterDescriptorTest extends Specification {
         ElectricMeterAsset.DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR.isOptional()
         ElectricMeterAsset.DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR.name == "delivery_point_id"
         ElectricMeterAsset.DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR.type == ValueType.TEXT
+    }
+
+    def "meter_id and external_id are readable by restricted users"() {
+        expect:
+        [ElectricMeterAsset.METER_ID_ATTRIBUTE_DESCRIPTOR,
+         ElectricMeterAsset.EXTERNAL_ID_ATTRIBUTE_DESCRIPTOR].every {
+            it.getMeta().has(MetaItemType.ACCESS_RESTRICTED_READ)
+        }
     }
 }

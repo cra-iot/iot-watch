@@ -51,7 +51,8 @@ public class GasMeterAsset extends Asset<GasMeterAsset> {
 
     public static final AttributeDescriptor<String> DEV_EUI_ATTRIBUTE_DESCRIPTOR =
             new AttributeDescriptor<>("devEui", ValueType.TEXT,
-                    new MetaItem<>(MetaItemType.LABEL, "Identifikátor zařízení (devEUI)"));
+                    new MetaItem<>(MetaItemType.LABEL, "Identifikátor zařízení (devEUI)"),
+                    new MetaItem<>(MetaItemType.ACCESS_RESTRICTED_READ));
 
     public static final AttributeDescriptor<ValueType.ObjectMap> RAW_VALUE_ATTRIBUTE_DESCRIPTOR =
             new AttributeDescriptor<>("rawValue", ValueType.JSON_OBJECT,
@@ -62,7 +63,8 @@ public class GasMeterAsset extends Asset<GasMeterAsset> {
     public static final AttributeDescriptor<String> METER_ID_ATTRIBUTE_DESCRIPTOR =
             new AttributeDescriptor<>("meter_id", ValueType.TEXT,
                     new MetaItem<>(MetaItemType.LABEL, "Výrobní číslo plynoměru"),
-                    new MetaItem<>(MetaItemType.READ_ONLY))
+                    new MetaItem<>(MetaItemType.READ_ONLY),
+                    new MetaItem<>(MetaItemType.ACCESS_RESTRICTED_READ))
                     .withOptional(true);
 
     // Operator-provisioned routing/binding key: selects this asset's reading when a device
@@ -70,7 +72,8 @@ public class GasMeterAsset extends Asset<GasMeterAsset> {
     // not decoded (excluded in SameNameDecoder). Distinct from meter_id (the decoded serial).
     public static final AttributeDescriptor<String> EXTERNAL_ID_ATTRIBUTE_DESCRIPTOR =
             new AttributeDescriptor<>("external_id", ValueType.TEXT,
-                    new MetaItem<>(MetaItemType.LABEL, "Externí identifikátor"))
+                    new MetaItem<>(MetaItemType.LABEL, "Externí identifikátor"),
+                    new MetaItem<>(MetaItemType.ACCESS_RESTRICTED_READ))
                     .withOptional(true);
 
     // Operator-provisioned delivery-point identifier (electricity EAN / gas EIC). Shared name

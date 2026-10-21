@@ -21,7 +21,8 @@ public class TrackerAsset extends Asset<TrackerAsset> {
     // Platform device identifier (LoRa devEUI), matched by the HTTP ingest endpoint
     public static final AttributeDescriptor<String> DEV_EUI_ATTRIBUTE_DESCRIPTOR =
             new AttributeDescriptor<>("devEui", ValueType.TEXT,
-                    new MetaItem<>(MetaItemType.LABEL, "Identifikátor zařízení (devEUI)"));
+                    new MetaItem<>(MetaItemType.LABEL, "Identifikátor zařízení (devEUI)"),
+                    new MetaItem<>(MetaItemType.ACCESS_RESTRICTED_READ));
 
     public static final AttributeDescriptor<ValueType.ObjectMap> RAW_VALUE_ATTRIBUTE_DESCRIPTOR =
             new AttributeDescriptor<>("rawValue", ValueType.JSON_OBJECT,

@@ -1,6 +1,7 @@
 package org.openremote.test.iotwatch
 
 import org.openremote.model.watermeter.WaterMeterAsset
+import org.openremote.model.value.MetaItemType
 import org.openremote.model.value.ValueType
 import spock.lang.Specification
 
@@ -65,5 +66,13 @@ class WaterMeterDescriptorTest extends Specification {
         WaterMeterAsset.DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR.isOptional()
         WaterMeterAsset.DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR.name == "delivery_point_id"
         WaterMeterAsset.DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR.type == ValueType.TEXT
+    }
+
+    def "meter_id and external_id are readable by restricted users"() {
+        expect:
+        [WaterMeterAsset.METER_ID_ATTRIBUTE_DESCRIPTOR,
+         WaterMeterAsset.EXTERNAL_ID_ATTRIBUTE_DESCRIPTOR].every {
+            it.getMeta().has(MetaItemType.ACCESS_RESTRICTED_READ)
+        }
     }
 }

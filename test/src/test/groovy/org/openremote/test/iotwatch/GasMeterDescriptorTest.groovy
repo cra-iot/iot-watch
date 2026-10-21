@@ -1,6 +1,7 @@
 package org.openremote.test.iotwatch
 
 import org.openremote.model.gasmeter.GasMeterAsset
+import org.openremote.model.value.MetaItemType
 import org.openremote.model.value.ValueType
 import spock.lang.Specification
 
@@ -84,5 +85,13 @@ class GasMeterDescriptorTest extends Specification {
         GasMeterAsset.DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR.isOptional()
         GasMeterAsset.DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR.name == "delivery_point_id"
         GasMeterAsset.DELIVERY_POINT_ID_ATTRIBUTE_DESCRIPTOR.type == ValueType.TEXT
+    }
+
+    def "meter_id and external_id are readable by restricted users"() {
+        expect:
+        [GasMeterAsset.METER_ID_ATTRIBUTE_DESCRIPTOR,
+         GasMeterAsset.EXTERNAL_ID_ATTRIBUTE_DESCRIPTOR].every {
+            it.getMeta().has(MetaItemType.ACCESS_RESTRICTED_READ)
+        }
     }
 }
