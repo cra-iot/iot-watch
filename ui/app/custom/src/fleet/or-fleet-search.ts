@@ -8,7 +8,7 @@ import "@openremote/or-vaadin-components/or-vaadin-number-field";
 import "@openremote/or-vaadin-components/or-vaadin-select";
 import {
     formatSearch, parseSearch, tokenDefinitions, validateToken,
-    type Token, type TokenDefinition, type TokenOperator, type TokenSuggestion,
+    type SiteOption, type Token, type TokenDefinition, type TokenOperator, type TokenSuggestion,
 } from "./fleet-tokens";
 
 export class OrFleetSearchChangeEvent extends CustomEvent<{ tokens: Token[] }> {
@@ -86,6 +86,10 @@ export class OrFleetSearch extends OrElement {
     @property({ type: Array })
     public tokens: Token[] = [];
 
+    /** Known locations for site:, by name; the token keeps the parent id. Empty means free input. */
+    @property({ type: Array })
+    public sites: SiteOption[] = [];
+
     @state() protected _input = "";
     @state() protected _open = false;
     @state() protected _operator: TokenOperator = "EQUALS";
@@ -100,7 +104,7 @@ export class OrFleetSearch extends OrElement {
     }
 
     protected _definitions(): TokenDefinition[] {
-        return tokenDefinitions();
+        return tokenDefinitions(this.sites);
     }
 
     /** The category being typed, e.g. `alarm:` or `battery:>`, with whatever follows the colon. */

@@ -1,6 +1,9 @@
 import { AssetModelUtil } from "@openremote/model";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { formatSearch, fromUrlParams, parseSearch, toFleetQuery, toUrlParams, tokenDefinitions, validateToken } from "./fleet-tokens";
+import {
+    formatSearch, fromUrlParams, parseSearch, readingFollowUp, singlePrimaryRegister, toFleetQuery, toUrlParams,
+    tokenDefinitions, validateToken,
+} from "./fleet-tokens";
 
 describe("parseSearch", () => {
     it("reads a bare word as free text", () => {
@@ -239,5 +242,84 @@ describe("validateToken", () => {
         expect((check({ kind: "battery", value: "abc" }) as any).reason).toBe("notNumeric");
         expect((check({ kind: "reading", operator: "BETWEEN", value: "1" }) as any).reason).toBe("notNumeric");
         expect((check({ kind: "seen", value: "soon" }) as any).reason).toBe("invalidDuration");
+    });
+});
+
+describe("site tokens", () => {
+    const sites = [
+        { value: "1a2b3c4d5e6f7a8b9c0d1e", label: "Block A" },
+        { value: "2b3c4d5e6f7a8b9c0d1e2f", label: "Boiler room" },
+    ];
+
+    it("offers the known locations by name while the token keeps the id", () => {
+        const site = tokenDefinitions(sites).find((d) => d.kind === "site")!;
+        expect(site.values).toEqual(sites);
+        expect(toFleetQuery([{ kind: "site", value: sites[0].value }], {}).parentIds).toEqual([sites[0].value]);
+    });
+
+    it("accepts a known site id", () => {
+        expect(validateToken({ kind: "site", value: sites[1].value }, tokenDefinitions(sites), [])).toEqual({ ok: true });
+    });
+
+    it("rejects a site that is not in the list and suggests matches by name", () => {
+        const result = validateToken({ kind: "site", value: "boiler" }, tokenDefinitions(sites), []);
+        expect(result.ok).toBe(false);
+        if (result.ok === false) {
+            expect(result.reason).toBe("unknownValue");
+            expect(result.suggestions).toEqual([
+                { label: "Boiler room", input: `site:${sites[1].value}`, commit: true },
+            ]);
+        }
+    });
+
+    it("takes any value while no locations are known", () => {
+        expect(tokenDefinitions().find((d) => d.kind === "site")!.values).toBeUndefined();
+        expect(validateToken({ kind: "site", value: "anything" }, tokenDefinitions([]), [])).toEqual({ ok: true });
+    });
+});
+
+describe("reading follow-up", () => {
+    const reading = parseSearch("type:GasMeterAsset reading:>5");
+    const gasColumns = [
+        { name: "volume", primary: true, selected: true },
+        { name: "gas_temperature", primary: false, selected: false },
+    ];
+    const mixedColumns = [
+        { name: "volume", primary: true },
+        { name: "currentReading", primary: true },
+    ];
+
+    it("finds the primary register only when exactly one column is primary", () => {
+        expect(singlePrimaryRegister(gasColumns)).toBe("volume");
+        expect(singlePrimaryRegister(mixedColumns)).toBeUndefined();
+        expect(singlePrimaryRegister(undefined)).toBeUndefined();
+    });
+
+    it("does nothing without a reading token", () => {
+        expect(readingFollowUp(parseSearch("type:GasMeterAsset"), undefined, gasColumns)).toEqual({ action: "none" });
+    });
+
+    it("re-runs a shared URL's dropped reading token with the register the result reports", () => {
+        expect(readingFollowUp(reading, undefined, gasColumns)).toEqual({ action: "rerun", primaryRegister: "volume" });
+    });
+
+    it("re-runs when the register sent was stale", () => {
+        expect(readingFollowUp(reading, "currentReading", gasColumns)).toEqual({ action: "rerun", primaryRegister: "volume" });
+    });
+
+    it("is done once the result confirms the register that was sent", () => {
+        expect(readingFollowUp(reading, "volume", gasColumns)).toEqual({ action: "none" });
+    });
+
+    it("treats an applied filter that matched nothing as an answer", () => {
+        expect(readingFollowUp(reading, "volume", [])).toEqual({ action: "none" });
+    });
+
+    it("is unresolved when the result spans several types", () => {
+        expect(readingFollowUp(parseSearch("reading:>5"), undefined, mixedColumns)).toEqual({ action: "unresolved" });
+    });
+
+    it("is unresolved when nothing names a register", () => {
+        expect(readingFollowUp(parseSearch("reading:>5"), undefined, [])).toEqual({ action: "unresolved" });
     });
 });

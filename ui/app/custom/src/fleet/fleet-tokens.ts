@@ -38,8 +38,19 @@ const ATTRIBUTE_BY_KIND: Partial<Record<TokenKind, string>> = {
     battery: "battery_level",
 };
 
-/** Token categories offered by the bar; alarm values come from the registered asset types. */
-export function tokenDefinitions(): TokenDefinition[] {
+export interface SiteOption {
+    /** The parent asset id: what the token, the query and the URL carry. */
+    value: string;
+    /** The parent's name, shown on the chip and in the suggestions. */
+    label: string;
+}
+
+/**
+ * Token categories offered by the bar; alarm values come from the registered asset types.
+ * `sites` are the locations the page knows (from the last result's parent facet); when
+ * given, site: picks from them by name instead of taking a raw asset id.
+ */
+export function tokenDefinitions(sites: SiteOption[] = []): TokenDefinition[] {
     const alarms = new Map<string, string>();
     const types: { value: string; label: string }[] = [];
 
@@ -72,7 +83,7 @@ export function tokenDefinitions(): TokenDefinition[] {
         { kind: "deveui", labelKey: "fleet.token.deveui" },
         { kind: "battery", labelKey: "fleet.token.battery", numeric: true },
         { kind: "reading", labelKey: "fleet.token.reading", numeric: true },
-        { kind: "site", labelKey: "fleet.token.site" },
+        { kind: "site", labelKey: "fleet.token.site", ...(sites.length ? { values: sites } : {}) },
         { kind: "attr", labelKey: "fleet.token.attr" },
     ];
 }
@@ -237,6 +248,43 @@ export function toFleetQuery(tokens: Token[], extras: Record<string, unknown>): 
     if (parentIds.length) { query.parentIds = parentIds; query.recursive = true; }
     if (attributes.length) { query.attributes = attributes; }
     return query;
+}
+
+export function hasReadingToken(tokens: Token[]): boolean {
+    return tokens.some((token) => token.kind === "reading");
+}
+
+/** The primary register of a result, when exactly one primary column is in it. */
+export function singlePrimaryRegister(columns: { name?: string; primary?: boolean }[] | undefined): string | undefined {
+    const primaries = (columns ?? []).filter((column) => column.primary && column.name);
+    return primaries.length === 1 ? primaries[0].name : undefined;
+}
+
+export type ReadingFollowUp =
+    /** Nothing to do: no reading token, or it was applied with the result's own register. */
+    | { action: "none" }
+    /** The reading token was dropped or used the wrong register: query again with this one. */
+    | { action: "rerun"; primaryRegister: string }
+    /** No single primary register: the reading filter needs exactly one asset type. */
+    | { action: "unresolved" };
+
+/**
+ * Decides what a reading: token needs after a result arrived. The client keeps no type ->
+ * register table, so the register comes from the result itself: a URL shared with a reading:
+ * token has no previous result, so the first query drops the token and its result names the
+ * register to re-run with. `sent` is the register the query used, if any.
+ */
+export function readingFollowUp(
+    tokens: Token[], sent: string | undefined, columns: { name?: string; primary?: boolean }[] | undefined,
+): ReadingFollowUp {
+    if (!hasReadingToken(tokens)) { return { action: "none" }; }
+    const primary = singlePrimaryRegister(columns);
+    if (primary) {
+        return primary === sent ? { action: "none" } : { action: "rerun", primaryRegister: primary };
+    }
+    const primaries = (columns ?? []).filter((column) => column.primary).length;
+    // An applied filter that matched nothing leaves no columns; that is an answer, not a failure.
+    return sent && primaries === 0 ? { action: "none" } : { action: "unresolved" };
 }
 
 export interface FleetView {

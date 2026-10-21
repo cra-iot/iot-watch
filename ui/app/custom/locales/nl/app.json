@@ -77,8 +77,11 @@
     "views": {
       "label": "Opgeslagen weergaven",
       "all": "Alle meters",
-      "alarms": "Alarmen",
+      "byStatus": "Op status",
       "silent": "Stil langer dan 24 u"
+    },
+    "reading": {
+      "needsOneType": "Het meterstandfilter vereist precies één assettype. Voeg een type:-filter toe."
     }
   }
 }

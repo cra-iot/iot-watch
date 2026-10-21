@@ -78,8 +78,11 @@
     "views": {
       "label": "Saved views",
       "all": "All meters",
-      "alarms": "Alarms",
+      "byStatus": "By status",
       "silent": "Silent over 24 h"
+    },
+    "reading": {
+      "needsOneType": "The reading filter needs exactly one asset type. Add a type: filter."
     }
   }
 }

@@ -2,13 +2,17 @@ import { css, html, nothing, TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { manager } from "@openremote/core";
 import { AppStateKeyed, Page, PageProvider, router } from "@openremote/or-app";
+import { getAssetsRoute } from "@openremote/manager/routes";
 import { i18next } from "@openremote/or-translate";
 import { EnhancedStore } from "@reduxjs/toolkit";
 import type { FleetQueryResult } from "model";
 // The project's generated client: manager.rest from @openremote/core is the stock OpenRemote
 // client and has no FleetResource.
 import rest from "rest";
-import { fromUrlParams, Token, toFleetQuery, toUrlParams, parseSearch } from "../fleet/fleet-tokens";
+import {
+    fromUrlParams, parseSearch, readingFollowUp, singlePrimaryRegister, toFleetQuery, toUrlParams,
+    type SiteOption, type Token,
+} from "../fleet/fleet-tokens";
 import "../fleet/or-fleet-search";
 import "../fleet/or-fleet-results";
 
@@ -32,7 +36,7 @@ const t = (key: string) => i18next.t(`app:${key}`);
 function defaultViews(): SavedView[] {
     return [
         { name: t("fleet.views.all"), q: "", groupBy: "PARENT" },
-        { name: t("fleet.views.alarms"), q: "", groupBy: "STATUS" },
+        { name: t("fleet.views.byStatus"), q: "", groupBy: "STATUS" },
         { name: t("fleet.views.silent"), q: "seen:>24h", groupBy: "NONE" },
     ];
 }
@@ -47,6 +51,7 @@ export class PageFleet extends Page<AppStateKeyed> {
             .views { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
             .views select { padding: 6px; border: 1px solid var(--or-app-color5, #ccc); border-radius: 4px; }
             .error { color: var(--or-app-color4, #e3000a); padding: 8px 0; }
+            .note { color: var(--or-app-color3, #4c4c4c); padding: 8px 0; }
         `;
     }
 
@@ -59,6 +64,10 @@ export class PageFleet extends Page<AppStateKeyed> {
     @state() protected _columns?: string[];
     @state() protected _error?: string;
     @state() protected _views: SavedView[] = [];
+    /** Set when a reading: token could not be applied because no single primary register is known. */
+    @state() protected _readingNote = false;
+    /** Locations seen in results so far, for the site: token; keeps a chosen site's name after narrowing. */
+    @state() protected _sites: SiteOption[] = [];
 
     /** Drops answers of superseded queries, so a slow earlier response cannot overwrite a newer one. */
     protected _requestId = 0;
@@ -124,30 +133,57 @@ export class PageFleet extends Page<AppStateKeyed> {
         }
     }
 
+    protected async _fetch(primaryRegister: string | undefined): Promise<FleetQueryResult> {
+        const query = toFleetQuery(this._tokens, {
+            groupBy: this._groupBy,
+            offset: this._offset,
+            sort: this._sort,
+            // An empty list means "reset": send nothing and the server picks its default.
+            ...(this._columns?.length ? { columns: this._columns } : {}),
+            ...(primaryRegister ? { primaryRegister } : {}),
+        });
+        const response = await rest.api.FleetResource.query(query);
+        return response.data;
+    }
+
     protected async _runQuery(): Promise<void> {
         const requestId = ++this._requestId;
         this._loading = true;
         this._error = undefined;
         try {
-            // primaryRegister lets a reading: token resolve; it is only meaningful when the last
-            // result held one type, otherwise toFleetQuery drops the token.
-            const primaries = (this._result?.columns ?? []).filter((c: any) => c.primary);
-            const query = toFleetQuery(this._tokens, {
-                groupBy: this._groupBy,
-                offset: this._offset,
-                sort: this._sort,
-                // An empty list means "reset": send nothing and the server picks its default.
-                ...(this._columns?.length ? { columns: this._columns } : {}),
-                ...(primaries.length === 1 ? { primaryRegister: primaries[0].name } : {}),
-            });
-            const response = await rest.api.FleetResource.query(query);
-            if (requestId === this._requestId) { this._result = response.data; }
+            // A reading: token needs the primary register of the one type in play. The previous
+            // result usually knows it; when it does not (a shared URL) or it is stale, the result
+            // of this query names it and the query runs once more with it.
+            let primaryRegister = singlePrimaryRegister(this._result?.columns);
+            let result = await this._fetch(primaryRegister);
+            if (requestId !== this._requestId) { return; }
+            let followUp = readingFollowUp(this._tokens, primaryRegister, result.columns);
+            if (followUp.action === "rerun") {
+                primaryRegister = followUp.primaryRegister;
+                result = await this._fetch(primaryRegister);
+                if (requestId !== this._requestId) { return; }
+                followUp = readingFollowUp(this._tokens, primaryRegister, result.columns);
+            }
+            this._readingNote = followUp.action !== "none";
+            this._result = result;
+            this._rememberSites(result);
         } catch (e) {
             // Inline message, never a dialog: the bar must stay usable so the user can retry.
             if (requestId === this._requestId) { this._error = "app:fleet.error.queryFailed"; }
         } finally {
             if (requestId === this._requestId) { this._loading = false; }
         }
+    }
+
+    /** Parent facets name the locations; a parent the caller may not read keeps its id as label. */
+    protected _rememberSites(result: FleetQueryResult): void {
+        const known = new Map(this._sites.map((site) => [site.value, site.label]));
+        (result.facets?.parents ?? []).forEach((facet) => {
+            if (facet.key) { known.set(facet.key, facet.label ?? known.get(facet.key) ?? facet.key); }
+        });
+        this._sites = [...known]
+            .map(([value, label]) => ({ value, label }))
+            .sort((a, b) => a.label.localeCompare(b.label));
     }
 
     protected _applyView(index: number): void {
@@ -174,7 +210,7 @@ export class PageFleet extends Page<AppStateKeyed> {
                         ${this._views.map((view, i) => html`<option value=${i}>${view.name}</option>`)}
                     </select>
                 </div>` : nothing}
-            <or-fleet-search .tokens=${this._tokens}
+            <or-fleet-search .tokens=${this._tokens} .sites=${this._sites}
                              @or-fleet-search-change=${(e: CustomEvent) => {
                                  this._tokens = e.detail.tokens;
                                  this._offset = 0;
@@ -182,10 +218,11 @@ export class PageFleet extends Page<AppStateKeyed> {
                                  this._runQuery();
                              }}></or-fleet-search>
             ${this._error ? html`<div class="error"><or-translate value=${this._error}></or-translate></div>` : nothing}
+            ${this._readingNote ? html`<div class="note" role="status"><or-translate value="app:fleet.reading.needsOneType"></or-translate></div>` : nothing}
             <or-fleet-results .result=${this._result} .groupBy=${this._groupBy} .loading=${this._loading}
                               .sort=${this._sort}
                               @or-fleet-row-click=${(e: CustomEvent) =>
-                                  router.navigate(`assets/${e.detail.assetId}`)}
+                                  router.navigate(getAssetsRoute(false, e.detail.assetId))}
                               @or-fleet-page=${(e: CustomEvent) => {
                                   this._offset = e.detail.offset;
                                   this._runQuery();
