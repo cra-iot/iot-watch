@@ -18,6 +18,21 @@
     },
     "error": {
       "queryFailed": "The search failed. Try again."
+    },
+    "token": {
+      "type": "Type",
+      "alarm": "Alarm",
+      "seen": "Last seen",
+      "delivery": "Delivery point",
+      "serial": "Serial",
+      "deveui": "DevEUI",
+      "battery": "Battery",
+      "reading": "Reading",
+      "site": "Site",
+      "attr": "Attribute",
+      "placeholder": "Search or add a filter",
+      "remove": "Remove filter",
+      "add": "Add"
     }
   }
 }
