@@ -1,0 +1,164 @@
+package org.openremote.test.iotwatch
+
+import org.openremote.manager.iotwatch.FleetColumnResolver
+import org.openremote.model.attribute.MetaItem
+import org.openremote.model.iotwatch.FleetColumns
+import org.openremote.model.iotwatch.FleetQuery
+import org.openremote.model.util.ValueUtil
+import org.openremote.model.value.AttributeDescriptor
+import org.openremote.model.value.MetaItemType
+import org.openremote.model.value.ValueType
+import spock.lang.Specification
+
+class FleetColumnResolverTest extends Specification {
+
+    def setupSpec() {
+        ValueUtil.initialise(null)
+    }
+
+    static FleetColumnResolver resolver(Map<String, String> overrides = [:]) {
+        return new FleetColumnResolver(overrides)
+    }
+
+    def "a declared type resolves to its declared register"() {
+        expect:
+        resolver().primaryRegister(type) == register
+
+        where:
+        type                  | register
+        "WaterMeterAsset"     | "currentReading"
+        "GasMeterAsset"       | "volume"
+        "ElectricMeterAsset"  | "energy_active_total"
+        "HeatMeterAsset"      | "energy_heating"
+    }
+
+    def "a configuration override beats the declaration"() {
+        expect:
+        resolver(["GasMeterAsset": "energy"]).primaryRegister("GasMeterAsset") == "energy"
+    }
+
+    def "an undeclared type falls back to its first measurement descriptor"() {
+        given: "the descriptors of a type nobody declared - a temperature sensor"
+        def descriptors = [
+                new AttributeDescriptor<>("devEui", ValueType.TEXT),
+                new AttributeDescriptor<>("temperature", ValueType.NUMBER,
+                        new MetaItem<>(MetaItemType.LABEL, "Teplota"),
+                        new MetaItem<>(MetaItemType.STORE_DATA_POINTS))
+                        .withUnits(org.openremote.model.Constants.UNITS_CELSIUS),
+                new AttributeDescriptor<>("humidity", ValueType.NUMBER,
+                        new MetaItem<>(MetaItemType.STORE_DATA_POINTS))
+                        .withUnits(org.openremote.model.Constants.UNITS_PERCENTAGE),
+        ]
+
+        expect: "the identity attribute is skipped and the first measurement wins"
+        FleetColumnResolver.firstMeasurement(descriptors) == "temperature"
+    }
+
+    def "a type with no measurement descriptor resolves to no primary register"() {
+        given:
+        def descriptors = [
+                new AttributeDescriptor<>("devEui", ValueType.TEXT),
+                new AttributeDescriptor<>("tamper", ValueType.BOOLEAN),
+        ]
+
+        expect:
+        FleetColumnResolver.firstMeasurement(descriptors) == null
+    }
+
+    def "battery_level is never the primary register"() {
+        given: "battery_level carries units but deliberately no STORE_DATA_POINTS"
+        def descriptors = [
+                new AttributeDescriptor<>("battery_level", ValueType.POSITIVE_INTEGER)
+                        .withUnits(org.openremote.model.Constants.UNITS_PERCENTAGE),
+                new AttributeDescriptor<>("volume", ValueType.NUMBER,
+                        new MetaItem<>(MetaItemType.STORE_DATA_POINTS))
+                        .withUnits(org.openremote.model.Constants.UNITS_METRE),
+        ]
+
+        expect:
+        FleetColumnResolver.firstMeasurement(descriptors) == "volume"
+    }
+
+    def "the select carries the infrastructure attributes whatever the type"() {
+        when:
+        def select = resolver().selectAttributes(new FleetQuery(), ["GasMeterAsset"]) as Set
+
+        then:
+        select.containsAll(FleetColumns.INFRASTRUCTURE_ATTRIBUTES as List)
+    }
+
+    def "the select carries every alarm boolean the type declares"() {
+        when: "a gas meter is queried"
+        def select = resolver().selectAttributes(new FleetQuery(), ["GasMeterAsset"]) as Set
+
+        then: "its alarm booleans are fetched, or FleetRowMapper finds no alarms to report"
+        select.contains("low_battery")
+        select.contains("tamper")
+
+        and: "a state boolean is not an alarm and is not fetched as one"
+        !select.contains("valve_closed")
+    }
+
+    def "rawValue is never selected, even when a caller asks for it as a column"() {
+        given:
+        def query = new FleetQuery()
+        query.columns = ["rawValue"]
+
+        when:
+        def select = resolver().selectAttributes(query, ["GasMeterAsset"]) as Set
+
+        then:
+        !select.contains("rawValue")
+    }
+
+    def "no types in the result means no columns, not every registered type's columns"() {
+        expect:
+        resolver().columnsFor([], null).isEmpty()
+    }
+
+    def "the select carries the primary register and any column the caller asked for"() {
+        given:
+        def query = new FleetQuery()
+        query.columns = ["gas_temperature"]
+
+        when:
+        def select = resolver().selectAttributes(query, ["GasMeterAsset"]) as Set
+
+        then:
+        select.contains("volume")
+        select.contains("gas_temperature")
+    }
+
+    def "an empty type filter resolves over every registered type"() {
+        when: "the whole realm is queried, so the types are not known up front"
+        def select = resolver().selectAttributes(new FleetQuery(), []) as Set
+
+        then: "every declared type's primary register is fetched"
+        select.contains("volume")
+        select.contains("currentReading")
+        select.contains("energy_active_total")
+    }
+
+    def "columns mark the primary and offer the rest"() {
+        when:
+        def columns = resolver().columnsFor(["GasMeterAsset"], null)
+
+        then: "the primary register is selected by default"
+        def primary = columns.find { it.primary }
+        primary.name == "volume"
+        primary.selected
+        primary.units == ["metre", "cubed"] as String[]
+        primary.label == "Objem plynu"
+
+        and: "the other registers are offered but not selected, so the picker has something to show"
+        columns.any { !it.selected && it.name == "volume_standard" }
+    }
+
+    def "a requested column comes back selected"() {
+        when:
+        def columns = resolver().columnsFor(["GasMeterAsset"], ["gas_temperature"])
+
+        then:
+        columns.find { it.name == "gas_temperature" }.selected
+    }
+}
