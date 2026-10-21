@@ -50,6 +50,8 @@ export function tokenDefinitions(): TokenDefinition[] {
             types.push({ value: name, label: name });
             const info = AssetModelUtil.getAssetTypeInfo(name);
             (info?.attributeDescriptors ?? []).forEach((attribute) => {
+                // State booleans (server-side FleetColumns.STATE_BOOLEANS, e.g. valve_closed) are offered
+                // too and filter on value == true; a server-published alarm list is the follow-up.
                 if (attribute.type === "boolean" && attribute.name) {
                     // Prefer the descriptor's own label; the internal name stays hidden.
                     const label = (attribute.meta?.["label"] as string) ?? attribute.name;
@@ -138,7 +140,7 @@ export function formatSearch(tokens: Token[]): string {
         if (token.operator === "BETWEEN") {
             return `${token.kind}:${token.value}..${token.rangeValue ?? ""}`;
         }
-        const symbol = token.operator && token.operator !== "EQUALS"
+        const symbol = token.operator
             ? (SYMBOLS.find(([, op]) => op === token.operator)?.[0] ?? "")
             : "";
         return `${token.kind}:${symbol}${quoteIfNeeded(token.value)}`;
@@ -157,8 +159,21 @@ function toIsoDuration(value: string): string | undefined {
     }
 }
 
+function isNumeric(value: string | undefined): boolean {
+    return value !== undefined && value.trim() !== "" && Number.isFinite(Number(value));
+}
+
+/** A BETWEEN token needs a numeric upper bound too. */
+function rangeOk(token: Token): boolean {
+    return token.operator !== "BETWEEN" || isNumeric(token.rangeValue);
+}
+
 export function toFleetQuery(tokens: Token[], extras: Record<string, unknown>): FleetQuery {
-    const query: FleetQuery = { ...extras };
+    const query: FleetQuery = {};
+    // Only contract fields are copied; anything else in extras (primaryRegister) stays client-side.
+    for (const key of ["groupBy", "sort", "columns", "offset", "limit"] as const) {
+        if (extras[key] !== undefined) { (query as Record<string, unknown>)[key] = extras[key]; }
+    }
     const text: string[] = [];
     const types: string[] = [];
     const parentIds: string[] = [];
@@ -187,10 +202,10 @@ export function toFleetQuery(tokens: Token[], extras: Record<string, unknown>): 
                 // The client keeps no type -> attribute table; when nothing is known yet the
                 // token is dropped rather than guessed at.
                 const name = extras.primaryRegister as string | undefined;
-                if (name) {
+                if (name && isNumeric(token.value) && rangeOk(token)) {
                     attributes.push({
                         name, operator: (token.operator ?? "EQUALS") as FleetQueryOperator, value: Number(token.value),
-                        ...(token.rangeValue ? { rangeValue: Number(token.rangeValue) } : {}),
+                        ...(token.operator === "BETWEEN" ? { rangeValue: Number(token.rangeValue) } : {}),
                     });
                 }
                 break;
@@ -206,11 +221,12 @@ export function toFleetQuery(tokens: Token[], extras: Record<string, unknown>): 
                 const name = ATTRIBUTE_BY_KIND[token.kind];
                 if (!name) { break; }
                 const numeric = token.kind === "battery";
+                if (numeric && !(isNumeric(token.value) && rangeOk(token))) { break; }
                 attributes.push({
                     name,
                     operator: (token.operator ?? (numeric ? "EQUALS" : "CONTAINS")) as FleetQueryOperator,
                     value: numeric ? Number(token.value) : token.value,
-                    ...(token.rangeValue ? { rangeValue: Number(token.rangeValue) } : {}),
+                    ...(numeric && token.operator === "BETWEEN" ? { rangeValue: Number(token.rangeValue) } : {}),
                 });
             }
         }
