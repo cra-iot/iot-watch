@@ -16,6 +16,7 @@ import org.openremote.manager.asset.AssetStorageService;
 import org.openremote.manager.security.ManagerIdentityService;
 import org.openremote.manager.web.ManagerWebResource;
 import org.openremote.model.asset.Asset;
+import org.openremote.model.attribute.Attribute;
 import org.openremote.model.iotwatch.FleetColumns;
 import org.openremote.model.iotwatch.FleetQuery;
 import org.openremote.model.iotwatch.FleetQueryResult;
@@ -189,10 +190,18 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
                 .select(new AssetQuery.Select().attributes(FleetColumns.RAW_VALUE));
         for (Asset<?> asset : assetStorageService.findAll(lookup)) {
             asset.getAttributes().get(FleetColumns.RAW_VALUE)
-                    .flatMap(attribute -> attribute.getTimestamp())
+                    .map(FleetResourceImpl::payloadTimestamp)
                     .ifPresent(timestamp -> timestamps.put(asset.getId(), timestamp));
         }
         return timestamps;
+    }
+
+    /**
+     * The attribute's timestamp, but only when it holds a payload. The empty rawValue created at
+     * provisioning carries a creation timestamp that is not a report, so it yields null.
+     */
+    public static Long payloadTimestamp(Attribute<?> attribute) {
+        return attribute.getValue().isPresent() ? attribute.getTimestamp().orElse(null) : null;
     }
 
     /**
