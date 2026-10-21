@@ -1,4 +1,24 @@
 {
   "customPage": "Custom page",
-  "customString": "My custom string"
+  "customString": "My custom string",
+  "fleetPage": "Fleet",
+  "fleet": {
+    "column": {
+      "name": "Name",
+      "type": "Type",
+      "deliveryPoint": "Delivery point",
+      "serial": "Serial",
+      "location": "Location",
+      "lastSeen": "Last seen",
+      "battery": "Battery",
+      "alarms": "Alarms"
+    },
+    "columns": {
+      "picker": "Columns",
+      "reset": "Reset to default"
+    },
+    "error": {
+      "queryFailed": "The search failed. Try again."
+    }
+  }
 }

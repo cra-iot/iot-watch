@@ -15,10 +15,12 @@
     "build": "npx cross-env NODE_OPTIONS=--max_old_space_size=4096 rspack --mode production",
     "serve": "npx tsc -b --clean && npx shx rm -rf dist && npx orutil build && npx cross-env NODE_OPTIONS=--max_old_space_size=4096 rspack serve --mode development",
     "serveNoModelBuild": "npx tsc -b --clean && npx cross-env NODE_OPTIONS=--max_old_space_size=4096 rspack serve --mode development",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run"
   },
   "dependencies": {
+    "@openremote/core": "~1.32.1",
     "@openremote/manager": "~1.32.1",
+    "@openremote/model": "~1.32.1",
     "@openremote/or-app": "~1.32.1",
     "lit": "^3.3.1",
     "model": "workspace:*",
@@ -32,6 +34,7 @@
     "css-loader": "*",
     "shx": "*",
     "ts-loader": "*",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.0"
   }
 }
