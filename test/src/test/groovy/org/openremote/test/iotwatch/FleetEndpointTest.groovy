@@ -1,7 +1,7 @@
 package org.openremote.test.iotwatch
 
 import jakarta.ws.rs.BadRequestException
-import jakarta.ws.rs.ForbiddenException
+import jakarta.ws.rs.NotAuthorizedException
 import org.openremote.manager.asset.AssetStorageService
 import org.openremote.manager.security.ManagerIdentityService
 import org.openremote.model.Constants
@@ -206,8 +206,8 @@ class FleetEndpointTest extends Specification implements ManagerContainerTrait {
         when:
         outsiderResource.query(new FleetQuery())
 
-        then:
-        thrown(ForbiddenException)
+        then: "the JWT filter rejects a foreign-realm token; authorizeAssetQuery's realm check is defence in depth"
+        thrown(NotAuthorizedException)
     }
 
     def "rawValue never appears in the response payload, for any caller"() {
@@ -244,6 +244,22 @@ class FleetEndpointTest extends Specification implements ManagerContainerTrait {
 
         when:
         readerResource.query(query)
+
+        then:
+        thrown(BadRequestException)
+    }
+
+    def "filtering on rawValue is rejected regardless of letter case"() {
+        given:
+        def query = new FleetQuery()
+        def filter = new FleetQuery.AttributeFilter()
+        filter.name = "RAWVALUE"
+        filter.operator = FleetQuery.Operator.CONTAINS
+        filter.value = "EUI"
+        query.attributes = [filter]
+
+        when:
+        restrictedResource.query(query)
 
         then:
         thrown(BadRequestException)

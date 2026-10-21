@@ -99,9 +99,11 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
      * A filter on rawValue would let a caller probe a payload they cannot read: the WHERE clause
      * of an AssetQuery is not restricted by ACCESS_RESTRICTED_READ, only the select is.
      */
-    protected void rejectHiddenFilters(FleetQuery fleetQuery) {
+    public static void rejectHiddenFilters(FleetQuery fleetQuery) {
+        // Case-insensitive and trimmed: the translator matches attribute names case-insensitively.
         if (fleetQuery.attributes != null && fleetQuery.attributes.stream()
-                .anyMatch(filter -> FleetColumns.RAW_VALUE.equals(filter.name))) {
+                .anyMatch(filter -> filter != null && filter.name != null
+                        && FleetColumns.RAW_VALUE.equalsIgnoreCase(filter.name.trim()))) {
             throw new BadRequestException("Filtering on " + FleetColumns.RAW_VALUE + " is not supported");
         }
     }
