@@ -96,7 +96,10 @@ public final class FleetQueryTranslator {
                 AttributePredicate predicate = new AttributePredicate(
                         new StringPredicate(AssetQuery.Match.EXACT, false, filter.name),
                         toValuePredicate(filter));
-                predicate.negated = filter.negate;
+                // NOT_EQUALS is EQUALS negated, so "not equals" combined with negate is EQUALS again.
+                predicate.negated = filter.operator == FleetQuery.Operator.NOT_EQUALS
+                        ? !filter.negate
+                        : filter.negate;
                 items.add(predicate);
             }
         }
@@ -131,23 +134,34 @@ public final class FleetQueryTranslator {
         return new StringPredicate(toMatch(filter.operator), false, text);
     }
 
+    /**
+     * Operator/value mismatches are rejected before translation by
+     * {@link FleetResourceImpl#validateOperators}; reaching one of the throwing branches here is a
+     * programming error, never a silently different query.
+     */
     private static AssetQuery.Operator toAssetQueryOperator(FleetQuery.Operator operator) {
         // An explicit null on the wire overrides the field default; it means EQUALS.
         return switch (operator == null ? FleetQuery.Operator.EQUALS : operator) {
+            // NOT_EQUALS is carried by AttributePredicate.negated, see baseQuery.
+            case EQUALS, NOT_EQUALS -> AssetQuery.Operator.EQUALS;
             case LESS_THAN -> AssetQuery.Operator.LESS_THAN;
             case LESS_EQUALS -> AssetQuery.Operator.LESS_EQUALS;
             case GREATER_THAN -> AssetQuery.Operator.GREATER_THAN;
             case GREATER_EQUALS -> AssetQuery.Operator.GREATER_EQUALS;
             case BETWEEN -> AssetQuery.Operator.BETWEEN;
-            default -> AssetQuery.Operator.EQUALS;
+            case CONTAINS, STARTS_WITH ->
+                    throw new IllegalArgumentException(operator + " does not apply to a numeric value");
         };
     }
 
     private static AssetQuery.Match toMatch(FleetQuery.Operator operator) {
         return switch (operator == null ? FleetQuery.Operator.EQUALS : operator) {
+            // NOT_EQUALS is carried by AttributePredicate.negated, see baseQuery.
+            case EQUALS, NOT_EQUALS -> AssetQuery.Match.EXACT;
             case CONTAINS -> AssetQuery.Match.CONTAINS;
             case STARTS_WITH -> AssetQuery.Match.BEGIN;
-            default -> AssetQuery.Match.EXACT;
+            case LESS_THAN, LESS_EQUALS, GREATER_THAN, GREATER_EQUALS, BETWEEN ->
+                    throw new IllegalArgumentException(operator + " requires a numeric value");
         };
     }
 

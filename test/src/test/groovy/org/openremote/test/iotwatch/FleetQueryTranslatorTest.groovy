@@ -191,4 +191,41 @@ class FleetQueryTranslatorTest extends Specification {
         ((NumberPredicate) items[0].value).operator == AssetQuery.Operator.EQUALS
         ((StringPredicate) items[1].value).match == AssetQuery.Match.EXACT
     }
+
+    def "NOT_EQUALS becomes a negated EQUALS predicate for every value type"() {
+        given:
+        def fq = new FleetQuery()
+        fq.attributes = [filter("battery_level", FleetQuery.Operator.NOT_EQUALS, 20),
+                         filter("meter_id", FleetQuery.Operator.NOT_EQUALS, "TEST"),
+                         filter("leakage", FleetQuery.Operator.NOT_EQUALS, true)]
+
+        when:
+        def items = FleetQueryTranslator.filterQuery(fq, "acme", SELECT).attributes.items
+
+        then:
+        items.every { it.negated }
+        ((NumberPredicate) items[0].value).operator == AssetQuery.Operator.EQUALS
+        ((NumberPredicate) items[0].value).value == 20d
+        ((StringPredicate) items[1].value).match == AssetQuery.Match.EXACT
+        ((StringPredicate) items[1].value).value == "TEST"
+        ((BooleanPredicate) items[2].value).value
+    }
+
+    def "a negated NOT_EQUALS is a plain EQUALS, and a negated EQUALS stays negated"() {
+        given:
+        def notNotEquals = filter("meter_id", FleetQuery.Operator.NOT_EQUALS, "TEST")
+        notNotEquals.negate = true
+        def notEquals = filter("meter_id", FleetQuery.Operator.EQUALS, "TEST")
+        notEquals.negate = true
+        def fq = new FleetQuery()
+        fq.attributes = [notNotEquals, notEquals]
+
+        when:
+        def items = FleetQueryTranslator.filterQuery(fq, "acme", SELECT).attributes.items
+
+        then:
+        !items[0].negated
+        ((StringPredicate) items[0].value).match == AssetQuery.Match.EXACT
+        items[1].negated
+    }
 }

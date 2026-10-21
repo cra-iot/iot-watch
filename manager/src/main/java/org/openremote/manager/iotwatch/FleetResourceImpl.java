@@ -42,6 +42,7 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
         FleetQuery fleetQuery = query == null ? new FleetQuery() : query;
         String realm = getRequestRealmName();
         validateFilters(fleetQuery);
+        validateOperators(fleetQuery);
         rejectHiddenFilters(fleetQuery);
 
         // The select covers the query's types (or every device type for an empty filter) and has to
@@ -110,6 +111,44 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
             }
             if (filter.name == null || filter.name.isBlank()) {
                 throw new BadRequestException("Attribute filter requires a name");
+            }
+        }
+    }
+
+    /**
+     * An operator that does not fit its value would otherwise be translated into a different
+     * query - CONTAINS on a number into EQUALS, a comparison on a string into an exact match -
+     * and answer the wrong question without an error.
+     */
+    public static void validateOperators(FleetQuery fleetQuery) {
+        if (fleetQuery.attributes == null) {
+            return;
+        }
+        for (FleetQuery.AttributeFilter filter : fleetQuery.attributes) {
+            if (filter == null || filter.operator == null) {
+                continue;
+            }
+            switch (filter.operator) {
+                case CONTAINS, STARTS_WITH -> {
+                    if (filter.value instanceof Number || filter.value instanceof Boolean) {
+                        throw new BadRequestException(
+                                filter.operator + " requires a text value on " + filter.name);
+                    }
+                }
+                // A null value is no number either: it would become an exact match on "".
+                case LESS_THAN, LESS_EQUALS, GREATER_THAN, GREATER_EQUALS, BETWEEN -> {
+                    if (!(filter.value instanceof Number)) {
+                        throw new BadRequestException(
+                                filter.operator + " requires a numeric value on " + filter.name);
+                    }
+                    if (filter.operator == FleetQuery.Operator.BETWEEN
+                            && !(filter.rangeValue instanceof Number)) {
+                        throw new BadRequestException("BETWEEN requires a numeric rangeValue on " + filter.name);
+                    }
+                }
+                default -> {
+                    // EQUALS and NOT_EQUALS apply to any value type.
+                }
             }
         }
     }
