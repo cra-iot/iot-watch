@@ -208,6 +208,70 @@ describe("validateToken", () => {
         valid.forEach((token) => expect(check(token)).toEqual({ ok: true }));
     });
 
+    const REFUSED = [
+        "delivery:>42", "delivery:>=42", "delivery:<42", "delivery:<=42", "delivery:40..42",
+        "serial:>123", "serial:1..9", "deveui:<abc", "deveui:a..f",
+        "site:>someId", "site:a..b", "type:>GasMeterAsset", "type:A..B",
+        "alarm:>leak", "alarm:a..b",
+        "attr:>meter_id=7", "attr:>=meter_id=7", "attr:<meter_id=7", "attr:<=meter_id=7", "attr:meter_id=1..9",
+    ];
+    const STILL_VALID = [
+        "delivery:42", "delivery:=42", "serial:=123", "deveui:abc", "site:someId", "site:=someId",
+        "type:GasMeterAsset", "type:=GasMeterAsset", "alarm:leak", "alarm:=leak",
+        "attr:meter_id=7", "attr:=meter_id=7",
+        "battery:>20", "battery:<=20", "battery:10..20", "battery:=5", "reading:>5", "reading:1..5",
+        "seen:>24h", "seen:<7d",
+    ];
+
+    it("refuses comparisons and ranges on text kinds and attr:", () => {
+        REFUSED.forEach((input) => {
+            const [token] = parseSearch(input);
+            expect({ input, result: check(token) })
+                .toEqual({ input, result: { ok: false, reason: "operatorNotAllowed", suggestions: [] } });
+        });
+    });
+
+    it("keeps = and plain values on text kinds, and comparisons on numeric kinds, valid", () => {
+        STILL_VALID.forEach((input) => {
+            const [token] = parseSearch(input);
+            expect({ input, result: check(token) }).toEqual({ input, result: { ok: true } });
+        });
+    });
+
+    /** Mirror of FleetResourceImpl.validateOperators: what the server answers with a 400. */
+    function serverRejects(filter: { operator?: string; value?: unknown; rangeValue?: unknown }): boolean {
+        const op = filter.operator ?? "EQUALS";
+        const numeric = typeof filter.value === "number";
+        if ((op === "CONTAINS" || op === "STARTS_WITH") && (numeric || typeof filter.value === "boolean")) {
+            return true;
+        }
+        if (["LESS_THAN", "LESS_EQUALS", "GREATER_THAN", "GREATER_EQUALS", "BETWEEN"].includes(op)) {
+            return !numeric || (op === "BETWEEN" && typeof filter.rangeValue !== "number");
+        }
+        return false;
+    }
+
+    it("no token that passes validation produces a filter the server rejects", () => {
+        const operators = ["", "=", ">", ">=", "<", "<="];
+        const values = ["7", "abc", "1..9", "x..", "..3", "1..x"];
+        const kinds = ["delivery", "serial", "deveui", "battery", "reading", "alarm", "type", "site", "seen"];
+        const inputs = kinds.flatMap((kind) => operators.flatMap((op) => values.map((v) => `${kind}:${op}${v}`)))
+            .concat(operators.flatMap((op) => values.map((v) => `attr:${op}meter_id=${v}`)));
+        inputs.forEach((input) => {
+            const tokens = parseSearch(input);
+            if (!tokens.every((token) => check(token).ok)) { return; }
+            const attributes = toFleetQuery(tokens, { primaryRegister: "volume" }).attributes ?? [];
+            attributes.forEach((filter) => expect({ input, rejected: serverRejects(filter as any) })
+                .toEqual({ input, rejected: false }));
+        });
+    });
+
+    it("drops a comparison on a text kind restored from a URL, which the bar never validated", () => {
+        expect(toFleetQuery(parseSearch("delivery:>42 serial:1..9 attr:>meter_id=7"), {}).attributes).toBeUndefined();
+        expect(toFleetQuery(parseSearch("delivery:=42"), {}).attributes)
+            .toEqual([{ name: "delivery_point_id", operator: "EQUALS", value: "42" }]);
+    });
+
     it("rejects an empty value for a non-text kind", () => {
         ["alarm", "serial", "attr", "battery"].forEach((kind) => {
             const result = check({ kind, value: "" });

@@ -196,6 +196,18 @@ function isNumeric(value: string | undefined): boolean {
     return value !== undefined && value.trim() !== "" && Number.isFinite(Number(value));
 }
 
+/**
+ * Kinds whose value is text (or a name/id) rather than a number: a comparison or a range on them
+ * has no meaning, and the server rejects one with a 400 (FleetResourceImpl.validateOperators).
+ * attr: belongs here because its value is always sent as a string.
+ */
+const TEXT_KINDS = new Set<TokenKind>(["delivery", "serial", "deveui", "site", "type", "alarm", "attr"]);
+
+/** True for `>`, `>=`, `<`, `<=` or a `..` range on a text kind; `=` and no operator are fine. */
+function comparisonOnText(token: Token): boolean {
+    return TEXT_KINDS.has(token.kind) && token.operator !== undefined && token.operator !== "EQUALS";
+}
+
 /** A BETWEEN token needs a numeric upper bound too. */
 function rangeOk(token: Token): boolean {
     return token.operator !== "BETWEEN" || isNumeric(token.rangeValue);
@@ -244,6 +256,8 @@ export function toFleetQuery(tokens: Token[], extras: Record<string, unknown>): 
                 break;
             }
             case "attr": {
+                // A URL is not validated by the bar: drop what the server would reject.
+                if (comparisonOnText(token)) { break; }
                 const [name, value] = token.value.split("=");
                 if (name && value !== undefined) {
                     attributes.push({ name, operator: (token.operator ?? "EQUALS") as FleetQueryOperator, value });
@@ -252,7 +266,7 @@ export function toFleetQuery(tokens: Token[], extras: Record<string, unknown>): 
             }
             default: {
                 const name = ATTRIBUTE_BY_KIND[token.kind];
-                if (!name) { break; }
+                if (!name || comparisonOnText(token)) { break; }
                 const numeric = token.kind === "battery";
                 if (numeric && !(isNumeric(token.value) && rangeOk(token))) { break; }
                 attributes.push({
@@ -361,7 +375,8 @@ export type TokenValidation =
     | { ok: true }
     | {
         ok: false;
-        reason: "emptyValue" | "unknownValue" | "unknownAttribute" | "unknownKind" | "notNumeric" | "invalidDuration";
+        reason: "emptyValue" | "unknownValue" | "unknownAttribute" | "unknownKind" | "notNumeric" | "invalidDuration"
+            | "operatorNotAllowed";
         suggestions: TokenSuggestion[];
     };
 
@@ -414,6 +429,9 @@ export function validateToken(
     const definition = definitions.find((d) => d.kind === token.kind);
     if (!definition) {
         return { ok: false, reason: "unknownKind", suggestions: kindSuggestions(definitions) };
+    }
+    if (comparisonOnText(token)) {
+        return { ok: false, reason: "operatorNotAllowed", suggestions: [] };
     }
     if (token.kind === "attr") {
         const [name, value] = token.value.split("=");
