@@ -4,6 +4,7 @@ import { Util } from "@openremote/core";
 import { AssetModelUtil } from "@openremote/model";
 import { OrElement } from "@openremote/or-element";
 import { i18next } from "@openremote/or-translate";
+import "@openremote/or-icon";
 import "@openremote/or-vaadin-components/or-vaadin-select";
 import type { FleetQueryResult, FleetRow } from "model";
 import {
@@ -82,6 +83,9 @@ const DETAIL_LABELS: Record<string, string> = {
     alarms: "fleet.column.alarms",
 };
 
+/** Non-colour status cue in front of the meter name; ok rows get none. */
+const STATUS_ICONS: Record<string, string> = { alarm: "alert", silent: "clock-alert-outline" };
+
 function translate(key: string, options?: Record<string, unknown>): string {
     return i18next.t(key.includes(":") ? key : `app:${key}`, options);
 }
@@ -104,11 +108,12 @@ export class OrFleetResults extends OrElement {
                 --fleet-alarm-color: var(--or-app-color4, #e3000a);
                 --fleet-silent-color: #9a5b00;
                 --fleet-muted-color: #6b6b6b;
+                --fleet-focus-color: var(--or-app-color3, #222);
             }
             .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
                 clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
             button:focus-visible, summary:focus-visible, input:focus-visible {
-                outline: 2px solid var(--or-app-color4, #e3000a); outline-offset: 2px; }
+                outline: 2px solid var(--fleet-focus-color); outline-offset: 2px; }
             .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 0; }
             .bar .spacer { flex: 1; }
             .bar .label { color: var(--fleet-muted-color); }
@@ -133,19 +138,25 @@ export class OrFleetResults extends OrElement {
             .picker label { display: flex; align-items: center; gap: 8px; padding: 4px 0; white-space: nowrap; }
             .picker label.locked { color: var(--fleet-muted-color); }
             .picker .reset { margin-top: 4px; width: 100%; }
-            /* Its own scroll box, so the header stays put vertically and the meter column horizontally. */
-            .scroll { overflow: auto; max-height: max(320px, calc(100vh - 260px));
+            /* Scrolls horizontally only; the page scrolls vertically. A sticky header would need this box
+               to scroll vertically too (overflow-x: auto computes overflow-y: auto), which is the double scrollbar. */
+            .scroll { overflow-x: auto;
                 border: 1px solid var(--or-app-color5, #ccc); border-radius: 4px; }
             table { width: 100%; border-collapse: separate; border-spacing: 0; }
             th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--or-app-color2, #eee);
                 white-space: nowrap; vertical-align: top; }
-            thead th { position: sticky; top: 0; z-index: 2; font-weight: 600; font-size: 13px;
+            thead th { font-weight: 600; font-size: 13px;
                 background: var(--or-app-color2, #f5f5f5); border-bottom-color: var(--or-app-color5, #ccc); }
             th.numeric, td.numeric { text-align: right; font-variant-numeric: tabular-nums; }
             th.sorted { color: var(--or-app-color3, #222); }
-            .meter { position: sticky; left: 0; z-index: 1; background: var(--or-app-color1, #fff); }
-            thead th.meter { z-index: 3; background: var(--or-app-color2, #f5f5f5); }
+            /* The right edge marks where the frozen column ends while the table scrolls sideways. */
+            .meter { position: sticky; left: 0; z-index: 1; background: var(--or-app-color1, #fff);
+                border-right: 1px solid var(--or-app-color5, #ccc); }
+            thead th.meter { background: var(--or-app-color2, #f5f5f5); }
             .meter .name { font-weight: 500; }
+            .meter .status-icon { --or-icon-width: 16px; --or-icon-height: 16px; vertical-align: -3px; margin-right: 4px; }
+            tr.alarm .status-icon { --or-icon-fill: var(--fleet-alarm-color); }
+            tr.silent .status-icon { --or-icon-fill: var(--fleet-silent-color); }
             .meter .identity { margin-top: 2px; font-size: 12px; color: var(--fleet-muted-color); font-variant-numeric: tabular-nums; }
             /* Status as a left edge: alarm red, silent amber, ok nothing. */
             tr.row td.meter { box-shadow: inset 3px 0 0 transparent; }
@@ -155,9 +166,16 @@ export class OrFleetResults extends OrElement {
             tr.row { cursor: pointer; }
             tr.row:hover td, tr.row:focus td { background: var(--or-app-color2, #f5f5f5); }
             tr.row:focus { outline: none; }
-            tr.row:focus-visible td { box-shadow: inset 0 2px 0 var(--or-app-color4, #e3000a), inset 0 -2px 0 var(--or-app-color4, #e3000a); }
-            tr.row:focus-visible td.meter { box-shadow: inset 3px 0 0 var(--or-app-color4, #e3000a),
-                inset 0 2px 0 var(--or-app-color4, #e3000a), inset 0 -2px 0 var(--or-app-color4, #e3000a); }
+            /* Neutral focus ring (not the alarm colour); the meter cell keeps its status edge. */
+            tr.row:focus-visible td { box-shadow: inset 0 2px 0 var(--fleet-focus-color), inset 0 -2px 0 var(--fleet-focus-color); }
+            tr.row:focus-visible td:last-child { box-shadow: inset -2px 0 0 var(--fleet-focus-color),
+                inset 0 2px 0 var(--fleet-focus-color), inset 0 -2px 0 var(--fleet-focus-color); }
+            tr.row:focus-visible td.meter { box-shadow: inset 3px 0 0 transparent,
+                inset 0 2px 0 var(--fleet-focus-color), inset 0 -2px 0 var(--fleet-focus-color); }
+            tr.row.alarm:focus-visible td.meter { box-shadow: inset 3px 0 0 var(--fleet-alarm-color),
+                inset 0 2px 0 var(--fleet-focus-color), inset 0 -2px 0 var(--fleet-focus-color); }
+            tr.row.silent:focus-visible td.meter { box-shadow: inset 3px 0 0 var(--fleet-silent-color),
+                inset 0 2px 0 var(--fleet-focus-color), inset 0 -2px 0 var(--fleet-focus-color); }
             tr.divider th { padding: 0; background: var(--or-app-color1, #fff); border-bottom-color: var(--or-app-color5, #ccc); }
             tbody + tbody tr.divider th { border-top: 12px solid var(--or-app-color1, #fff); }
             .group-header { position: sticky; left: 0; display: inline-flex; align-items: baseline; gap: 12px;
@@ -220,7 +238,10 @@ export class OrFleetResults extends OrElement {
 
     protected _reset() {
         this.dispatchEvent(new OrFleetHiddenEvent([...DEFAULT_HIDDEN]));
-        this.dispatchEvent(new OrFleetColumnsEvent([]));
+        // Only a changed register selection re-queries.
+        if (this.result && selectedRegisters(this.result).length > 0) {
+            this.dispatchEvent(new OrFleetColumnsEvent([]));
+        }
     }
 
     protected _alarmLabel(row: FleetRow, name: string): string {
@@ -247,7 +268,7 @@ export class OrFleetResults extends OrElement {
         const identity = this.hiddenColumns.includes("identity") ? undefined : identityLine(row);
         const name = row.name === undefined || row.name === null || row.name === "" ? EM_DASH : String(row.name);
         return html`
-            <div class="name">${name}${status !== "ok" ? html`<span class="sr-only">, ${this._statusLabel(status)}</span>` : nothing}</div>
+            <div class="name">${STATUS_ICONS[status] ? html`<or-icon class="status-icon" aria-hidden="true" icon=${STATUS_ICONS[status]}></or-icon>` : nothing}${name}${status !== "ok" ? html`<span class="sr-only">, ${this._statusLabel(status)}</span>` : nothing}</div>
             ${identity ? html`<div class="identity">${identity}</div>` : nothing}`;
     }
 
@@ -334,8 +355,8 @@ export class OrFleetResults extends OrElement {
         return html`
             <div class="bar">
                 <span class="count">
-                    ${translate("fleet.result.count", { n: result.total ?? 0 })}${problems
-                        ? html` · <span class="problems">${translate("fleet.result.problems", { n: problems })}</span>`
+                    ${translate("fleet.result.count", { count: result.total ?? 0 })}${problems
+                        ? html` · <span class="problems">${translate("fleet.result.problems", { count: problems })}</span>`
                         : nothing}
                 </span>
                 <span class="spacer"></span>
@@ -405,8 +426,8 @@ export class OrFleetResults extends OrElement {
                             ${group.continued
                                 ? html`<span class="continued">${translate("fleet.group.continued")}</span>`
                                 : html`
-                                    ${info.count !== undefined ? html`<span class="meta">${translate("fleet.group.devices", { n: info.count })}</span>` : nothing}
-                                    ${problems ? html`<span class="problems">${translate("fleet.group.problems", { n: problems })}</span>` : nothing}`}
+                                    ${info.count !== undefined ? html`<span class="meta">${translate("fleet.group.devices", { count: info.count })}</span>` : nothing}
+                                    ${problems ? html`<span class="problems">${translate("fleet.group.problems", { count: problems })}</span>` : nothing}`}
                         </button>
                     </th>
                 </tr>

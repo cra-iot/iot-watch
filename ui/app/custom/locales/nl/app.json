@@ -47,8 +47,10 @@
       }
     },
     "result": {
-      "count": "{{n}} meters",
-      "problems": "{{n}} met problemen"
+      "count_one": "{{count}} meter",
+      "count_other": "{{count}} meters",
+      "problems_one": "{{count}} probleem",
+      "problems_other": "{{count}} problemen"
     },
     "sort": {
       "label": "Sort by",
@@ -62,8 +64,10 @@
       "status": "Status"
     },
     "group": {
-      "devices": "{{n}} meters",
-      "problems": "{{n}} problems",
+      "devices_one": "{{count}} meter",
+      "devices_other": "{{count}} meters",
+      "problems_one": "{{count}} probleem",
+      "problems_other": "{{count}} problemen",
       "continued": "continued",
       "unnamedLocation": "Naamloze locatie"
     },

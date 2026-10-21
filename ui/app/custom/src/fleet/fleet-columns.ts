@@ -30,6 +30,7 @@ export interface FleetColumn {
  * line under the meter name. "reading" is the primary register of each row's own type.
  */
 export const DEVICE_DETAILS = ["type", "deliveryPoint", "identity", "location", "battery", "lastSeen", "alarms"] as const;
+// "reading" lives in this list although it is a measurement, not a device detail: one hide= parameter covers both.
 export const HIDE_KEYS = [...DEVICE_DETAILS, "reading"] as const;
 export type HideKey = typeof HIDE_KEYS[number];
 

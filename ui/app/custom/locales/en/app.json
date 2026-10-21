@@ -48,8 +48,10 @@
       }
     },
     "result": {
-      "count": "{{n}} meters",
-      "problems": "{{n}} with problems"
+      "count_one": "{{count}} meter",
+      "count_other": "{{count}} meters",
+      "problems_one": "{{count}} problem",
+      "problems_other": "{{count}} problems"
     },
     "sort": {
       "label": "Sort by",
@@ -63,8 +65,10 @@
       "status": "Status"
     },
     "group": {
-      "devices": "{{n}} meters",
-      "problems": "{{n}} problems",
+      "devices_one": "{{count}} meter",
+      "devices_other": "{{count}} meters",
+      "problems_one": "{{count}} problem",
+      "problems_other": "{{count}} problems",
       "continued": "continued",
       "unnamedLocation": "Unnamed location"
     },
