@@ -42,6 +42,38 @@
         "notNumeric": "Enter a number.",
         "invalidDuration": "Enter a duration such as 30m, 24h or 7d."
       }
-    }
+    },
+    "result": {
+      "count": "{{shown}} of {{total}}"
+    },
+    "sort": {
+      "label": "Sort by",
+      "ascending": "Ascending",
+      "descending": "Descending"
+    },
+    "groupBy": {
+      "label": "Group by",
+      "none": "None",
+      "parent": "Location",
+      "type": "Type",
+      "status": "Status"
+    },
+    "group": {
+      "devices": "{{n}} devices",
+      "problems": "{{n}} with alarms",
+      "continued": "continued",
+      "noParent": "No location"
+    },
+    "status": {
+      "alarm": "Alarm",
+      "silent": "Silent",
+      "ok": "OK"
+    },
+    "pager": {
+      "range": "{{from}}-{{to}} of {{total}}",
+      "previous": "Previous",
+      "next": "Next"
+    },
+    "empty": "No devices found"
   }
 }
