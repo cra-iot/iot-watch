@@ -3,7 +3,11 @@
   "customString": "My custom string",
   "fleetPage": "Fleet",
   "fleet": {
+    "row": {
+      "open": "Open asset"
+    },
     "column": {
+      "actions": "Actions",
       "meter": "Meter",
       "type": "Type",
       "deliveryPoint": "Delivery point",

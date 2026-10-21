@@ -109,6 +109,8 @@ export class OrFleetResults extends OrElement {
                 --fleet-silent-color: #9a5b00;
                 --fleet-muted-color: #6b6b6b;
                 --fleet-focus-color: var(--or-app-color3, #222);
+                --fleet-stripe-color: color-mix(in srgb, var(--or-app-color2, #f5f5f5) 55%, var(--or-app-color1, #fff));
+                --fleet-hover-color: color-mix(in srgb, var(--or-app-color5, #ccc) 35%, var(--or-app-color1, #fff));
             }
             .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
                 clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
@@ -149,10 +151,17 @@ export class OrFleetResults extends OrElement {
                 background: var(--or-app-color2, #f5f5f5); border-bottom-color: var(--or-app-color5, #ccc); }
             th.numeric, td.numeric { text-align: right; font-variant-numeric: tabular-nums; }
             th.sorted { color: var(--or-app-color3, #222); }
-            /* The right edge marks where the frozen column ends while the table scrolls sideways. */
-            .meter { position: sticky; left: 0; z-index: 1; background: var(--or-app-color1, #fff);
-                border-right: 1px solid var(--or-app-color5, #ccc); }
+            /* Row colour comes from --row-bg so the frozen cell always matches the rest of its row. */
+            tbody tr.row { --row-bg: var(--or-app-color1, #fff); }
+            tbody tr.row.stripe { --row-bg: var(--fleet-stripe-color); }
+            tbody tr.row:hover { --row-bg: var(--fleet-hover-color); }
+            tbody td { background: var(--row-bg); }
+            .meter { position: sticky; left: 0; z-index: 1; }
             thead th.meter { background: var(--or-app-color2, #f5f5f5); }
+            /* A soft edge only while content is scrolled underneath the frozen column. */
+            .scroll.scrolled .meter { box-shadow: 4px 0 6px -4px rgba(0, 0, 0, .25); }
+            .scroll.scrolled tr.row.alarm td.meter { box-shadow: inset 3px 0 0 var(--fleet-alarm-color), 4px 0 6px -4px rgba(0, 0, 0, .25); }
+            .scroll.scrolled tr.row.silent td.meter { box-shadow: inset 3px 0 0 var(--fleet-silent-color), 4px 0 6px -4px rgba(0, 0, 0, .25); }
             .meter .name { font-weight: 500; }
             .meter .status-icon { --or-icon-width: 16px; --or-icon-height: 16px; vertical-align: -3px; margin-right: 4px; }
             tr.alarm .status-icon { --or-icon-fill: var(--fleet-alarm-color); }
@@ -163,19 +172,11 @@ export class OrFleetResults extends OrElement {
             tr.row.alarm td.meter { box-shadow: inset 3px 0 0 var(--fleet-alarm-color); }
             tr.row.silent td.meter { box-shadow: inset 3px 0 0 var(--fleet-silent-color); }
             td.age.silent { color: var(--fleet-silent-color); }
-            tr.row { cursor: pointer; }
-            tr.row:hover td, tr.row:focus td { background: var(--or-app-color2, #f5f5f5); }
-            tr.row:focus { outline: none; }
-            /* Neutral focus ring (not the alarm colour); the meter cell keeps its status edge. */
-            tr.row:focus-visible td { box-shadow: inset 0 2px 0 var(--fleet-focus-color), inset 0 -2px 0 var(--fleet-focus-color); }
-            tr.row:focus-visible td:last-child { box-shadow: inset -2px 0 0 var(--fleet-focus-color),
-                inset 0 2px 0 var(--fleet-focus-color), inset 0 -2px 0 var(--fleet-focus-color); }
-            tr.row:focus-visible td.meter { box-shadow: inset 3px 0 0 transparent,
-                inset 0 2px 0 var(--fleet-focus-color), inset 0 -2px 0 var(--fleet-focus-color); }
-            tr.row.alarm:focus-visible td.meter { box-shadow: inset 3px 0 0 var(--fleet-alarm-color),
-                inset 0 2px 0 var(--fleet-focus-color), inset 0 -2px 0 var(--fleet-focus-color); }
-            tr.row.silent:focus-visible td.meter { box-shadow: inset 3px 0 0 var(--fleet-silent-color),
-                inset 0 2px 0 var(--fleet-focus-color), inset 0 -2px 0 var(--fleet-focus-color); }
+            td.actions, th.actions { width: 1%; padding-top: 4px; padding-bottom: 4px; text-align: right; }
+            .open { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px;
+                padding: 0; border: none; border-radius: 4px; background: transparent; color: inherit; cursor: pointer;
+                --or-icon-width: 20px; --or-icon-height: 20px; }
+            .open:hover { background: rgba(0, 0, 0, .08); }
             tr.divider th { padding: 0; background: var(--or-app-color1, #fff); border-bottom-color: var(--or-app-color5, #ccc); }
             tbody + tbody tr.divider th { border-top: 12px solid var(--or-app-color1, #fff); }
             .group-header { position: sticky; left: 0; display: inline-flex; align-items: baseline; gap: 12px;
@@ -393,13 +394,19 @@ export class OrFleetResults extends OrElement {
     }
 
     protected _renderRows(result: FleetQueryResult, rows: FleetRow[], columns: FleetColumn[], now: number): TemplateResult[] {
-        return rows.map((row) => {
+        // The stripe index is per call, so it restarts in every group.
+        return rows.map((row, index) => {
             const status = rowStatus(row, now);
+            const label = translate("fleet.row.open");
             return html`
-                <tr class="row ${status}" tabindex="0"
-                    @click=${() => this.dispatchEvent(new OrFleetRowClickEvent(row.id))}
-                    @keydown=${(ev: KeyboardEvent) => { if (ev.key === "Enter") { this.dispatchEvent(new OrFleetRowClickEvent(row.id)); } }}>
+                <tr class="row ${status}${index % 2 === 1 ? " stripe" : ""}">
                     ${columns.map((c) => html`<td class=${this._cellClass(c, status)}>${this._renderCell(result, row, c, status, now)}</td>`)}
+                    <td class="actions">
+                        <button type="button" class="open" aria-label=${label} title=${label}
+                                @click=${() => this.dispatchEvent(new OrFleetRowClickEvent(row.id))}>
+                            <or-icon aria-hidden="true" icon="open-in-new"></or-icon>
+                        </button>
+                    </td>
                 </tr>`;
         });
     }
@@ -418,7 +425,7 @@ export class OrFleetResults extends OrElement {
         return html`
             <tbody>
                 <tr class="divider">
-                    <th scope="rowgroup" colspan=${columns.length}>
+                    <th scope="rowgroup" colspan=${columns.length + 1}>
                         <button type="button" class="group-header" aria-expanded=${open ? "true" : "false"}
                                 @click=${() => this._toggleGroup(group.key)}>
                             <span aria-hidden="true">${open ? "▾" : "▸"}</span>
@@ -438,7 +445,7 @@ export class OrFleetResults extends OrElement {
     protected _renderTable(result: FleetQueryResult, groups: RowGroup[], columns: FleetColumn[], now: number): TemplateResult {
         const sortField = this.sort?.field;
         return html`
-            <div class="scroll">
+            <div class="scroll" @scroll=${(ev: Event) => (ev.currentTarget as HTMLElement).classList.toggle("scrolled", (ev.currentTarget as HTMLElement).scrollLeft > 0)}>
                 <table>
                     <thead><tr>
                         ${columns.map((c) => {
@@ -449,6 +456,7 @@ export class OrFleetResults extends OrElement {
                                     ${this._columnLabel(c)}${c.units ? html` <small>(${c.units})</small>` : nothing}${sorted ? (this.sort?.descending ? " ↓" : " ↑") : nothing}
                                 </th>`;
                         })}
+                        <th scope="col" class="actions"><span class="sr-only">${translate("fleet.column.actions")}</span></th>
                     </tr></thead>
                     ${this.groupBy === "NONE"
                         ? html`<tbody>${this._renderRows(result, groups[0].rows, columns, now)}</tbody>`

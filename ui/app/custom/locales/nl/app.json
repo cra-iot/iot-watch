@@ -2,7 +2,11 @@
   "customPage": "Aangepaste pagina",
   "fleetPage": "Fleet",
   "fleet": {
+    "row": {
+      "open": "Asset openen"
+    },
     "column": {
+      "actions": "Acties",
       "meter": "Meter",
       "type": "Type",
       "deliveryPoint": "Delivery point",
