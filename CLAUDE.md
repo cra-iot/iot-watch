@@ -32,7 +32,7 @@ UI (Yarn 4 workspaces `ui/app/*`, `ui/component/*`; run `yarn install` at repo r
 
 ```bash
 docker compose -f profile/dev-ui.yml -p iot-watch up -d   # backend for UI dev (pulls pinned deploy.yml from GitHub)
-cd ui/app/fleet && yarn run serve                         # dev server, http://localhost:9000/fleet/
+cd ui/app/fleet && yarn run serve                         # dev server, http://localhost:9000/fleet/?realm=<realm>
 yarn run build                                            # production build (in the app directory)
 ```
 

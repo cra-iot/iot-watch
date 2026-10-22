@@ -57,9 +57,10 @@ export const DefaultRealmConfig: RealmAppConfig = {
     styles: ":host > * {--or-app-color2: #F0F0F0; --or-app-color3: #22211f; --or-app-color4: #e3000a; --or-app-color5: #CCCCCC;}",
 };
 
-// Configure manager connection and i18next settings
+// Configure manager connection and i18next settings.
+// No realm here on purpose: each customer has its own realm, so OrApp reads it from the
+// URL (/fleet/?realm=<realm>); without the parameter OpenRemote falls back to master.
 orApp.managerConfig = {
-    realm: "custom",
     loadTranslations: ["app", "or"]
 };
 
