@@ -32,7 +32,7 @@ build:gradle:
       - .gradle/wrapper
   script:
     - ./gradlew test --console=plain
-    - ./gradlew installDist -x :ui:app:custom:installDist -x :ui:app:custom-react:installDist ${NEXT_VERSION:+-Prelease.forceVersion=$NEXT_VERSION} --console=plain
+    - ./gradlew installDist -x :ui:app:fleet:installDist -x :ui:app:custom-react:installDist ${NEXT_VERSION:+-Prelease.forceVersion=$NEXT_VERSION} --console=plain
   artifacts:
     when: always
     reports:

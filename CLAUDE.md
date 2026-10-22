@@ -32,7 +32,7 @@ UI (Yarn 4 workspaces `ui/app/*`, `ui/component/*`; run `yarn install` at repo r
 
 ```bash
 docker compose -f profile/dev-ui.yml -p iot-watch up -d   # backend for UI dev (pulls pinned deploy.yml from GitHub)
-cd ui/app/custom && yarn run serve                        # dev server, http://localhost:9000/custom/
+cd ui/app/fleet && yarn run serve                         # dev server, http://localhost:9000/fleet/
 yarn run build                                            # production build (in the app directory)
 ```
 
@@ -46,7 +46,7 @@ Java modules mirror OpenRemote's package layout (`org.openremote.*`) and plug in
 - `agent/` — custom protocol agents (template example only, not used). Data ingestion does not go through a custom agent: the active path is the HTTP ingest endpoint (see `manager/`). The built-in OpenRemote MQTT agent (configured in the Manager, no custom code) remains supported but is no longer used.
 - `manager/` — custom manager services (`ContainerService` registration). Holds the two core runtime services: `IotWatchIngestService` (the API-key-authenticated HTTP ingest endpoint, enabled by manager configuration; writes device messages to `rawValue`) and `IotWatchDecodeService` (reacts to committed `rawValue` events and writes typed attributes via a `DecoderRegistry`/`DecodePlan`; replaced the former Groovy decode rules).
 - `setup/` — setup tasks (`SetupTasks` registration) that provision realms, users, and assets on a clean install.
-- `ui/app/custom` — Lit-based custom app (this is the customer-facing app); `ui/app/custom-react` — React example; `ui/component/model` — TypeScript model generated from `model/` (do not edit `src/model.ts` by hand); `ui/component/rest` — REST client.
+- `ui/app/fleet` — Lit-based fleet search and overview app (the customer-facing app; fleet page plus the standard asset page); `ui/app/custom-react` — React example from the template; `ui/component/model` — TypeScript model generated from `model/` (do not edit `src/model.ts` by hand); `ui/component/rest` — REST client.
 - `deployment/` — deployment content mounted into the manager/keycloak pods on Kubernetes (for local docker compose it is packed into the `deployment` image instead): CRA branding (`manager/app/manager_config.json`, logos), Keycloak themes, map settings.
 - `profile/` — dev Docker Compose profiles (`dev-ui.yml` for UI work, `dev-testing.yml` for Keycloak theme work).
 

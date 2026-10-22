@@ -3,17 +3,13 @@ import {combineReducers, configureStore} from "@reduxjs/toolkit";
 import "@openremote/or-app";
 import themeCss from "@openremote/theme";
 import {AnyAction, appReducer, AppStateKeyed, HeaderConfig, HeaderItem, OrApp, PageProvider, RealmAppConfig} from "@openremote/or-app";
-import {headerItemAccount, headerItemLanguage, headerItemLogout, headerItemMap, headerItemAssets} from "@openremote/manager/headers";
+import {headerItemAccount, headerItemLanguage, headerItemLogout, headerItemAssets} from "@openremote/manager/headers";
 import {pageAssetsReducer, pageAssetsProvider} from "@openremote/manager/pages/page-assets";
-import {pageMapReducer, pageMapProvider} from "@openremote/manager/pages/page-map";
-import "./pages/page-custom";
-import {pageCustomProvider} from "./pages/page-custom";
 import "./pages/page-fleet";
 import {pageFleetProvider} from "./pages/page-fleet";
 
 const rootReducer = combineReducers({
     app: appReducer,
-    map: pageMapReducer,
     assets: pageAssetsReducer
 });
 
@@ -26,20 +22,9 @@ export const store = configureStore({
 const orApp = new OrApp(store);
 
 export const DefaultPagesConfig: PageProvider<any>[] = [
-    pageMapProvider(store), // Standard manager map page
-    pageAssetsProvider(store), // Standard manager asset page
-    pageCustomProvider(store), // Custom page
-    pageFleetProvider(store) // Fleet search and overview page
+    pageFleetProvider(store), // Fleet search and overview page, the landing page
+    pageAssetsProvider(store) // Standard manager asset page, opened from a fleet row
 ];
-
-// A new header for our custom page
-export function headerItemCustom<S extends AppStateKeyed, A extends AnyAction>(orApp: OrApp<S>): HeaderItem {
-    return {
-        icon: "rhombus-split",
-        href: "custom1",
-        text: "app:customPage",
-    };
-}
 
 // Header entry for the fleet search and overview page
 export function headerItemFleet<S extends AppStateKeyed, A extends AnyAction>(orApp: OrApp<S>): HeaderItem {
@@ -51,10 +36,8 @@ export function headerItemFleet<S extends AppStateKeyed, A extends AnyAction>(or
 }
 
 export const DefaultHeaderMainMenu: {[name: string]: HeaderItem} = {
-    map: headerItemMap(orApp),
-    assets: headerItemAssets(orApp),
-    custom: headerItemCustom(orApp),
-    fleet: headerItemFleet(orApp)
+    fleet: headerItemFleet(orApp),
+    assets: headerItemAssets(orApp)
 };
 
 export const DefaultHeaderSecondaryMenu: {[name: string]: HeaderItem} = {
@@ -69,7 +52,7 @@ export const DefaultHeaderConfig: HeaderConfig = {
 };
 
 export const DefaultRealmConfig: RealmAppConfig = {
-    appTitle: "Custom App",
+    appTitle: "IoT Watch Fleet",
     header: DefaultHeaderConfig,
     styles: ":host > * {--or-app-color2: #F0F0F0; --or-app-color3: #22211f; --or-app-color4: #e3000a; --or-app-color5: #CCCCCC;}",
 };

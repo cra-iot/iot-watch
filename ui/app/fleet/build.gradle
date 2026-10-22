@@ -7,6 +7,7 @@ tasks.register('clean') {
 tasks.register('installDist', Copy) {
     dependsOn npmBuild
     mustRunAfter ":manager:installDist"
-    from project.buildDir
+    // getAppConfig from @openremote/util writes the production bundle to build/dist
+    from "build/dist"
     into "${project(':deployment').buildDir}/image/manager/app/${projectDir.name}"
 }

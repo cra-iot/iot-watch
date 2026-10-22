@@ -1,7 +1,7 @@
 {
-  "name": "@openremote/custom",
+  "name": "@openremote/fleet",
   "version": "1.0.0",
-  "description": "OpenRemote Custom App",
+  "description": "IoT Watch fleet search and overview app",
   "author": "OpenRemote",
   "license": "AGPL-3.0-or-later",
   "private": true,

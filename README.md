@@ -115,7 +115,7 @@ For UI development, start the backend from a dev profile (it pulls `deploy.yml` 
 ```bash
 docker compose -f profile/dev-ui.yml -p iot-watch up -d
 yarn install
-cd ui/app/custom && yarn run serve   # http://localhost:9000/custom/
+cd ui/app/fleet && yarn run serve    # http://localhost:9000/fleet/
 ```
 
 ### Examples

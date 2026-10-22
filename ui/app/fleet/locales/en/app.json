@@ -1,26 +1,25 @@
 {
-  "customPage": "Aangepaste pagina",
   "fleetPage": "Fleet",
   "fleet": {
     "row": {
-      "open": "Asset openen"
+      "open": "Open asset"
     },
     "column": {
-      "actions": "Acties",
+      "actions": "Actions",
       "meter": "Meter",
       "type": "Type",
       "deliveryPoint": "Delivery point",
-      "identity": "Serienummer en devEUI",
+      "identity": "Serial & devEUI",
       "location": "Location",
-      "reading": "Meterstand",
+      "reading": "Reading",
       "lastSeen": "Last seen",
       "battery": "Battery",
       "alarms": "Alarms"
     },
     "columns": {
       "picker": "Columns",
-      "details": "Apparaatgegevens",
-      "measurements": "Metingen",
+      "details": "Device details",
+      "measurements": "Measurements",
       "reset": "Reset to default"
     },
     "error": {
@@ -47,14 +46,14 @@
         "unknownKind": "Unknown filter. Did you mean one of these?",
         "notNumeric": "Enter a number.",
         "invalidDuration": "Enter a duration such as 30m, 24h or 7d.",
-        "operatorNotAllowed": "Vergelijkingen en bereiken werken alleen met getallen. Gebruik = of gewone tekst."
+        "operatorNotAllowed": "Comparisons and ranges only work on numbers. Use = or plain text."
       }
     },
     "result": {
       "count_one": "{{count}} meter",
       "count_other": "{{count}} meters",
-      "problems_one": "{{count}} probleem",
-      "problems_other": "{{count}} problemen"
+      "problems_one": "{{count}} problem",
+      "problems_other": "{{count}} problems"
     },
     "sort": {
       "label": "Sort by",
@@ -70,10 +69,10 @@
     "group": {
       "devices_one": "{{count}} meter",
       "devices_other": "{{count}} meters",
-      "problems_one": "{{count}} probleem",
-      "problems_other": "{{count}} problemen",
+      "problems_one": "{{count}} problem",
+      "problems_other": "{{count}} problems",
       "continued": "continued",
-      "unnamedLocation": "Naamloze locatie"
+      "unnamedLocation": "Unnamed location"
     },
     "status": {
       "alarm": "Alarm",
@@ -87,7 +86,7 @@
     },
     "empty": "No devices found",
     "reading": {
-      "needsOneType": "Het meterstandfilter vereist precies één assettype. Voeg een type:-filter toe."
+      "needsOneType": "The reading filter needs exactly one asset type. Add a type: filter."
     }
   }
 }

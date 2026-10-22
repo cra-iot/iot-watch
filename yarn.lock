@@ -1464,9 +1464,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@openremote/custom@workspace:ui/app/custom":
+"@openremote/fleet@workspace:ui/app/fleet":
   version: 0.0.0-use.local
-  resolution: "@openremote/custom@workspace:ui/app/custom"
+  resolution: "@openremote/fleet@workspace:ui/app/fleet"
   dependencies:
     "@openremote/core": "npm:1.32.1"
     "@openremote/manager": "npm:~1.32.1"
