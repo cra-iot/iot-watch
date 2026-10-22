@@ -58,4 +58,11 @@ public class FleetQuery {
     public int offset;
     /** Zero means "use the server default". */
     public int limit;
+
+    /**
+     * Realm to search; null or empty means the request realm. Lets a super user's realm picker
+     * target another realm, as AssetQuery.realm does; authorizeAssetQuery still rejects any
+     * other caller whose own realm differs.
+     */
+    public String realm;
 }

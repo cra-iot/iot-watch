@@ -57,6 +57,8 @@ export class PageFleet extends Page<AppStateKeyed> {
 
     /** Drops answers of superseded queries, so a slow earlier response cannot overwrite a newer one. */
     protected _requestId = 0;
+    /** Realm being searched; a super user's realm picker changes it, the login realm does not. */
+    protected _realm?: string;
 
     get name(): string {
         return "fleet";
@@ -66,7 +68,20 @@ export class PageFleet extends Page<AppStateKeyed> {
         super(store);
     }
 
-    stateChanged(_state: AppStateKeyed): void {
+    stateChanged(state: AppStateKeyed): void {
+        const realm = state.app.realm;
+        if (realm === this._realm) { return; }
+        const switched = this._realm !== undefined;
+        this._realm = realm;
+        if (!switched) { return; }
+        // Tokens, sites and results name assets of the previous realm: start the search afresh.
+        this._tokens = [];
+        this._sites = [];
+        this._result = undefined;
+        this._offset = 0;
+        this._readingNote = false;
+        this._pushUrl();
+        this._runQuery();
     }
 
     protected _storedHidden(): string | null {
@@ -120,6 +135,7 @@ export class PageFleet extends Page<AppStateKeyed> {
             ...(this._columns?.length ? { columns: this._columns } : {}),
             ...(primaryRegister ? { primaryRegister } : {}),
         });
+        if (this._realm) { query.realm = this._realm; }
         const response = await rest.api.FleetResource.query(query);
         return response.data;
     }

@@ -41,7 +41,8 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
     @Override
     public FleetQueryResult query(FleetQuery query) {
         FleetQuery fleetQuery = query == null ? new FleetQuery() : query;
-        String realm = getRequestRealmName();
+        String realm = fleetQuery.realm == null || fleetQuery.realm.isBlank()
+                ? getRequestRealmName() : fleetQuery.realm;
         validateFilters(fleetQuery);
         validateOperators(fleetQuery);
         rejectHiddenFilters(fleetQuery);

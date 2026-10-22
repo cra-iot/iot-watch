@@ -1,12 +1,14 @@
 package org.openremote.test.iotwatch
 
 import jakarta.ws.rs.BadRequestException
+import jakarta.ws.rs.ForbiddenException
 import jakarta.ws.rs.NotAuthorizedException
 import jakarta.ws.rs.client.Entity
 import jakarta.ws.rs.core.MediaType
 import org.openremote.manager.security.ManagerIdentityProvider
 import org.openremote.manager.asset.AssetStorageService
 import org.openremote.manager.security.ManagerIdentityService
+import org.openremote.container.security.IdentityProvider
 import org.openremote.model.Constants
 import org.openremote.model.asset.UserAssetLink
 import org.openremote.model.asset.impl.ThingAsset
@@ -17,6 +19,7 @@ import org.openremote.model.query.AssetQuery
 import org.openremote.model.query.filter.RealmPredicate
 import org.openremote.model.security.Realm
 import org.openremote.model.security.User
+import org.openremote.model.util.MapAccess
 import org.openremote.model.tracker.TrackerAsset
 import org.openremote.model.value.ValueType
 import org.openremote.model.watermeter.WaterMeterAsset
@@ -44,6 +47,10 @@ class FleetEndpointTest extends Specification implements ManagerContainerTrait {
     @Shared FleetResource readerResource
     @Shared FleetResource restrictedResource
     @Shared FleetResource outsiderResource
+    /** The outsider on their own realm's path, so only the query's realm points at the fixture realm. */
+    @Shared FleetResource outsiderOwnRealmResource
+    /** The master admin on the master path, as the realm picker in the fleet app calls it. */
+    @Shared FleetResource superUserResource
     @Shared String linkedAssetId
     @Shared String buildingId
     @Shared String floorId
@@ -135,7 +142,14 @@ class FleetEndpointTest extends Specification implements ManagerContainerTrait {
         }
         readerResource = proxy(readerToken)
         restrictedResource = proxy(restrictedToken)
-        outsiderResource = proxy(token(OTHER_REALM, "fleet-outsider"))
+        def outsiderToken = token(OTHER_REALM, "fleet-outsider")
+        outsiderResource = proxy(outsiderToken)
+        outsiderOwnRealmResource = getClientApiTarget(serverUri(port), OTHER_REALM, outsiderToken).proxy(FleetResource)
+        def adminPassword = MapAccess.getString(container.getConfig(), IdentityProvider.OR_ADMIN_PASSWORD,
+                IdentityProvider.OR_ADMIN_PASSWORD_DEFAULT)
+        def superUserToken = authenticate(container, Constants.MASTER_REALM, Constants.KEYCLOAK_CLIENT_ID,
+                Constants.MASTER_REALM_ADMIN_USER, adminPassword)
+        superUserResource = getClientApiTarget(serverUri(port), Constants.MASTER_REALM, superUserToken).proxy(FleetResource)
     }
 
     def cleanupSpec() {
@@ -290,6 +304,23 @@ class FleetEndpointTest extends Specification implements ManagerContainerTrait {
 
         then: "the JWT filter rejects a foreign-realm token; authorizeAssetQuery's realm check is defence in depth"
         thrown(NotAuthorizedException)
+    }
+
+    def "a super user reads another realm's fleet through the query's realm"() {
+        when:
+        def result = superUserResource.query(new FleetQuery(realm: REALM))
+
+        then: "the rows are the fixture realm's, although the request realm is master"
+        result.total > 0
+        result.rows*.id.contains(linkedAssetId)
+    }
+
+    def "a non-super user cannot widen the query's realm beyond their own"() {
+        when:
+        outsiderOwnRealmResource.query(new FleetQuery(realm: REALM))
+
+        then: "authorizeAssetQuery rejects a realm other than the caller's"
+        thrown(ForbiddenException)
     }
 
     def "rawValue never appears in the response payload, for any caller"() {
