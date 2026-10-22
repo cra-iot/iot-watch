@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GROUP_OPTIONS, groupInfo, problemCount, relativeAge, rowStatus, segmentGroups } from "./fleet-groups";
+import { GROUP_OPTIONS, groupInfo, relativeAge, rowStatus, segmentGroups } from "./fleet-groups";
 
 const NOW = 1_000_000_000_000;
 const row = (id: string, over: Record<string, unknown> = {}) =>
@@ -74,17 +74,6 @@ describe("groupInfo", () => {
 describe("GROUP_OPTIONS", () => {
     it("offers none, type and status; location grouping is not offered", () => {
         expect(GROUP_OPTIONS).toEqual(["NONE", "TYPE", "STATUS"]);
-    });
-});
-
-describe("problemCount", () => {
-    it("adds up alarm and silent devices of the whole result", () => {
-        const facets = { status: [{ key: "alarm", count: 2 }, { key: "silent", count: 3 }, { key: "ok", count: 9 }] };
-        expect(problemCount(result([], { facets }))).toBe(5);
-    });
-
-    it("is zero without status facets", () => {
-        expect(problemCount(result([]))).toBe(0);
     });
 });
 

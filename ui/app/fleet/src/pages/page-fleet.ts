@@ -32,7 +32,9 @@ export class PageFleet extends Page<AppStateKeyed> {
     static get styles() {
         // language=CSS
         return css`
-            :host { display: flex; flex-direction: column; width: 100%; padding: 12px 24px; box-sizing: border-box; }
+            /* Centred with a cap, so wide screens get margins instead of a stretched table. */
+            :host { display: flex; flex-direction: column; width: 100%; max-width: 1680px; margin: 0 auto;
+                padding: 12px 24px; box-sizing: border-box; }
             .error { color: var(--or-app-color4, #e3000a); padding: 8px 0; }
             .note { color: var(--or-app-color3, #4c4c4c); padding: 8px 0; }
         `;

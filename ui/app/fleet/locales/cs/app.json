@@ -66,16 +66,7 @@
       "count_one": "{{count}} měřidlo",
       "count_few": "{{count}} měřidla",
       "count_many": "{{count}} měřidla",
-      "count_other": "{{count}} měřidel",
-      "problems_one": "{{count}} problém",
-      "problems_few": "{{count}} problémy",
-      "problems_many": "{{count}} problému",
-      "problems_other": "{{count}} problémů"
-    },
-    "sort": {
-      "label": "Řadit podle",
-      "ascending": "Vzestupně",
-      "descending": "Sestupně"
+      "count_other": "{{count}} měřidel"
     },
     "groupBy": {
       "label": "Seskupit podle",

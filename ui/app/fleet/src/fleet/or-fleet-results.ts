@@ -5,13 +5,12 @@ import { AssetModelUtil } from "@openremote/model";
 import { OrElement } from "@openremote/or-element";
 import { i18next, translate as translateMixin } from "@openremote/or-translate";
 import "@openremote/or-icon";
-import "@openremote/or-vaadin-components/or-vaadin-select";
 import type { FleetQueryResult, FleetRow } from "model";
 import {
     allColumns, cellValue, DEFAULT_HIDDEN, DEVICE_DETAILS, EM_DASH, identityLine, offeredColumns, readingValue,
     selectedRegisters, visibleColumns, type FleetColumn, type HideKey,
 } from "./fleet-columns";
-import { GROUP_OPTIONS, groupInfo, problemCount, relativeAge, rowStatus, segmentGroups, type RowGroup } from "./fleet-groups";
+import { GROUP_OPTIONS, groupInfo, relativeAge, rowStatus, segmentGroups, type RowGroup } from "./fleet-groups";
 
 export class OrFleetRowClickEvent extends CustomEvent<{ assetId: string }> {
     public static readonly NAME = "or-fleet-row-click";
@@ -120,7 +119,6 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
             .bar .spacer { flex: 1; }
             .bar .label { color: var(--fleet-muted-color); }
             .count { font-weight: 600; }
-            .count .problems { font-weight: normal; color: var(--fleet-alarm-color); }
             .control { display: inline-flex; align-items: center; gap: 6px; }
             .toggle { display: inline-flex; border: 1px solid var(--or-app-color5, #ccc); border-radius: 4px; overflow: hidden; }
             .toggle button { border: none; background: var(--or-app-color1, #fff); padding: 6px 10px; cursor: pointer; color: inherit; }
@@ -145,12 +143,18 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
             .scroll { overflow-x: auto;
                 border: 1px solid var(--or-app-color5, #ccc); border-radius: 4px; }
             table { width: 100%; border-collapse: separate; border-spacing: 0; }
-            th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--or-app-color2, #eee);
+            th, td { text-align: left; padding: 10px 16px; border-bottom: 1px solid var(--or-app-color2, #eee);
                 white-space: nowrap; vertical-align: top; }
             thead th { font-weight: 600; font-size: 13px;
                 background: var(--or-app-color2, #f5f5f5); border-bottom-color: var(--or-app-color5, #ccc); }
             th.numeric, td.numeric { text-align: right; font-variant-numeric: tabular-nums; }
             th.sorted { color: var(--or-app-color3, #222); }
+            .sort { display: inline-flex; align-items: baseline; gap: 4px; padding: 0; border: none; background: none;
+                font: inherit; color: inherit; text-align: inherit; cursor: pointer; }
+            .sort .arrow { min-width: 1ch; }
+            .sort:not(:hover) .arrow.hint { visibility: hidden; }
+            .sort .arrow.hint { color: var(--fleet-muted-color); }
+            th.numeric .sort { flex-direction: row-reverse; }
             /* Row colour comes from --row-bg so the frozen cell always matches the rest of its row. */
             tbody tr.row { --row-bg: var(--or-app-color1, #fff); }
             tbody tr.row.stripe { --row-bg: var(--fleet-stripe-color); }
@@ -203,7 +207,7 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
     @property({ type: Boolean })
     public loading = false;
 
-    /** Current sort, only used to show the select state. */
+    /** Current sort, only used to show the header state. */
     @property({ attribute: false })
     public sort?: { field: string; descending: boolean };
 
@@ -350,18 +354,9 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
     }
 
     protected _renderResultBar(result: FleetQueryResult): TemplateResult {
-        // Every sortable column, hidden or not, so the select never loses the current sort.
-        const items = allColumns(result, formatUnits).filter((c) => c.sortable)
-            .map((c) => ({ value: c.key, label: this._columnLabel(c) }));
-        const field = this.sort?.field ?? "";
-        const problems = problemCount(result);
         return html`
             <div class="bar">
-                <span class="count">
-                    ${translate("fleet.result.count", { count: result.total ?? 0 })}${problems
-                        ? html` · <span class="problems">${translate("fleet.result.problems", { count: problems })}</span>`
-                        : nothing}
-                </span>
+                <span class="count">${translate("fleet.result.count", { count: result.total ?? 0 })}</span>
                 <span class="spacer"></span>
                 <span class="control">
                     <span class="label" id="group-label">${translate("fleet.groupBy.label")}</span>
@@ -372,24 +367,6 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
                                 ${translate(`fleet.groupBy.${option.toLowerCase()}`)}
                             </button>`)}
                     </span>
-                </span>
-                <span class="control">
-                    <span class="label">${translate("fleet.sort.label")}</span>
-                    <or-vaadin-select
-                        style="width: 170px"
-                        aria-label=${translate("fleet.sort.label")}
-                        .items=${items}
-                        .value=${field}
-                        @value-changed=${(ev: CustomEvent) => {
-                            const next = ev.detail.value as string;
-                            if (next && next !== field) { this.dispatchEvent(new OrFleetSortEvent(next, false)); }
-                        }}
-                    ></or-vaadin-select>
-                    <button type="button" class="plain" ?disabled=${!field}
-                            aria-label=${translate(this.sort?.descending ? "fleet.sort.descending" : "fleet.sort.ascending")}
-                            @click=${() => this.dispatchEvent(new OrFleetSortEvent(field, !this.sort?.descending))}>
-                        ${this.sort?.descending ? "↓" : "↑"}
-                    </button>
                 </span>
                 ${this._renderColumnsMenu(result)}
             </div>`;
@@ -445,6 +422,17 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
             </tbody>`;
     }
 
+    /** Clicking the sorted column flips its direction; any other column starts ascending. */
+    protected _renderSortButton(column: FleetColumn, label: TemplateResult, sorted: boolean): TemplateResult {
+        const descending = sorted && !!this.sort?.descending;
+        return html`
+            <button type="button" class="sort"
+                    @click=${() => this.dispatchEvent(new OrFleetSortEvent(column.key, sorted ? !descending : false))}>
+                <span>${label}</span>
+                <span class="arrow${sorted ? "" : " hint"}" aria-hidden="true">${descending ? "↓" : "↑"}</span>
+            </button>`;
+    }
+
     protected _renderTable(result: FleetQueryResult, groups: RowGroup[], columns: FleetColumn[], now: number): TemplateResult {
         const sortField = this.sort?.field;
         return html`
@@ -453,10 +441,11 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
                     <thead><tr>
                         ${columns.map((c) => {
                             const sorted = sortField === c.key;
+                            const label = html`${this._columnLabel(c)}${c.units ? html` <small>(${c.units})</small>` : nothing}`;
                             return html`
                                 <th scope="col" class="${this._cellClass(c, "")}${sorted ? " sorted" : ""}"
                                     aria-sort=${sorted ? (this.sort?.descending ? "descending" : "ascending") : "none"}>
-                                    ${this._columnLabel(c)}${c.units ? html` <small>(${c.units})</small>` : nothing}${sorted ? (this.sort?.descending ? " ↓" : " ↑") : nothing}
+                                    ${c.sortable ? this._renderSortButton(c, label, sorted) : label}
                                 </th>`;
                         })}
                         <th scope="col" class="actions"><span class="sr-only">${translate("fleet.column.actions")}</span></th>

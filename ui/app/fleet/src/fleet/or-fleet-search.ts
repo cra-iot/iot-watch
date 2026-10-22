@@ -154,6 +154,8 @@ export class OrFleetSearch extends translateMixin(i18next)(OrElement) {
         this._number = "";
         this._rangeNumber = "";
         this._operator = "EQUALS";
+        // The search runs now; the suggestions would only cover its result. Typing or a click reopens them.
+        this._open = false;
         this._emit([...this.tokens, ...added]);
     }
 
@@ -313,10 +315,14 @@ export class OrFleetSearch extends translateMixin(i18next)(OrElement) {
                     placeholder=${translate("fleet.token.placeholder")}
                     @value-changed=${(ev: CustomEvent) => {
                         const value = ev.detail.value ?? "";
-                        if (value !== this._input) { this._error = undefined; }
+                        if (value !== this._input) {
+                            this._error = undefined;
+                            this._open = true;
+                        }
                         this._input = value;
                     }}
                     @focus=${() => { this._open = true; }}
+                    @click=${() => { this._open = true; }}
                     @keydown=${(ev: KeyboardEvent) => this._onKeydown(ev)}
                 ></or-vaadin-text-field>
             </div>

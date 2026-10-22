@@ -103,13 +103,6 @@ export function groupInfo(
     return { count: groupCounts(result, groupBy).get(key) };
 }
 
-/** Devices of the whole result (not this page) that are in alarm or silent, from the status facets. */
-export function problemCount(result: FleetQueryResult): number {
-    return (result.facets?.status ?? [])
-        .filter((facet) => facet.key === "alarm" || facet.key === "silent")
-        .reduce((sum, facet) => sum + (facet.count ?? 0), 0);
-}
-
 export interface Age {
     unit: "minute" | "hour" | "day";
     value: number;

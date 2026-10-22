@@ -64,14 +64,7 @@
     },
     "result": {
       "count_one": "{{count}} meter",
-      "count_other": "{{count}} meters",
-      "problems_one": "{{count}} problem",
-      "problems_other": "{{count}} problems"
-    },
-    "sort": {
-      "label": "Sort by",
-      "ascending": "Ascending",
-      "descending": "Descending"
+      "count_other": "{{count}} meters"
     },
     "groupBy": {
       "label": "Group by",
