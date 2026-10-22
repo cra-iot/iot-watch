@@ -72,9 +72,12 @@ export function siteLabel(sites: SiteOption[], id: string, unnamed: string): str
 /**
  * Token categories offered by the bar; alarm values come from the registered asset types.
  * `sites` are the locations the page knows (from the last result's parent facet); when
- * given, site: picks from them by name instead of taking a raw asset id.
+ * given, site: picks from them by name instead of taking a raw asset id. `typeLabel` names an
+ * asset type for the type: values (Util.getAssetTypeLabel in the app; kept out to stay pure).
  */
-export function tokenDefinitions(sites: SiteOption[] = []): TokenDefinition[] {
+export function tokenDefinitions(
+    sites: SiteOption[] = [], typeLabel: (name: string) => string = (name) => name,
+): TokenDefinition[] {
     const alarms = new Map<string, string>();
     const types: { value: string; label: string }[] = [];
 
@@ -82,7 +85,7 @@ export function tokenDefinitions(sites: SiteOption[] = []): TokenDefinition[] {
         .filter((descriptor) => descriptor.descriptorType === "asset")
         .forEach((descriptor) => {
             const name = descriptor.name!;
-            types.push({ value: name, label: name });
+            types.push({ value: name, label: typeLabel(name) });
             const info = AssetModelUtil.getAssetTypeInfo(name);
             (info?.attributeDescriptors ?? []).forEach((attribute) => {
                 // State booleans (server-side FleetColumns.STATE_BOOLEANS, e.g. valve_closed) are offered

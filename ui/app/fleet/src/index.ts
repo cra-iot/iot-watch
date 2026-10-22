@@ -69,7 +69,8 @@ orApp.appConfig = {
     pages: [...DefaultPagesConfig],
     languages: {
         en: "english",
-        nl: "dutch"
+        nl: "dutch",
+        cs: "czech"
     },
     superUserHeader: DefaultHeaderConfig,
     realms: {

@@ -2,7 +2,6 @@ import { css, html, nothing, TemplateResult } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { AppStateKeyed, Page, PageProvider, router } from "@openremote/or-app";
 import { getAssetsRoute } from "@openremote/manager/routes";
-import { i18next } from "@openremote/or-translate";
 import { EnhancedStore } from "@reduxjs/toolkit";
 import type { FleetQueryResult } from "model";
 // The project's generated client: manager.rest from @openremote/core is the stock OpenRemote
@@ -23,8 +22,6 @@ export function pageFleetProvider(store: EnhancedStore<AppStateKeyed>): PageProv
         pageCreator: () => new PageFleet(store),
     };
 }
-
-const t = (key: string) => i18next.t(`app:${key}`);
 
 /** Hidden table columns of this browser; the share URL's hide= wins over it. */
 const HIDDEN_COLUMNS_KEY = "iot-watch.fleet.hiddenColumns";
@@ -169,9 +166,12 @@ export class PageFleet extends Page<AppStateKeyed> {
         }
     }
 
-    /** Parent facets name the locations; a parent the caller may not read is an unnamed location. */
+    /**
+     * Parent facets name the locations; a parent the caller may not read gets an empty label,
+     * which the search bar shows as an unnamed location in the current language.
+     */
     protected _rememberSites(result: FleetQueryResult): void {
-        this._sites = mergeSiteOptions(this._sites, result.facets?.parents ?? [], t("fleet.group.unnamedLocation"));
+        this._sites = mergeSiteOptions(this._sites, result.facets?.parents ?? [], "");
     }
 
     protected render(): TemplateResult {

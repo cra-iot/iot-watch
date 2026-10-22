@@ -1,5 +1,18 @@
 {
   "fleetPage": "Fleet",
+  "label": {
+    "asset": {
+      "CustomAsset": "Aangepast asset",
+      "ElectricMeterAsset": "Elektriciteitsmeter",
+      "GasMeterAsset": "Gasmeter",
+      "HeatMeterAsset": "Warmtemeter",
+      "RfidChipAsset": "RFID-chip",
+      "RfidReaderAsset": "RFID-lezer",
+      "ShipTrackerAsset": "Scheepstracker",
+      "TrackerAsset": "Tracker",
+      "WaterMeterAsset": "Watermeter"
+    }
+  },
   "fleet": {
     "row": {
       "open": "Asset openen"

@@ -3,7 +3,7 @@ import { customElement, property } from "lit/decorators.js";
 import { Util } from "@openremote/core";
 import { AssetModelUtil } from "@openremote/model";
 import { OrElement } from "@openremote/or-element";
-import { i18next } from "@openremote/or-translate";
+import { i18next, translate as translateMixin } from "@openremote/or-translate";
 import "@openremote/or-icon";
 import "@openremote/or-vaadin-components/or-vaadin-select";
 import type { FleetQueryResult, FleetRow } from "model";
@@ -98,7 +98,7 @@ const formatUnits = (units?: string[]) => Util.resolveUnits(units);
  * sorting, grouping, paging, column selection and hidden columns are applied by whoever owns the query.
  */
 @customElement("or-fleet-results")
-export class OrFleetResults extends OrElement {
+export class OrFleetResults extends translateMixin(i18next)(OrElement) {
 
     static get styles() {
         return css`
@@ -280,6 +280,8 @@ export class OrFleetResults extends OrElement {
         switch (column.key) {
             case "name":
                 return this._renderMeter(row, status);
+            case "type":
+                return row.type ? Util.getAssetTypeLabel(row.type) : EM_DASH;
             case "reading":
                 return readingValue(row, result, formatUnits);
             case "lastSeen":
@@ -413,6 +415,7 @@ export class OrFleetResults extends OrElement {
 
     protected _groupName(key: string, label?: string): string {
         if (this.groupBy === "STATUS") { return this._statusLabel(key); }
+        if (this.groupBy === "TYPE" && key) { return Util.getAssetTypeLabel(key); }
         return label ?? (key || EM_DASH);
     }
 

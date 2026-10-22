@@ -1,8 +1,9 @@
 import { css, html, nothing, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { Util } from "@openremote/core";
 import { AssetModelUtil } from "@openremote/model";
 import { OrElement } from "@openremote/or-element";
-import { i18next } from "@openremote/or-translate";
+import { i18next, translate as translateMixin } from "@openremote/or-translate";
 import "@openremote/or-vaadin-components/or-vaadin-text-field";
 import "@openremote/or-vaadin-components/or-vaadin-number-field";
 import "@openremote/or-vaadin-components/or-vaadin-select";
@@ -48,7 +49,7 @@ function translate(key: string): string {
  * whenever the token list changes.
  */
 @customElement("or-fleet-search")
-export class OrFleetSearch extends OrElement {
+export class OrFleetSearch extends translateMixin(i18next)(OrElement) {
 
     static get styles() {
         return css`
@@ -103,8 +104,11 @@ export class OrFleetSearch extends OrElement {
         this.addEventListener("focusout", (ev) => this._onFocusOut(ev as FocusEvent));
     }
 
+    /** Site labels and type names are resolved here, so they follow a language switch. */
     protected _definitions(): TokenDefinition[] {
-        return tokenDefinitions(this.sites);
+        const unnamed = translate("fleet.group.unnamedLocation");
+        const sites = this.sites.map((site) => (site.label ? site : { ...site, label: unnamed }));
+        return tokenDefinitions(sites, (name) => Util.getAssetTypeLabel(name));
     }
 
     /** The category being typed, e.g. `alarm:` or `battery:>`, with whatever follows the colon. */
@@ -215,7 +219,7 @@ export class OrFleetSearch extends OrElement {
         const label = definition ? translate(definition.labelKey) : token.kind;
         // A site chip never shows the parent id, even before the page knows the location's name.
         const valueLabel = token.kind === "site"
-            ? siteLabel(this.sites, token.value, translate("fleet.group.unnamedLocation"))
+            ? siteLabel(this.sites, token.value, "") || translate("fleet.group.unnamedLocation")
             : definition?.values?.find((v) => v.value === token.value)?.label;
         // formatSearch renders `kind:<operator><value>`; reuse it for the operator part.
         const rendered = formatSearch([valueLabel ? { ...token, value: valueLabel } : token]);

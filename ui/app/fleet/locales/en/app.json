@@ -1,5 +1,18 @@
 {
   "fleetPage": "Fleet",
+  "label": {
+    "asset": {
+      "CustomAsset": "Custom asset",
+      "ElectricMeterAsset": "Electricity meter",
+      "GasMeterAsset": "Gas meter",
+      "HeatMeterAsset": "Heat meter",
+      "RfidChipAsset": "RFID chip",
+      "RfidReaderAsset": "RFID reader",
+      "ShipTrackerAsset": "Ship tracker",
+      "TrackerAsset": "Tracker",
+      "WaterMeterAsset": "Water meter"
+    }
+  },
   "fleet": {
     "row": {
       "open": "Open asset"

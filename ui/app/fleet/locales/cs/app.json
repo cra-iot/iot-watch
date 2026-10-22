@@ -1,0 +1,113 @@
+{
+  "fleetPage": "Flotila",
+  "label": {
+    "asset": {
+      "CustomAsset": "Vlastní asset",
+      "ElectricMeterAsset": "Elektroměr",
+      "GasMeterAsset": "Plynoměr",
+      "HeatMeterAsset": "Měřič tepla",
+      "RfidChipAsset": "RFID čip",
+      "RfidReaderAsset": "RFID čtečka",
+      "ShipTrackerAsset": "Lodní tracker",
+      "TrackerAsset": "Tracker",
+      "WaterMeterAsset": "Vodoměr"
+    }
+  },
+  "fleet": {
+    "row": {
+      "open": "Otevřít asset"
+    },
+    "column": {
+      "actions": "Akce",
+      "meter": "Měřidlo",
+      "type": "Typ",
+      "deliveryPoint": "Odběrné místo",
+      "identity": "Výrobní číslo a devEUI",
+      "location": "Umístění",
+      "reading": "Stav měřidla",
+      "lastSeen": "Naposledy viděno",
+      "battery": "Baterie",
+      "alarms": "Alarmy"
+    },
+    "columns": {
+      "picker": "Sloupce",
+      "details": "Údaje o zařízení",
+      "measurements": "Měření",
+      "reset": "Obnovit výchozí"
+    },
+    "error": {
+      "queryFailed": "Vyhledávání selhalo. Zkuste to znovu."
+    },
+    "token": {
+      "type": "Typ",
+      "alarm": "Alarm",
+      "seen": "Naposledy viděno",
+      "delivery": "Odběrné místo",
+      "serial": "Výrobní číslo",
+      "deveui": "DevEUI",
+      "battery": "Baterie",
+      "reading": "Stav měřidla",
+      "site": "Lokalita",
+      "attr": "Atribut",
+      "placeholder": "Hledat nebo přidat filtr",
+      "remove": "Odebrat filtr",
+      "add": "Přidat",
+      "error": {
+        "emptyValue": "Zadejte hodnotu tohoto filtru.",
+        "unknownValue": "Neznámá hodnota. Vyberte ze seznamu.",
+        "unknownAttribute": "Neznámý atribut. Vyberte ze seznamu.",
+        "unknownKind": "Neznámý filtr. Měli jste na mysli některý z těchto?",
+        "notNumeric": "Zadejte číslo.",
+        "invalidDuration": "Zadejte dobu, například 30m, 24h nebo 7d.",
+        "operatorNotAllowed": "Porovnání a rozsahy fungují jen s čísly. Použijte = nebo prostý text."
+      }
+    },
+    "result": {
+      "count_one": "{{count}} měřidlo",
+      "count_few": "{{count}} měřidla",
+      "count_many": "{{count}} měřidla",
+      "count_other": "{{count}} měřidel",
+      "problems_one": "{{count}} problém",
+      "problems_few": "{{count}} problémy",
+      "problems_many": "{{count}} problému",
+      "problems_other": "{{count}} problémů"
+    },
+    "sort": {
+      "label": "Řadit podle",
+      "ascending": "Vzestupně",
+      "descending": "Sestupně"
+    },
+    "groupBy": {
+      "label": "Seskupit podle",
+      "none": "Nic",
+      "type": "Typ",
+      "status": "Stav"
+    },
+    "group": {
+      "devices_one": "{{count}} měřidlo",
+      "devices_few": "{{count}} měřidla",
+      "devices_many": "{{count}} měřidla",
+      "devices_other": "{{count}} měřidel",
+      "problems_one": "{{count}} problém",
+      "problems_few": "{{count}} problémy",
+      "problems_many": "{{count}} problému",
+      "problems_other": "{{count}} problémů",
+      "continued": "pokračování",
+      "unnamedLocation": "Nepojmenované umístění"
+    },
+    "status": {
+      "alarm": "Alarm",
+      "silent": "Neozývá se",
+      "ok": "OK"
+    },
+    "pager": {
+      "range": "{{from}}–{{to}} z {{total}}",
+      "previous": "Předchozí",
+      "next": "Další"
+    },
+    "empty": "Nebyla nalezena žádná zařízení",
+    "reading": {
+      "needsOneType": "Filtr stavu měřidla vyžaduje právě jeden typ assetu. Přidejte filtr type:."
+    }
+  }
+}
