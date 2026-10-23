@@ -11,6 +11,33 @@
       "ShipTrackerAsset": "Lodní tracker",
       "TrackerAsset": "Tracker",
       "WaterMeterAsset": "Vodoměr"
+    },
+    "attribute": {
+      "WaterMeterAsset": {
+        "leakage": "Únik vody"
+      },
+      "GasMeterAsset": {
+        "leakage": "Únik plynu"
+      },
+      "active": "Aktivní",
+      "air_in_pipe": "Vzduch v potrubí",
+      "burst": "Prasklé potrubí",
+      "flow_sensor_error": "Chyba průtokového senzoru",
+      "freezing": "Zamrznutí",
+      "inverse_flow": "Zpětný tok",
+      "leakage": "Únik",
+      "low_battery": "Slabá baterie",
+      "measure_board_error": "Chyba měřicí desky",
+      "meter_error": "Chyba měřiče",
+      "meter_read_error": "Chyba čtení měřiče",
+      "no_flow": "Žádný průtok",
+      "no_water": "Žádná voda",
+      "overflow": "Přetečení",
+      "pressure_sensor_error": "Chyba tlakového senzoru",
+      "reverse_installation": "Opačná instalace",
+      "tamper": "Neoprávněná manipulace",
+      "temperature_sensor_error": "Chyba teplotního senzoru",
+      "valve_closed": "Uzavřený ventil"
     }
   },
   "fleet": {

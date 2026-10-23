@@ -104,11 +104,13 @@ export class OrFleetSearch extends translateMixin(i18next)(OrElement) {
         this.addEventListener("focusout", (ev) => this._onFocusOut(ev as FocusEvent));
     }
 
-    /** Site labels and type names are resolved here, so they follow a language switch. */
+    /** Site labels, type and alarm names are resolved here, so they follow a language switch. */
     protected _definitions(): TokenDefinition[] {
         const unnamed = translate("fleet.group.unnamedLocation");
         const sites = this.sites.map((site) => (site.label ? site : { ...site, label: unnamed }));
-        return tokenDefinitions(sites, (name) => Util.getAssetTypeLabel(name));
+        // No asset type: an alarm offered for several types gets its type-neutral label.
+        return tokenDefinitions(sites, (name) => Util.getAssetTypeLabel(name),
+            (attribute) => Util.getAttributeLabel(undefined, attribute, undefined, false, attribute.name));
     }
 
     /** The category being typed, e.g. `alarm:` or `battery:>`, with whatever follows the colon. */

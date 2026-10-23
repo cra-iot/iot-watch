@@ -11,6 +11,33 @@
       "ShipTrackerAsset": "Ship tracker",
       "TrackerAsset": "Tracker",
       "WaterMeterAsset": "Water meter"
+    },
+    "attribute": {
+      "WaterMeterAsset": {
+        "leakage": "Water leak"
+      },
+      "GasMeterAsset": {
+        "leakage": "Gas leak"
+      },
+      "active": "Active",
+      "air_in_pipe": "Air in pipe",
+      "burst": "Burst pipe",
+      "flow_sensor_error": "Flow sensor error",
+      "freezing": "Freezing",
+      "inverse_flow": "Reverse flow",
+      "leakage": "Leak",
+      "low_battery": "Low battery",
+      "measure_board_error": "Measurement board error",
+      "meter_error": "Meter error",
+      "meter_read_error": "Meter read error",
+      "no_flow": "No flow",
+      "no_water": "No water",
+      "overflow": "Overflow",
+      "pressure_sensor_error": "Pressure sensor error",
+      "reverse_installation": "Reverse installation",
+      "tamper": "Tampering",
+      "temperature_sensor_error": "Temperature sensor error",
+      "valve_closed": "Valve closed"
     }
   },
   "fleet": {

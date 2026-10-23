@@ -257,6 +257,14 @@ describe("tokenDefinitions", () => {
             { value: "tamper", label: "tamper" },
         ]);
     });
+
+    it("names alarms with the given label, once per attribute", () => {
+        const defs = tokenDefinitions([], (name) => name, (attribute) => `L:${attribute.name}`);
+        expect(defs.find((d) => d.kind === "alarm")!.values).toEqual([
+            { value: "leakage", label: "L:leakage" },
+            { value: "tamper", label: "L:tamper" },
+        ]);
+    });
 });
 
 describe("validateToken", () => {

@@ -1,6 +1,6 @@
 // AssetModelUtil must come from @openremote/model, not from the local "model" package: the
 // manager populates the @openremote/model copy at startup, and the local copy stays empty.
-import { AssetModelUtil } from "@openremote/model";
+import { AssetModelUtil, type AttributeDescriptor } from "@openremote/model";
 import type { FleetQuery, FleetQueryAttributeFilter, FleetQueryOperator } from "model";
 import { parseHidden, serializeHidden } from "./fleet-columns";
 import { GROUP_OPTIONS } from "./fleet-groups";
@@ -76,10 +76,17 @@ export function siteLabel(sites: SiteOption[], id: string, unnamed: string): str
  * Token categories offered by the bar; alarm values come from the registered asset types.
  * `sites` are the locations the page knows (from the last result's parent facet); when
  * given, site: picks from them by name instead of taking a raw asset id. `typeLabel` names an
- * asset type for the type: values (Util.getAssetTypeLabel in the app; kept out to stay pure).
+ * asset type for the type: values and `alarmLabel` an alarm attribute (Util.getAssetTypeLabel and
+ * Util.getAttributeLabel in the app, so both follow the language; kept out to stay pure).
  */
+/** The descriptor's own label, else its internal name. */
+function descriptorLabel(attribute: AttributeDescriptor): string {
+    return (attribute.meta?.["label"] as string) ?? attribute.name!;
+}
+
 export function tokenDefinitions(
     sites: SiteOption[] = [], typeLabel: (name: string) => string = (name) => name,
+    alarmLabel: (attribute: AttributeDescriptor) => string = descriptorLabel,
 ): TokenDefinition[] {
     const alarms = new Map<string, string>();
     const types: { value: string; label: string }[] = [];
@@ -93,10 +100,8 @@ export function tokenDefinitions(
             (info?.attributeDescriptors ?? []).forEach((attribute) => {
                 // State booleans (server-side FleetColumns.STATE_BOOLEANS, e.g. valve_closed) are offered
                 // too and filter on value == true; a server-published alarm list is the follow-up.
-                if (attribute.type === "boolean" && attribute.name) {
-                    // Prefer the descriptor's own label; the internal name stays hidden.
-                    const label = (attribute.meta?.["label"] as string) ?? attribute.name;
-                    alarms.set(attribute.name, label);
+                if (attribute.type === "boolean" && attribute.name && !alarms.has(attribute.name)) {
+                    alarms.set(attribute.name, alarmLabel(attribute));
                 }
             });
         });
