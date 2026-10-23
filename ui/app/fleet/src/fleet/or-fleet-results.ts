@@ -101,8 +101,9 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
 
     static get styles() {
         return css`
+            /* Fills the height the page leaves it; only the table box scrolls, the bar and pager stay put. */
             :host {
-                display: block; width: 100%; color: var(--or-app-color3, #222);
+                display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; color: var(--or-app-color3, #222);
                 /* The app has no amber of its own; this one keeps 4.5:1 on white. */
                 --fleet-alarm-color: var(--or-app-color4, #e3000a);
                 --fleet-silent-color: #9a5b00;
@@ -138,14 +139,15 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
             .picker label { display: flex; align-items: center; gap: 8px; padding: 4px 0; white-space: nowrap; }
             .picker label.locked { color: var(--fleet-muted-color); }
             .picker .reset { margin-top: 4px; width: 100%; }
-            /* Scrolls horizontally only; the page scrolls vertically. A sticky header would need this box
-               to scroll vertically too (overflow-x: auto computes overflow-y: auto), which is the double scrollbar. */
-            .scroll { overflow-x: auto;
+            .body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+            /* Scrolls both ways inside the screen, so a long page never pushes the pager off it. The minimum
+               keeps a few rows on very short windows, where the page itself scrolls instead. */
+            .scroll { overflow: auto; min-height: 200px;
                 border: 1px solid var(--or-app-color5, #ccc); border-radius: 4px; }
             table { width: 100%; border-collapse: separate; border-spacing: 0; }
             th, td { text-align: left; padding: 10px 16px; border-bottom: 1px solid var(--or-app-color2, #eee);
                 white-space: nowrap; vertical-align: top; }
-            thead th { font-weight: 600; font-size: 13px;
+            thead th { position: sticky; top: 0; z-index: 2; font-weight: 600; font-size: 13px;
                 background: var(--or-app-color2, #f5f5f5); border-bottom-color: var(--or-app-color5, #ccc); }
             th.numeric, td.numeric { text-align: right; font-variant-numeric: tabular-nums; }
             th.sorted { color: var(--or-app-color3, #222); }
@@ -161,7 +163,7 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
             tbody tr.row:hover { --row-bg: var(--fleet-hover-color); }
             tbody td { background: var(--row-bg); }
             .meter { position: sticky; left: 0; z-index: 1; }
-            thead th.meter { background: var(--or-app-color2, #f5f5f5); }
+            thead th.meter { z-index: 3; background: var(--or-app-color2, #f5f5f5); }
             /* A soft edge only while content is scrolled underneath the frozen column. */
             .scroll.scrolled .meter { box-shadow: 4px 0 6px -4px rgba(0, 0, 0, .25); }
             .scroll.scrolled tr.row.alarm td.meter { box-shadow: inset 3px 0 0 var(--fleet-alarm-color), 4px 0 6px -4px rgba(0, 0, 0, .25); }
@@ -220,6 +222,14 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
     protected willUpdate(changed: Map<string, unknown>) {
         if (changed.has("groupBy")) {
             this._collapsed = new Set();
+        }
+    }
+
+    /** A new result (another page, sort or search) starts at its first row; the box keeps its sideways scroll. */
+    protected updated(changed: Map<string, unknown>) {
+        if (changed.has("result")) {
+            const scroll = this.shadowRoot?.querySelector<HTMLElement>(".scroll");
+            if (scroll) { scroll.scrollTop = 0; }
         }
     }
 
@@ -483,7 +493,7 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
         const groups = segmentGroups(result, this.groupBy, now);
         return html`
             ${this._renderResultBar(result)}
-            <div class=${this.loading ? "loading" : ""} aria-busy=${this.loading ? "true" : "false"}>
+            <div class="body${this.loading ? " loading" : ""}" aria-busy=${this.loading ? "true" : "false"}>
                 ${groups.length === 0
                     ? html`<div class="empty">${translate("fleet.empty")}</div>`
                     : this._renderTable(result, groups, columns, now)}
