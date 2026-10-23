@@ -38,8 +38,12 @@ public class FleetQuery {
         public boolean descending;
     }
 
-    /** Free text: matches name OR delivery point OR serial OR devEUI OR external id. */
-    public String text;
+    /**
+     * Free text values, ORed: an asset matches when any value is contained in its name, delivery
+     * point, serial, devEUI or external id. Repeated attribute filters on the same attribute are
+     * ORed too (see FleetQueryTranslator.anyOfFilters); everything else is ANDed.
+     */
+    public List<String> text;
     public List<String> types;
     public List<String> parentIds;
     public boolean recursive;

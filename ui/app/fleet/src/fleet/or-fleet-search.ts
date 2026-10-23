@@ -8,7 +8,7 @@ import "@openremote/or-vaadin-components/or-vaadin-text-field";
 import "@openremote/or-vaadin-components/or-vaadin-number-field";
 import "@openremote/or-vaadin-components/or-vaadin-select";
 import {
-    formatSearch, parseSearch, siteLabel, tokenDefinitions, validateToken,
+    formatSearch, identifierList, parseSearch, siteLabel, tokenDefinitions, validateToken,
     type SiteOption, type Token, type TokenDefinition, type TokenOperator, type TokenSuggestion,
 } from "./fleet-tokens";
 
@@ -39,8 +39,8 @@ const NUMERIC_OPERATORS: { value: TokenOperator; label: string }[] = [
     { value: "BETWEEN", label: "..." },
 ];
 
-function translate(key: string): string {
-    return i18next.t(key.includes(":") ? key : `app:${key}`);
+function translate(key: string, options?: Record<string, unknown>): string {
+    return i18next.t(key.includes(":") ? key : `app:${key}`, options);
 }
 
 /**
@@ -181,6 +181,16 @@ export class OrFleetSearch extends translateMixin(i18next)(OrElement) {
         this._add(parseSearch(text));
     }
 
+    /** A pasted list of identifiers becomes one list chip at once; anything else pastes as usual. */
+    protected _onPaste(ev: ClipboardEvent) {
+        if (this._activeKind()) { return; }
+        const values = identifierList(ev.clipboardData?.getData("text") ?? "");
+        if (!values) { return; }
+        ev.preventDefault();
+        this._input = `${this._input.trim()} ${values.join(" ")}`.trim();
+        this._commitInput();
+    }
+
     protected _commitNumeric(kind: Token["kind"]) {
         if (this._number.trim() === "") { return; }
         if (this._operator === "BETWEEN") {
@@ -216,7 +226,11 @@ export class OrFleetSearch extends translateMixin(i18next)(OrElement) {
     }
 
     protected _chipLabel(token: Token): string {
-        if (token.kind === "text") { return token.value; }
+        if (token.kind === "text") {
+            return token.values
+                ? translate("fleet.token.list", { first: token.values[0], count: token.values.length - 1 })
+                : token.value;
+        }
         const definition = this._definitions().find((d) => d.kind === token.kind);
         const label = definition ? translate(definition.labelKey) : token.kind;
         // A site chip never shows the parent id, even before the page knows the location's name.
@@ -306,7 +320,7 @@ export class OrFleetSearch extends translateMixin(i18next)(OrElement) {
         return html`
             <div class="bar">
                 ${this.tokens.map((token, index) => html`
-                    <span class="chip">${this._chipLabel(token)}
+                    <span class="chip" title=${token.values ? token.values.join(", ") : nothing}>${this._chipLabel(token)}
                         <button type="button" aria-label=${translate("fleet.token.remove")}
                                 @click=${() => this._remove(index)}>&times;</button>
                     </span>`)}
@@ -324,6 +338,7 @@ export class OrFleetSearch extends translateMixin(i18next)(OrElement) {
                     @focus=${() => { this._open = true; }}
                     @click=${() => { this._open = true; }}
                     @keydown=${(ev: KeyboardEvent) => this._onKeydown(ev)}
+                    @paste=${(ev: ClipboardEvent) => this._onPaste(ev)}
                 ></or-vaadin-text-field>
             </div>
             ${this._renderPanel()}`;

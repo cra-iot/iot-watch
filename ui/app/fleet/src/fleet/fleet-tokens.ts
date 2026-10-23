@@ -15,7 +15,10 @@ export type TokenOperator =
 
 export interface Token {
     kind: TokenKind;
+    /** For a list, the values joined by a space. */
     value: string;
+    /** Free-text list: two or more identifiers, each matched on its own. */
+    values?: string[];
     operator?: TokenOperator;
     rangeValue?: string;
 }
@@ -144,28 +147,75 @@ function unquote(value: string): string {
     return value.replace(/^"/, "").replace(/"$/, "");
 }
 
+/** A device identifier (devEUI, serial, delivery point): long enough and with a digit, unlike a word of a name. */
+const IDENTIFIER = /^(?=.*\d)[^\s"]{6,}$/;
+
+/**
+ * Free-text values are ORed by the server, so a typed name must not fall apart into words:
+ * consecutive plain words form one phrase ("Albertova 23 A"). Consecutive identifiers form one
+ * list token whose values each match on their own (pasted devEUIs). A quoted run stands alone.
+ */
 export function parseSearch(input: string): Token[] {
-    return segments(input).map<Token>((segment) => {
-        const colon = segment.indexOf(":");
-        const kind = colon > 0 ? segment.slice(0, colon) : "";
-        if (!KINDS.has(kind)) {
-            return { kind: "text", value: unquote(segment) };
+    const tokens: Token[] = [];
+    let phrase: Token | undefined;
+    let list: Token | undefined;
+    for (const segment of segments(input)) {
+        const token = parseSegment(segment);
+        const free = token.kind === "text" && !segment.startsWith('"');
+        const identifier = free && IDENTIFIER.test(segment);
+        if (free && !identifier && phrase) {
+            phrase.value = `${phrase.value} ${token.value}`;
+            continue;
         }
-        let rest = segment.slice(colon + 1);
-        const symbol = SYMBOLS.find(([text]) => rest.startsWith(text));
-        if (symbol) {
-            rest = rest.slice(symbol[0].length);
-            return { kind: kind as TokenKind, operator: symbol[1], value: unquote(rest) };
+        if (identifier && list) {
+            const values = list.values ?? [list.value];
+            if (!values.includes(token.value)) {
+                list.values = [...values, token.value];
+                list.value = list.values.join(" ");
+            }
+            continue;
         }
-        const range = rest.split("..");
-        if (range.length === 2) {
-            return {
-                kind: kind as TokenKind, operator: "BETWEEN",
-                value: unquote(range[0]), rangeValue: unquote(range[1]),
-            };
-        }
-        return { kind: kind as TokenKind, value: unquote(rest) };
-    });
+        tokens.push(token);
+        phrase = free && !identifier ? token : undefined;
+        list = identifier ? token : undefined;
+    }
+    return tokens;
+}
+
+/**
+ * The identifiers of a pasted list - separated by spaces, commas, semicolons or line breaks, as
+ * copied from a spreadsheet or an e-mail - or undefined when the text is not such a list.
+ */
+export function identifierList(text: string): string[] | undefined {
+    const values = [...new Set(text.split(/[\s,;]+/).filter(Boolean))];
+    return values.length >= 2 && values.every((value) => IDENTIFIER.test(value)) ? values : undefined;
+}
+
+/** Every free-text value of the tokens, a list's values one by one. */
+export function textValues(tokens: Token[]): string[] {
+    return tokens.filter((token) => token.kind === "text").flatMap((token) => token.values ?? [token.value]);
+}
+
+function parseSegment(segment: string): Token {
+    const colon = segment.indexOf(":");
+    const kind = colon > 0 ? segment.slice(0, colon) : "";
+    if (!KINDS.has(kind)) {
+        return { kind: "text", value: unquote(segment) };
+    }
+    let rest = segment.slice(colon + 1);
+    const symbol = SYMBOLS.find(([text]) => rest.startsWith(text));
+    if (symbol) {
+        rest = rest.slice(symbol[0].length);
+        return { kind: kind as TokenKind, operator: symbol[1], value: unquote(rest) };
+    }
+    const range = rest.split("..");
+    if (range.length === 2) {
+        return {
+            kind: kind as TokenKind, operator: "BETWEEN",
+            value: unquote(range[0]), rangeValue: unquote(range[1]),
+        };
+    }
+    return { kind: kind as TokenKind, value: unquote(rest) };
 }
 
 function quoteIfNeeded(value: string): string {
@@ -174,7 +224,7 @@ function quoteIfNeeded(value: string): string {
 
 export function formatSearch(tokens: Token[]): string {
     return tokens.map((token) => {
-        if (token.kind === "text") { return quoteIfNeeded(token.value); }
+        if (token.kind === "text") { return token.values ? token.values.join(" ") : quoteIfNeeded(token.value); }
         if (token.operator === "BETWEEN") {
             return `${token.kind}:${token.value}..${token.rangeValue ?? ""}`;
         }
@@ -231,7 +281,7 @@ export function toFleetQuery(tokens: Token[], extras: Record<string, unknown>): 
 
     for (const token of tokens) {
         switch (token.kind) {
-            case "text": text.push(token.value); break;
+            case "text": text.push(...(token.values ?? [token.value])); break;
             case "type": types.push(token.value); break;
             case "site": parentIds.push(token.value); break;
             case "alarm":
@@ -284,7 +334,8 @@ export function toFleetQuery(tokens: Token[], extras: Record<string, unknown>): 
         }
     }
 
-    if (text.length) { query.text = text.join(" "); }
+    // Each value is matched on its own and the matches are ORed.
+    if (text.length) { query.text = text; }
     if (types.length) { query.types = types; }
     if (parentIds.length) { query.parentIds = parentIds; query.recursive = true; }
     if (attributes.length) { query.attributes = attributes; }

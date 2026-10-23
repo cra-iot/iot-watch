@@ -50,7 +50,8 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
         // The select covers the query's types (or every device type for an empty filter) and has to
         // reach every branch of the union; the displayed columns are narrowed to the types
         // actually found, below.
-        String[] select = columnResolver.selectAttributes(fleetQuery, fleetQuery.types);
+        String[] select = FleetQueryTranslator.withAnyOfAttributes(
+                columnResolver.selectAttributes(fleetQuery, fleetQuery.types), fleetQuery);
 
         List<Asset<?>> assets = new ArrayList<>();
         AssetQuery nameQuery = FleetQueryTranslator.nameTextQuery(fleetQuery, realm, select);
@@ -58,7 +59,7 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
             List<Asset<?>> byName = authorizedFindAll(nameQuery, realm);
             if (FleetQueryTranslator.matchesNameInJava(fleetQuery)) {
                 // The name half of the union is matched here, over the authorized result only.
-                byName = FleetQueryTranslator.filterByName(byName, fleetQuery.text);
+                byName = FleetQueryTranslator.filterByName(byName, FleetQueryTranslator.texts(fleetQuery));
             }
             assets.addAll(byName);
             assets.addAll(authorizedFindAll(
@@ -66,6 +67,8 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
         } else {
             assets.addAll(authorizedFindAll(FleetQueryTranslator.filterQuery(fleetQuery, realm, select), realm));
         }
+        // Repeated filters on one attribute are ORed here, over the authorized result only.
+        assets = FleetQueryTranslator.filterByAnyOf(assets, fleetQuery);
 
         Set<String> resultTypes = new LinkedHashSet<>();
         assets.forEach(asset -> resultTypes.add(asset.getType()));

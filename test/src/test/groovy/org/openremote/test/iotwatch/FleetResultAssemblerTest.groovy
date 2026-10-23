@@ -253,4 +253,31 @@ class FleetResultAssemblerTest extends Specification {
         FleetResultAssembler.assemble(rows, capped, NOW).rows.size() == FleetResultAssembler.MAX_LIMIT
         FleetResultAssembler.assemble(rows, defaulted, NOW).rows.size() == FleetResultAssembler.DEFAULT_LIMIT
     }
+
+    def "unmatched free-text values are named over the whole match, not the page"() {
+        given:
+        def a = row("a", "Albertova 23 A", "WaterMeterAsset", NOW)
+        a.devEui = "70B3D5D0003E8A1D"
+        def b = row("b", "Hall", "WaterMeterAsset", NOW)
+        b.externalId = "EXT-77"
+        def stale = row("stale", "Stale", "WaterMeterAsset", NOW - 48 * HOUR)
+        stale.meterId = "W49651272"
+        def query = new FleetQuery()
+        query.text = ["70b3d5d0003e8a1d", "EXT-77", "W49651272", "MISSING-1"]
+        query.seen = new FleetQuery.SeenFilter()
+        query.seen.newerThan = "PT24H"
+        query.limit = 1
+
+        when:
+        def result = FleetResultAssembler.assemble([a, b, stale], query, NOW)
+
+        then: "a value matched only by a row the seen filter dropped is unmatched too"
+        result.rows.size() == 1
+        result.unmatchedText == ["W49651272", "MISSING-1"]
+    }
+
+    def "without free text nothing is unmatched"() {
+        expect:
+        FleetResultAssembler.assemble([row("a", "A", "GasMeterAsset", NOW)], new FleetQuery(), NOW).unmatchedText == []
+    }
 }

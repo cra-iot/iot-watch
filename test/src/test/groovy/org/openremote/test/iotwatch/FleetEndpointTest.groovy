@@ -259,7 +259,7 @@ class FleetEndpointTest extends Specification implements ManagerContainerTrait {
     def "free text matches a delivery point identifier, not only the asset name"() {
         given:
         def query = new FleetQuery()
-        query.text = "TEST-DP-0001"
+        query.text = ["TEST-DP-0001"]
 
         when:
         def result = readerResource.query(query)
@@ -267,6 +267,68 @@ class FleetEndpointTest extends Specification implements ManagerContainerTrait {
         then:
         result.total == 1
         result.rows[0].deliveryPointId == "TEST-DP-0001"
+    }
+
+    def "several free-text values are ORed: pasted devEUIs each find their meter"() {
+        given:
+        def query = new FleetQuery()
+        query.text = ["00112233AABBCC01", "00112233AABBCC02"]
+
+        when:
+        def result = readerResource.query(query)
+
+        then:
+        result.rows*.name as Set == ["Water meter A", "Water meter B"] as Set
+        result.unmatchedText.isEmpty()
+
+        when: "one pasted value matches no meter"
+        query.text = ["00112233AABBCC01", "00112233AABBCC99"]
+        def partial = readerResource.query(query)
+
+        then: "the others are still found, and the missing one is named"
+        partial.rows*.name == ["Water meter A"]
+        partial.unmatchedText == ["00112233AABBCC99"]
+    }
+
+    def "repeated filters on one attribute are ORed, other filters still narrow"() {
+        given:
+        def query = new FleetQuery()
+        query.attributes = [
+                devEui(FleetQuery.Operator.CONTAINS, "AABBCC01"),
+                devEui(FleetQuery.Operator.CONTAINS, "AABBCC02"),
+        ]
+
+        when:
+        def both = readerResource.query(query)
+
+        then:
+        both.rows*.name as Set == ["Water meter A", "Water meter B"] as Set
+
+        when: "an alarm filter on a different attribute is ANDed with the devEUI OR"
+        def leakage = new FleetQuery.AttributeFilter()
+        leakage.name = "leakage"
+        leakage.value = true
+        query.attributes = query.attributes + [leakage]
+        def narrowed = readerResource.query(query)
+
+        then:
+        narrowed.rows*.name == ["Water meter A"]
+
+        when: "free text is ANDed with the devEUI OR as well"
+        query.attributes = query.attributes.take(2)
+        query.text = ["meter B"]
+        def withText = readerResource.query(query)
+
+        then:
+        withText.rows*.name == ["Water meter B"]
+    }
+
+    static FleetQuery.AttributeFilter devEui(FleetQuery.Operator operator, String value) {
+        def filter = new FleetQuery.AttributeFilter()
+        filter.name = "devEui"
+        filter.operator = operator
+        filter.value = value
+        return filter
     }
 
     def "parent name is resolved for location context"() {
@@ -388,7 +450,7 @@ class FleetEndpointTest extends Specification implements ManagerContainerTrait {
         def query = new FleetQuery()
         query.parentIds = [parentId]
         query.recursive = true
-        query.text = text
+        query.text = [text]
         return query
     }
 

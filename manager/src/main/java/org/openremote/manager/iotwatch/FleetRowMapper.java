@@ -46,6 +46,7 @@ public final class FleetRowMapper {
         row.deliveryPointId = text(asset, "delivery_point_id");
         row.meterId = text(asset, "meter_id");
         row.devEui = text(asset, "devEui");
+        row.externalId = text(asset, "external_id");
 
         row.primaryName = resolver.primaryRegister(asset.getType());
         if (row.primaryName != null) {

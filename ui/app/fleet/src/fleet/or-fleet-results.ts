@@ -188,7 +188,6 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
                 text-align: left; font-size: 14px; }
             .group-header .name { font-weight: 600; }
             .group-header .meta { color: var(--fleet-muted-color); font-weight: normal; }
-            .group-header .problems { color: var(--fleet-alarm-color); font-weight: normal; }
             .group-header .continued { font-style: italic; color: var(--fleet-muted-color); font-weight: normal; }
             .chip { display: inline-block; margin-right: 4px; padding: 0 8px; border-radius: 12px;
                 border: 1px solid var(--fleet-alarm-color); color: inherit; font-size: 12px; line-height: 20px; }
@@ -399,7 +398,6 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
     /** A group is a tbody whose first row is a full-width divider, so columns align across groups. */
     protected _renderGroup(result: FleetQueryResult, group: RowGroup, columns: FleetColumn[], now: number): TemplateResult {
         const info = groupInfo(result, this.groupBy, group.key);
-        const problems = info.problems;
         const open = !this._collapsed.has(group.key);
         const name = this._groupName(group.key, info.label);
         return html`
@@ -413,8 +411,7 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
                             ${group.continued
                                 ? html`<span class="continued">${translate("fleet.group.continued")}</span>`
                                 : html`
-                                    ${info.count !== undefined ? html`<span class="meta">${translate("fleet.group.devices", { count: info.count })}</span>` : nothing}
-                                    ${problems ? html`<span class="problems">${translate("fleet.group.problems", { count: problems })}</span>` : nothing}`}
+                                    ${info.count !== undefined ? html`<span class="meta">${translate("fleet.group.devices", { count: info.count })}</span>` : nothing}`}
                         </button>
                     </th>
                 </tr>

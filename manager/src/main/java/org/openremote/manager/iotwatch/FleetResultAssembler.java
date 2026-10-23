@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
@@ -87,6 +88,7 @@ public final class FleetResultAssembler {
         FleetQueryResult result = new FleetQueryResult();
         result.total = matched.size();
         result.facets = facets(matched, nowMillis);
+        result.unmatchedText = unmatchedText(matched, query);
 
         int limit = query.limit <= 0 ? DEFAULT_LIMIT : Math.min(query.limit, MAX_LIMIT);
         int offset = Math.max(0, query.offset);
@@ -96,6 +98,31 @@ public final class FleetResultAssembler {
                 ? List.of()
                 : new ArrayList<>(matched.subList(offset, Math.min(offset + limit, matched.size())));
         return result;
+    }
+
+    /**
+     * The free-text values no matched row contains, ignoring case, in the fields the free-text
+     * queries search (FleetQueryTranslator: the name and IDENTIFIER_ATTRIBUTES).
+     */
+    public static List<String> unmatchedText(List<FleetRow> matched, FleetQuery query) {
+        List<String> texts = FleetQueryTranslator.texts(query);
+        if (texts.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<String> haystack = new ArrayList<>();
+        for (FleetRow row : matched) {
+            for (String field : new String[]{row.name, row.deliveryPointId, row.meterId, row.devEui, row.externalId}) {
+                if (field != null) {
+                    haystack.add(field.toUpperCase(Locale.ROOT));
+                }
+            }
+        }
+        return new ArrayList<>(texts.stream()
+                .filter(text -> {
+                    String needle = text.toUpperCase(Locale.ROOT);
+                    return haystack.stream().noneMatch(field -> field.contains(needle));
+                })
+                .toList());
     }
 
     private static List<FleetRow> deduplicate(List<FleetRow> rows) {

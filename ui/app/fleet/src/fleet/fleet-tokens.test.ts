@@ -1,8 +1,8 @@
 import { AssetModelUtil } from "@openremote/model";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-    formatSearch, fromUrlParams, mergeSiteOptions, parseSearch, readingFollowUp, siteLabel, singlePrimaryRegister,
-    toFleetQuery, toUrlParams, tokenDefinitions, validateToken,
+    formatSearch, fromUrlParams, identifierList, mergeSiteOptions, parseSearch, readingFollowUp, siteLabel, singlePrimaryRegister,
+    textValues, toFleetQuery, toUrlParams, tokenDefinitions, validateToken,
 } from "./fleet-tokens";
 
 describe("parseSearch", () => {
@@ -51,7 +51,7 @@ describe("toFleetQuery", () => {
     it("maps tokens onto the wire contract", () => {
         const query = toFleetQuery(parseSearch("type:GasMeterAsset battery:<20 kotelna"), {});
         expect(query.types).toEqual(["GasMeterAsset"]);
-        expect(query.text).toBe("kotelna");
+        expect(query.text).toEqual(["kotelna"]);
         expect(query.attributes).toEqual([
             { name: "battery_level", operator: "LESS_THAN", value: 20 },
         ]);
@@ -67,12 +67,79 @@ describe("toFleetQuery", () => {
         ]);
     });
 
-    it("joins multiple free-text words into one text value", () => {
-        expect(toFleetQuery(parseSearch("blok a"), {}).text).toBe("blok a");
+    it("keeps plain words together as one phrase", () => {
+        expect(parseSearch("Albertova 23 A")).toEqual([{ kind: "text", value: "Albertova 23 A" }]);
+        expect(toFleetQuery(parseSearch("blok a"), {}).text).toEqual(["blok a"]);
+    });
+
+    it("sends each pasted identifier as a value of its own", () => {
+        expect(toFleetQuery(parseSearch("70B3D5D0003E8A1D 70B3D5448FA36861"), {}).text)
+            .toEqual(["70B3D5D0003E8A1D", "70B3D5448FA36861"]);
+    });
+
+    it("gathers consecutive identifiers into one list token, without duplicates", () => {
+        expect(parseSearch("kotelna A70B3D5D0003E8A1D 70B3D5448FA36861 A70B3D5D0003E8A1D hala")).toEqual([
+            { kind: "text", value: "kotelna" },
+            {
+                kind: "text", value: "A70B3D5D0003E8A1D 70B3D5448FA36861",
+                values: ["A70B3D5D0003E8A1D", "70B3D5448FA36861"],
+            },
+            { kind: "text", value: "hala" },
+        ]);
+    });
+
+    it("splits a phrase at an identifier or a quoted run", () => {
+        expect(toFleetQuery(parseSearch('kotelna sever W49651272 "blok a" hala'), {}).text)
+            .toEqual(["kotelna sever", "W49651272", "blok a", "hala"]);
+    });
+
+    it("keeps a phrase across a filter token from joining the next words", () => {
+        expect(parseSearch("blok a type:GasMeterAsset hala")).toEqual([
+            { kind: "text", value: "blok a" },
+            { kind: "type", value: "GasMeterAsset" },
+            { kind: "text", value: "hala" },
+        ]);
+    });
+
+    it("sends repeated identity filters as separate filters, for the server to OR", () => {
+        expect(toFleetQuery(parseSearch("deveui:70B3D5D0003E8A1D deveui:70B3D5448FA36861"), {}).attributes).toEqual([
+            { name: "devEui", operator: "CONTAINS", value: "70B3D5D0003E8A1D" },
+            { name: "devEui", operator: "CONTAINS", value: "70B3D5448FA36861" },
+        ]);
+    });
+});
+
+describe("identifierList", () => {
+    it("reads a list separated by spaces, commas, semicolons or line breaks", () => {
+        expect(identifierList("70B3D5D0003E8A1D,\r\n70B3D5448FA36861;\tW49651272\n70B3D5448FA36861\n"))
+            .toEqual(["70B3D5D0003E8A1D", "70B3D5448FA36861", "W49651272"]);
+    });
+
+    it("is undefined for one value or for text that is not all identifiers", () => {
+        expect(identifierList("70B3D5D0003E8A1D")).toBeUndefined();
+        expect(identifierList("Albertova 23 A")).toBeUndefined();
+        expect(identifierList("70B3D5D0003E8A1D kotelna")).toBeUndefined();
+    });
+});
+
+describe("textValues", () => {
+    it("lists every free-text value, a list's values one by one", () => {
+        expect(textValues(parseSearch("blok a 70B3D5D0003E8A1D 70B3D5448FA36861 type:GasMeterAsset")))
+            .toEqual(["blok a", "70B3D5D0003E8A1D", "70B3D5448FA36861"]);
     });
 });
 
 describe("url round-trip", () => {
+    it("keeps a list as one token", () => {
+        const tokens = parseSearch("70B3D5D0003E8A1D 70B3D5448FA36861 hala");
+        expect(fromUrlParams(toUrlParams(tokens, {})).tokens).toEqual(tokens);
+    });
+
+    it("keeps a phrase as one value", () => {
+        const tokens = parseSearch("blok a W49651272");
+        expect(fromUrlParams(toUrlParams(tokens, {})).tokens).toEqual(tokens);
+    });
+
     it("restores the same tokens the search produced", () => {
         const tokens = parseSearch("type:GasMeterAsset alarm:leakage kotelna");
         expect(fromUrlParams(toUrlParams(tokens, {})).tokens).toEqual(tokens);

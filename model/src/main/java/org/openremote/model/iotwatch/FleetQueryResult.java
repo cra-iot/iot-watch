@@ -65,6 +65,11 @@ public class FleetQueryResult {
     public int limit;
     public List<FleetRow> rows = new ArrayList<>();
     public Facets facets = new Facets();
+    /**
+     * The free-text values (FleetQuery.text) that match no row of the whole match, in query
+     * order; empty when every value matched. Lets the UI name the pasted identifiers it did not find.
+     */
+    public List<String> unmatchedText = new ArrayList<>();
     /** Every column the types in this result offer, selected ones first. */
     public List<ColumnDescriptor> columns = new ArrayList<>();
 }

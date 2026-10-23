@@ -60,7 +60,8 @@
         "notNumeric": "Enter a number.",
         "invalidDuration": "Enter a duration such as 30m, 24h or 7d.",
         "operatorNotAllowed": "Comparisons and ranges only work on numbers. Use = or plain text."
-      }
+      },
+      "list": "{{first}} +{{count}} more"
     },
     "result": {
       "count_one": "{{count}} meter",
@@ -75,8 +76,6 @@
     "group": {
       "devices_one": "{{count}} meter",
       "devices_other": "{{count}} meters",
-      "problems_one": "{{count}} problem",
-      "problems_other": "{{count}} problems",
       "continued": "continued",
       "unnamedLocation": "Unnamed location"
     },
@@ -93,6 +92,9 @@
     "empty": "No devices found",
     "reading": {
       "needsOneType": "The reading filter needs exactly one asset type. Add a type: filter."
+    },
+    "search": {
+      "notFound": "{{missing}} of {{count}} values not found: {{values}}"
     }
   }
 }

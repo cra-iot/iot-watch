@@ -23,6 +23,7 @@ public class FleetRow {
     public String deliveryPointId;
     public String meterId;
     public String devEui;
+    public String externalId;
 
     /**
      * Attribute name of this row's primary register - the one the mixed-type "Reading" column

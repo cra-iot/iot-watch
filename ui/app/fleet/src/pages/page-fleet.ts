@@ -9,7 +9,7 @@ import type { FleetQueryResult } from "model";
 import rest from "rest";
 import { resolveHidden } from "../fleet/fleet-columns";
 import {
-    fromUrlParams, mergeSiteOptions, readingFollowUp, singlePrimaryRegister, toFleetQuery, toUrlParams,
+    fromUrlParams, mergeSiteOptions, readingFollowUp, singlePrimaryRegister, textValues, toFleetQuery, toUrlParams,
     type SiteOption, type Token,
 } from "../fleet/fleet-tokens";
 import "../fleet/or-fleet-search";
@@ -17,7 +17,8 @@ import "../fleet/or-fleet-results";
 
 export function pageFleetProvider(store: EnhancedStore<AppStateKeyed>): PageProvider<AppStateKeyed> {
     return {
-        name: "fleet",
+        // The name is also the window title's translation key; "fleet" is a group of keys.
+        name: "fleetPage",
         routes: ["fleet"],
         pageCreator: () => new PageFleet(store),
     };
@@ -60,7 +61,7 @@ export class PageFleet extends Page<AppStateKeyed> {
     protected _realm?: string;
 
     get name(): string {
-        return "fleet";
+        return "fleetPage";
     }
 
     constructor(store: EnhancedStore<AppStateKeyed>) {
@@ -100,16 +101,37 @@ export class PageFleet extends Page<AppStateKeyed> {
         }
     }
 
+    /** A changed hash (an edited URL, back/forward, a pasted link) is a new search; replaceState fires none. */
+    protected _onHashChange = () => {
+        if (window.location.hash.startsWith("#/fleet")) { this._applyUrl(); }
+    };
+
+    connectedCallback(): void {
+        super.connectedCallback();
+        window.addEventListener("hashchange", this._onHashChange);
+    }
+
+    disconnectedCallback(): void {
+        window.removeEventListener("hashchange", this._onHashChange);
+        super.disconnectedCallback();
+    }
+
     protected firstUpdated(changedProperties: Map<string, any>): void {
         super.firstUpdated?.(changedProperties as any);
-        // The route hash looks like "#/fleet?q=...": the query string belongs to the page.
+        this._applyUrl();
+    }
+
+    /** The search the URL describes, everything else at its default; then runs it. */
+    protected _applyUrl(): void {
+        // The route hash looks like "#/fleet/?q=...": the query string belongs to the page.
         const hash = window.location.hash;
         const restored = fromUrlParams(new URLSearchParams(hash.includes("?") ? hash.slice(hash.indexOf("?") + 1) : ""));
         this._tokens = restored.tokens;
-        if (restored.groupBy) { this._groupBy = restored.groupBy; }
-        if (restored.sort) { this._sort = restored.sort; }
-        if (restored.columns) { this._columns = restored.columns; }
+        this._groupBy = restored.groupBy ?? "NONE";
+        this._sort = restored.sort ?? { field: "name", descending: false };
+        this._columns = restored.columns;
         this._hidden = resolveHidden(restored.hidden, this._storedHidden());
+        this._offset = 0;
         this._runQuery();
     }
 
@@ -118,8 +140,9 @@ export class PageFleet extends Page<AppStateKeyed> {
             groupBy: this._groupBy, sort: this._sort, columns: this._columns, hidden: this._hidden,
         });
         try {
-            // replaceState does not fire hashchange, so the router leaves the page alone.
-            window.history.replaceState(window.history.state, "", `#/fleet?${params.toString()}`);
+            // replaceState does not fire hashchange, so the router leaves the page alone. The slash
+            // keeps "fleet" the first path segment, which or-header reads to mark the active tab.
+            window.history.replaceState(window.history.state, "", `#/fleet/?${params.toString()}`);
         } catch {
             // A restricted history API only costs the shareable link.
         }
@@ -176,6 +199,15 @@ export class PageFleet extends Page<AppStateKeyed> {
         this._sites = mergeSiteOptions(this._sites, result.facets?.parents ?? [], "");
     }
 
+    /** Names the searched values nothing matched; only for several values, one is obvious from the result. */
+    protected _renderNotFound(): TemplateResult | typeof nothing {
+        const count = textValues(this._tokens).length;
+        const missing = this._result?.unmatchedText ?? [];
+        if (count < 2 || !missing.length) { return nothing; }
+        return html`<div class="note" role="status"><or-translate value="app:fleet.search.notFound"
+            .options=${{ missing: missing.length, count, values: missing.join(", ") }}></or-translate></div>`;
+    }
+
     protected render(): TemplateResult {
         return html`
             <or-fleet-search .tokens=${this._tokens} .sites=${this._sites}
@@ -186,6 +218,7 @@ export class PageFleet extends Page<AppStateKeyed> {
                                  this._runQuery();
                              }}></or-fleet-search>
             ${this._error ? html`<div class="error"><or-translate value=${this._error}></or-translate></div>` : nothing}
+            ${this._renderNotFound()}
             ${this._readingNote ? html`<div class="note" role="status"><or-translate value="app:fleet.reading.needsOneType"></or-translate></div>` : nothing}
             <or-fleet-results .result=${this._result} .groupBy=${this._groupBy} .loading=${this._loading}
                               .sort=${this._sort} .hiddenColumns=${this._hidden}

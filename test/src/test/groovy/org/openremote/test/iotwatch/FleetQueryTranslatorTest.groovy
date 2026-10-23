@@ -111,7 +111,7 @@ class FleetQueryTranslatorTest extends Specification {
     def "free text produces a name query and an identifier OR query carrying the same tokens"() {
         given:
         def fq = new FleetQuery()
-        fq.text = "kotelna"
+        fq.text = ["kotelna"]
         fq.types = ["GasMeterAsset"]
 
         when:
@@ -136,7 +136,7 @@ class FleetQueryTranslatorTest extends Specification {
     def "token filters and the identifier OR are ANDed, not flattened"() {
         given:
         def fq = new FleetQuery()
-        fq.text = "kotelna"
+        fq.text = ["kotelna"]
         fq.attributes = [filter("leakage", FleetQuery.Operator.EQUALS, true)]
 
         when:
@@ -174,7 +174,7 @@ class FleetQueryTranslatorTest extends Specification {
     def "the free-text branches carry the same narrowed types"() {
         given:
         def fq = new FleetQuery()
-        fq.text = "kotelna"
+        fq.text = ["kotelna"]
 
         expect:
         FleetQueryTranslator.nameTextQuery(fq, "acme", SELECT).types as List == FleetColumnResolver.deviceTypes()
@@ -234,7 +234,7 @@ class FleetQueryTranslatorTest extends Specification {
     def "with a site, the name match leaves SQL: names apply only to the first recursion level"() {
         given:
         def fq = new FleetQuery()
-        fq.text = "kotelna"
+        fq.text = ["kotelna"]
         fq.parentIds = ["building-1"]
         fq.recursive = true
 
@@ -255,7 +255,7 @@ class FleetQueryTranslatorTest extends Specification {
     def "without a site, or without text, the name match stays in SQL"() {
         given:
         def textOnly = new FleetQuery()
-        textOnly.text = "kotelna"
+        textOnly.text = ["kotelna"]
         def siteOnly = new FleetQuery()
         siteOnly.parentIds = ["building-1"]
         siteOnly.recursive = true
@@ -273,7 +273,105 @@ class FleetQueryTranslatorTest extends Specification {
                                  new ThingAsset("Hall")]
 
         expect:
-        FleetQueryTranslator.filterByName(assets, "kotelna")*.name == ["Kotelna sever", "Meter in KOTELNA"]
-        FleetQueryTranslator.filterByName(assets, "missing").isEmpty()
+        FleetQueryTranslator.filterByName(assets, ["kotelna"])*.name == ["Kotelna sever", "Meter in KOTELNA"]
+        FleetQueryTranslator.filterByName(assets, ["missing"]).isEmpty()
+    }
+
+    def "several free-text values are ORed in the names and in the one identifier group"() {
+        given:
+        def fq = new FleetQuery()
+        fq.text = ["70B3D5D0003E8A1D", " 70B3D5448FA36861 ", "", "70B3D5D0003E8A1D"]
+
+        when:
+        def nameQuery = FleetQueryTranslator.nameTextQuery(fq, "acme", SELECT)
+        def idQuery = FleetQueryTranslator.identifierTextQuery(fq, "acme", SELECT)
+
+        then: "blank and duplicate values are dropped, the rest trimmed"
+        nameQuery.names*.value == ["70B3D5D0003E8A1D", "70B3D5448FA36861"]
+
+        and: "one OR group over every identifier and value, no nested groups"
+        idQuery.attributes.operator == org.openremote.model.query.LogicGroup.Operator.OR
+        idQuery.attributes.items.size() == 2 * FleetQueryTranslator.IDENTIFIER_ATTRIBUTES.length
+        idQuery.attributes.items*.value*.value as Set == ["70B3D5D0003E8A1D", "70B3D5448FA36861"] as Set
+        idQuery.attributes.groups == null
+    }
+
+    def "only repeated, non-negated text filters on one attribute are ORed"() {
+        given:
+        def negated = filter("meter_id", FleetQuery.Operator.EQUALS, "X")
+        negated.negate = true
+        def fq = new FleetQuery()
+        fq.attributes = [
+                filter("devEui", FleetQuery.Operator.CONTAINS, "A1"),
+                filter("DEVEUI", FleetQuery.Operator.STARTS_WITH, "B2"),
+                filter("battery_level", FleetQuery.Operator.GREATER_THAN, 10),
+                filter("battery_level", FleetQuery.Operator.LESS_THAN, 50),
+                filter("low_battery", FleetQuery.Operator.EQUALS, true),
+                filter("tamper", FleetQuery.Operator.EQUALS, true),
+                filter("meter_id", FleetQuery.Operator.NOT_EQUALS, "Y"),
+                negated,
+                filter("external_id", FleetQuery.Operator.EQUALS, "single"),
+        ]
+
+        when:
+        def groups = FleetQueryTranslator.anyOfFilters(fq)
+        def q = FleetQueryTranslator.filterQuery(fq, "acme", SELECT)
+
+        then: "attribute names group ignoring case"
+        groups.keySet() == ["deveui"] as Set
+        groups["deveui"]*.value == ["A1", "B2"]
+
+        and: "the ORed filters leave SQL, everything else is still ANDed there"
+        q.attributes.operator == org.openremote.model.query.LogicGroup.Operator.AND
+        q.attributes.items*.name*.value == ["battery_level", "battery_level", "low_battery", "tamper",
+                                            "meter_id", "meter_id", "external_id"]
+        q.attributes.groups == null
+    }
+
+    def "the ORed attributes are added to the select so they can be matched"() {
+        given:
+        def fq = new FleetQuery()
+        fq.attributes = [filter("custom_code", FleetQuery.Operator.EQUALS, "a"),
+                         filter("custom_code", FleetQuery.Operator.EQUALS, "b")]
+
+        expect:
+        FleetQueryTranslator.withAnyOfAttributes(SELECT, fq) as List == (SELECT as List) + ["custom_code"]
+        FleetQueryTranslator.withAnyOfAttributes(SELECT, new FleetQuery()) as List == SELECT as List
+    }
+
+    def "the Java OR filter keeps assets matching any value of every group"() {
+        given:
+        def a = new ThingAsset("A")
+        a.getAttributes().addOrReplace(new org.openremote.model.attribute.Attribute<>("devEui", org.openremote.model.value.ValueType.TEXT, "70b3d5d0003e8a1d"))
+        a.getAttributes().addOrReplace(new org.openremote.model.attribute.Attribute<>("meter_id", org.openremote.model.value.ValueType.TEXT, "M-1"))
+        def b = new ThingAsset("B")
+        b.getAttributes().addOrReplace(new org.openremote.model.attribute.Attribute<>("devEui", org.openremote.model.value.ValueType.TEXT, "70B3D5448FA36861"))
+        b.getAttributes().addOrReplace(new org.openremote.model.attribute.Attribute<>("meter_id", org.openremote.model.value.ValueType.TEXT, "M-2"))
+        def c = new ThingAsset("C")
+        List<Asset<?>> assets = [a, b, c]
+        def fq = new FleetQuery()
+        fq.attributes = [filter("devEui", FleetQuery.Operator.EQUALS, "70B3D5D0003E8A1D"),
+                         filter("devEui", FleetQuery.Operator.CONTAINS, "448FA")]
+
+        expect: "values match ignoring case, an asset without the attribute never matches"
+        FleetQueryTranslator.filterByAnyOf(assets, fq)*.name == ["A", "B"]
+
+        when: "a second group must match too"
+        fq.attributes = fq.attributes + [filter("METER_ID", FleetQuery.Operator.EQUALS, "M-2"),
+                                         filter("meter_id", FleetQuery.Operator.EQUALS, "M-9")]
+
+        then:
+        FleetQueryTranslator.filterByAnyOf(assets, fq)*.name == ["B"]
+
+        and: "without groups the list is returned as is"
+        FleetQueryTranslator.filterByAnyOf(assets, new FleetQuery()).is(assets)
+    }
+
+    def "a name under a site matches any of several texts"() {
+        given:
+        List<Asset<?>> assets = [new ThingAsset("Kotelna sever"), new ThingAsset("Hall B"), new ThingAsset("Office")]
+
+        expect:
+        FleetQueryTranslator.filterByName(assets, ["kotelna", "hall"])*.name == ["Kotelna sever", "Hall B"]
     }
 }

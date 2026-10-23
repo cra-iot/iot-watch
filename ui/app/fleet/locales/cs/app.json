@@ -60,7 +60,8 @@
         "notNumeric": "Zadejte číslo.",
         "invalidDuration": "Zadejte dobu, například 30m, 24h nebo 7d.",
         "operatorNotAllowed": "Porovnání a rozsahy fungují jen s čísly. Použijte = nebo prostý text."
-      }
+      },
+      "list": "{{first}} +{{count}} další"
     },
     "result": {
       "count_one": "{{count}} měřidlo",
@@ -79,10 +80,6 @@
       "devices_few": "{{count}} měřidla",
       "devices_many": "{{count}} měřidla",
       "devices_other": "{{count}} měřidel",
-      "problems_one": "{{count}} problém",
-      "problems_few": "{{count}} problémy",
-      "problems_many": "{{count}} problému",
-      "problems_other": "{{count}} problémů",
       "continued": "pokračování",
       "unnamedLocation": "Nepojmenované umístění"
     },
@@ -99,6 +96,9 @@
     "empty": "Nebyla nalezena žádná zařízení",
     "reading": {
       "needsOneType": "Filtr stavu měřidla vyžaduje právě jeden typ assetu. Přidejte filtr type:."
+    },
+    "search": {
+      "notFound": "Nenalezeno {{missing}} z {{count}} hodnot: {{values}}"
     }
   }
 }

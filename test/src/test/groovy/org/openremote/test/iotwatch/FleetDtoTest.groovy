@@ -15,7 +15,7 @@ class FleetDtoTest extends Specification {
     def "FleetQuery round-trips through JSON with every field populated"() {
         given:
         def json = '''{
-          "text": "kotelna",
+          "text": ["kotelna"],
           "types": ["GasMeterAsset"],
           "parentIds": ["abc"],
           "recursive": true,
@@ -32,7 +32,7 @@ class FleetDtoTest extends Specification {
         def q = ValueUtil.JSON.readValue(json, FleetQuery.class)
 
         then:
-        q.text == "kotelna"
+        q.text == ["kotelna"]
         q.types == ["GasMeterAsset"]
         q.parentIds == ["abc"]
         q.recursive
