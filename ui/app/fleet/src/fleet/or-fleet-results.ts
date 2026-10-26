@@ -1,5 +1,6 @@
 import { css, html, nothing, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import { live } from "lit/directives/live.js";
 import { Util } from "@openremote/core";
 import { AssetModelUtil } from "@openremote/model";
 import { getAssetsRoute } from "@openremote/manager/routes";
@@ -310,7 +311,7 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
         const identity = this.hiddenColumns.includes("identity") ? undefined : identityLine(row);
         const name = row.name === undefined || row.name === null || row.name === "" ? EM_DASH : String(row.name);
         return html`
-            <div class="name">${STATUS_ICONS[status] ? html`<or-icon class="status-icon" aria-hidden="true" title=${this._statusHint(row, status)} icon=${STATUS_ICONS[status]}></or-icon>` : nothing}${name}${status !== "ok" ? html`<span class="sr-only">, ${this._statusLabel(status)}</span>` : nothing}</div>
+            <div class="name">${STATUS_ICONS[status] ? html`<or-icon class="status-icon" aria-hidden="true" title=${this._statusHint(row, status)} icon=${STATUS_ICONS[status]}></or-icon>` : nothing}${name}${status !== "ok" ? html`<span class="sr-only">, ${this._statusHint(row, status)}</span>` : nothing}</div>
             ${identity ? html`<div class="identity">${identity}</div>` : nothing}`;
     }
 
@@ -326,7 +327,8 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
             case "reading":
                 return readingValue(row, result, formatUnits);
             case "lastSeen":
-                return this._renderAge(row.lastSeen, now);
+                // The exact time is a tooltip for the mouse and hidden text for screen readers.
+                return html`${this._renderAge(row.lastSeen, now)}<span class="sr-only">, ${this._lastSeenTitle(row.lastSeen)}</span>`;
             case "batteryLevel":
                 return typeof row.batteryLevel === "number" && !Number.isNaN(row.batteryLevel) ? `${row.batteryLevel} %` : EM_DASH;
             case "alarms": {
@@ -514,7 +516,7 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
             <div class="pager">
                 <label class="control">
                     <span class="label">${translate("fleet.pager.pageSize")}</span>
-                    <select .value=${String(limit)} @change=${(ev: Event) => this.dispatchEvent(new OrFleetPageSizeEvent(Number((ev.target as HTMLSelectElement).value)))}>
+                    <select .value=${live(String(limit))} @change=${(ev: Event) => this.dispatchEvent(new OrFleetPageSizeEvent(Number((ev.target as HTMLSelectElement).value)))}>
                         ${PAGE_SIZES.map((size) => html`<option value=${size} ?selected=${size === limit}>${size}</option>`)}
                     </select>
                 </label>

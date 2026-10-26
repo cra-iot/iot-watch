@@ -168,7 +168,8 @@ export class PageFleet extends Page<AppStateKeyed> {
         return response.data;
     }
 
-    protected async _runQuery(): Promise<void> {
+    /** False when this query failed; a query overtaken by a newer one counts as done. */
+    protected async _runQuery(): Promise<boolean> {
         const requestId = ++this._requestId;
         this._loading = true;
         this._error = undefined;
@@ -178,20 +179,22 @@ export class PageFleet extends Page<AppStateKeyed> {
             // of this query names it and the query runs once more with it.
             let primaryRegister = singlePrimaryRegister(this._result?.columns);
             let result = await this._fetch(primaryRegister);
-            if (requestId !== this._requestId) { return; }
+            if (requestId !== this._requestId) { return true; }
             let followUp = readingFollowUp(this._tokens, primaryRegister, result.columns);
             if (followUp.action === "rerun") {
                 primaryRegister = followUp.primaryRegister;
                 result = await this._fetch(primaryRegister);
-                if (requestId !== this._requestId) { return; }
+                if (requestId !== this._requestId) { return true; }
                 followUp = readingFollowUp(this._tokens, primaryRegister, result.columns);
             }
             this._readingNote = followUp.action !== "none";
             this._result = result;
             this._rememberSites(result);
+            return true;
         } catch (e) {
             // Inline message, never a dialog: the bar must stay usable so the user can retry.
             if (requestId === this._requestId) { this._error = "app:fleet.error.queryFailed"; }
+            return requestId !== this._requestId;
         } finally {
             if (requestId === this._requestId) { this._loading = false; }
         }
@@ -234,12 +237,19 @@ export class PageFleet extends Page<AppStateKeyed> {
                                   this._offset = e.detail.offset;
                                   this._runQuery();
                               }}
-                              @or-fleet-page-size=${(e: CustomEvent) => {
+                              @or-fleet-page-size=${async (e: CustomEvent) => {
+                                  // The pager pages by the size of the shown result, so a size that
+                                  // failed to load is dropped and the shown page stays as it was.
+                                  const previous = { pageSize: this._pageSize, offset: this._offset };
                                   this._pageSize = e.detail.limit;
-                                  this._writeSetting(PAGE_SIZE_KEY, String(this._pageSize));
                                   this._offset = 0;
-                                  this._pushUrl();
-                                  this._runQuery();
+                                  if (await this._runQuery()) {
+                                      this._writeSetting(PAGE_SIZE_KEY, String(this._pageSize));
+                                      this._pushUrl();
+                                  } else {
+                                      this._pageSize = previous.pageSize;
+                                      this._offset = previous.offset;
+                                  }
                               }}
                               @or-fleet-columns=${(e: CustomEvent) => {
                                   this._columns = e.detail.columns;
