@@ -7,7 +7,8 @@ tasks.register('clean') {
 tasks.register('installDist', Copy) {
     dependsOn npmBuild
     mustRunAfter ":manager:installDist"
-    // getAppConfig from @openremote/util writes the production bundle to build/dist
+    // getAppConfig from @openremote/util writes the production bundle to build/dist. The app replaces
+    // the built-in manager app: the custom app docroot is served before the built-in one.
     from "build/dist"
-    into "${project(':deployment').buildDir}/image/manager/app/${projectDir.name}"
+    into "${project(':deployment').buildDir}/image/manager/app/manager"
 }

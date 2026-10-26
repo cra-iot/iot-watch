@@ -9,7 +9,16 @@ include:
 stages:
   - version
   - build
+  - build_ui
+  - build_docker
   - release
+
+variables:
+  FLEET_APP_IMAGE: iot-watch/fleet-app
+  CA_ROOT_CRA_URL: https://$PROXY/repository/ca/CA.crt
+  CA_ROOT_CRA_FILE: CAROOTCRA
+  CA_ROOT_CRA_2051_URL: https://$PROXY/repository/ca/CRA-RootCA-2051.crt
+  CA_ROOT_CRA_2051_FILE: CAROOTCRA2051
 
 build:gradle:
   stage: build
@@ -33,7 +42,107 @@ build:gradle:
   script:
     - ./gradlew test --console=plain
     - ./gradlew installDist -x :ui:app:fleet:installDist -x :ui:app:custom-react:installDist ${NEXT_VERSION:+-Prelease.forceVersion=$NEXT_VERSION} --console=plain
+    # TypeScript model and REST client for build:fleet-app (generated from the Java model, not in git)
+    - ./gradlew :ui:component:rest:generateTypeScript --console=plain
   artifacts:
     when: always
+    expire_in: 1 days
+    paths:
+      - ui/component/model/src/model.ts
+      - ui/component/model/src/typescript-generator-info.json
+      - ui/component/rest/src/restclient.ts
     reports:
       junit: test/build/test-results/test/TEST-*.xml
+
+# The IoT Watch manager app (ui/app/fleet): the manager UI with the fleet page, deployed to
+# {customAppDocroot}/manager. Yarn comes from .yarn/releases (yarnPath), the image only needs Node.
+build:fleet-app:
+  stage: build_ui
+  image: dockerhub.$PROXY/library/node:22
+  tags:
+    - docker-internet
+    - iot-internet
+  needs:
+    - job: build:gradle
+      artifacts: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" || $CI_COMMIT_TAG'
+      when: never
+    - if: '$CI_COMMIT_BRANCH'
+  cache:
+    key: yarn-$CI_COMMIT_REF_SLUG
+    paths:
+      - .yarn/cache
+  script:
+    - yarn install --immutable
+    - yarn workspace model run build
+    - yarn workspace rest run build
+    - yarn workspace @openremote/fleet run build
+    - mkdir -p fleet-app && cp -R ui/app/fleet/build/dist/. fleet-app/
+  artifacts:
+    expire_in: 1 days
+    paths:
+      - fleet-app/
+
+# Content image for the Helm chart (or.custom.apps): the app under /app, copied by an init container.
+# Same versioning as the go-microservice component: main pushes $NEXT_VERSION when auto-release
+# decides a release, other branches always push <sha>-<branch>-<pipeline>.
+build:fleet-app:image:
+  stage: build_docker
+  image: quay.$PROXY/containers/buildah:v1.40.1-immutable
+  tags:
+    - docker
+    - iot
+  # No needs: by stage order the job gets fleet-app/ and the auto-release dotenv (NEXT_VERSION, RELEASE_NEEDED)
+  cache: []
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" || $CI_COMMIT_TAG'
+      when: never
+    - if: '$CI_COMMIT_REF_SLUG == "master" || $CI_COMMIT_REF_SLUG == "main"'
+      variables:
+        VERSION: '$NEXT_VERSION'
+    - if: '$CI_COMMIT_BRANCH'
+      variables:
+        VERSION: "$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG-$CI_PIPELINE_ID"
+        RELEASE_NEEDED: "true"
+  variables:
+    # vfs: buildah cannot stack overlayfs on the runner's overlayfs
+    STORAGE_DRIVER: vfs
+    BUILDAH_FORMAT: docker
+  before_script:
+    - curl -k -o ${CA_ROOT_CRA_FILE} ${CA_ROOT_CRA_URL}
+    - cat ${CA_ROOT_CRA_FILE} >> /etc/ssl/certs/ca-certificates.crt
+    - curl -k -o ${CA_ROOT_CRA_2051_FILE} ${CA_ROOT_CRA_2051_URL}
+    - cat ${CA_ROOT_CRA_2051_FILE} >> /etc/ssl/certs/ca-certificates.crt
+  script:
+    - |
+      if [[ "${RELEASE_NEEDED}" != "true" ]]; then
+        echo "No image to release skipping..."
+        exit 0
+      fi
+      if [[ -z "${VERSION}" ]]; then
+        echo "RELEASE_NEEDED=true but VERSION is empty. Check the auto-release version job." >&2
+        exit 1
+      fi
+    - IMAGE_TAG="${FLEET_APP_IMAGE}:${VERSION}"
+    - ctr=$(buildah from --creds=$PROXY_AUTH_WRITE dockerhub.$PROXY/library/alpine:3)
+    - mnt=$(buildah mount "$ctr")
+    - mkdir -p "$mnt/app"
+    - cp -R fleet-app/. "$mnt/app/"
+    - buildah umount "$ctr"
+    - |
+      buildah config \
+        --workingdir /app \
+        --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        --label "org.opencontainers.image.version=${VERSION}" \
+        --label "org.opencontainers.image.revision=${CI_COMMIT_SHA}" \
+        --label "org.opencontainers.image.title=${IMAGE_TAG}" \
+        --label "org.opencontainers.image.vendor=CRA" \
+        --label "org.opencontainers.image.source=${CI_PROJECT_URL}" \
+        --label "org.opencontainers.image.url=${CI_PROJECT_URL}" \
+        --label "org.opencontainers.image.description=IoT Watch manager app (Helm or.custom.apps content image), built from ${CI_PROJECT_PATH} ${CI_COMMIT_REF_NAME}" \
+        "$ctr"
+    - buildah commit "$ctr" "$NEXUS_REGISTRY/$IMAGE_TAG"
+    - buildah login --password $NEXUS_REGISTRY_PASSWORD --username $NEXUS_REGISTRY_USER $NEXUS_REGISTRY
+    - echo "Pushing image $NEXUS_REGISTRY/$IMAGE_TAG"
+    - buildah push "$NEXUS_REGISTRY/$IMAGE_TAG"
