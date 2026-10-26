@@ -4,6 +4,7 @@ import { AssetModelUtil, type AttributeDescriptor } from "@openremote/model";
 import type { FleetQuery, FleetQueryAttributeFilter, FleetQueryOperator } from "model";
 import { parseHidden, serializeHidden } from "./fleet-columns";
 import { GROUP_OPTIONS } from "./fleet-groups";
+import { DEFAULT_PAGE_SIZE, parsePageSize } from "./fleet-pager";
 
 export type TokenKind =
     | "text" | "type" | "alarm" | "seen" | "delivery" | "serial"
@@ -390,6 +391,8 @@ export interface FleetView {
     columns?: string[];
     /** Hidden table columns (fleet-columns HIDE_KEYS); an empty list means "show all". */
     hidden?: string[];
+    /** Rows per page; one of fleet-pager PAGE_SIZES. */
+    pageSize?: number;
 }
 
 // PARENT is a server grouping the page no longer offers; an old link with it falls back to none.
@@ -397,7 +400,7 @@ const GROUP_VALUES = new Set<string>(GROUP_OPTIONS);
 
 /**
  * Writes the search (q) and, when given, its view: group, sort ("-field" = descending), columns and
- * hidden columns (hide, omitted while it equals the defaults).
+ * hidden columns (hide, omitted while it equals the defaults) and the page size (size, omitted at the default).
  */
 export function toUrlParams(tokens: Token[], extras: Record<string, string>, view: FleetView = {}): URLSearchParams {
     const params = new URLSearchParams(extras);
@@ -408,6 +411,7 @@ export function toUrlParams(tokens: Token[], extras: Record<string, string>, vie
     if (view.columns?.length) { params.set("columns", view.columns.join(",")); }
     const hide = view.hidden ? serializeHidden(view.hidden) : undefined;
     if (hide !== undefined) { params.set("hide", hide); }
+    if (view.pageSize && view.pageSize !== DEFAULT_PAGE_SIZE) { params.set("size", String(view.pageSize)); }
     return params;
 }
 
@@ -432,6 +436,8 @@ export function fromUrlParams(params: URLSearchParams): { tokens: Token[] } & Fl
     // "hide=" (empty) is meaningful: every column shown.
     const hidden = parseHidden(params.get("hide"));
     if (hidden) { result.hidden = hidden; }
+    const pageSize = parsePageSize(params.get("size"));
+    if (pageSize) { result.pageSize = pageSize; }
     return result;
 }
 

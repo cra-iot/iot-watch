@@ -173,6 +173,14 @@ describe("url round-trip", () => {
         expect(fromUrlParams(new URLSearchParams("q=x")).hidden).toBeUndefined();
     });
 
+    it("carries a page size other than the default as size=", () => {
+        expect(toUrlParams([], {}, { pageSize: 50 }).has("size")).toBe(false);
+        const params = toUrlParams([], {}, { pageSize: 200 });
+        expect(params.get("size")).toBe("200");
+        expect(fromUrlParams(params).pageSize).toBe(200);
+        expect(fromUrlParams(new URLSearchParams("size=7")).pageSize).toBeUndefined();
+    });
+
     it("tolerates a malformed q parameter without throwing", () => {
         expect(() => fromUrlParams(new URLSearchParams("q=%E0%A4%A"))).not.toThrow();
     });

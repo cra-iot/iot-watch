@@ -88,7 +88,19 @@
         "invalidDuration": "Zadejte dobu, například 30m, 24h nebo 7d.",
         "operatorNotAllowed": "Porovnání a rozsahy fungují jen s čísly. Použijte = nebo prostý text."
       },
-      "list": "{{first}} +{{count}} další"
+      "list": "{{first}} +{{count}} další",
+      "hint": {
+        "type": "Typ měřidla, výběr ze seznamu",
+        "alarm": "Aktivní alarm, výběr ze seznamu",
+        "seen": "Poslední data starší nebo novější než, např. >24h nebo <7d",
+        "delivery": "Číslo odběrného místa nebo jeho část",
+        "serial": "Výrobní číslo měřidla nebo jeho část",
+        "deveui": "DevEUI zařízení nebo jeho část",
+        "battery": "Stav baterie v %, např. <20",
+        "reading": "Stav měřidla jednoho typu, např. >100",
+        "site": "Lokalita včetně všeho pod ní",
+        "attr": "Libovolný atribut podle názvu, např. attr:meter_id=123"
+      }
     },
     "result": {
       "count_one": "{{count}} měřidlo",
@@ -115,10 +127,18 @@
       "silent": "Neozývá se",
       "ok": "OK"
     },
+    "statusHint": {
+      "alarm": "Aktivní alarm",
+      "silent": "Žádná data déle než 24 hodin",
+      "never": "Zatím nepřišla žádná data"
+    },
     "pager": {
       "range": "{{from}}–{{to}} z {{total}}",
       "previous": "Předchozí",
-      "next": "Další"
+      "next": "Další",
+      "pageSize": "Řádků na stránku",
+      "pages": "Stránky",
+      "page": "Stránka {{page}}"
     },
     "empty": "Nebyla nalezena žádná zařízení",
     "reading": {

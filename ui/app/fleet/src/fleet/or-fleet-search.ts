@@ -70,7 +70,8 @@ export class OrFleetSearch extends translateMixin(i18next)(OrElement) {
             }
             or-vaadin-text-field { flex: 1; min-width: 200px; }
             .panel {
-                position: absolute; z-index: 10; left: 0; right: 0; top: 100%; margin-top: 2px;
+                /* A dropdown, not a sheet: it covers as little of the table as it can. */
+                position: absolute; z-index: 10; left: 0; top: 100%; margin-top: 2px; width: min(520px, 100%); box-sizing: border-box;
                 background: var(--or-app-color1, #fff); border: 1px solid var(--or-app-color5, #ccc);
                 border-radius: 4px; box-shadow: 0 2px 8px rgba(0, 0, 0, .2);
                 max-height: 320px; overflow-y: auto;
@@ -79,6 +80,8 @@ export class OrFleetSearch extends translateMixin(i18next)(OrElement) {
             .error { padding: 8px 12px; color: var(--or-app-color4, #e3000a); }
             .option { padding: 8px 12px; cursor: pointer; }
             .option:hover { background: var(--or-app-color2, #f0f0f0); }
+            .option .kind { color: #6b6b6b; }
+            .option .hint { display: block; margin-top: 2px; font-size: 12px; color: #6b6b6b; }
             .editor { display: flex; align-items: end; gap: 8px; padding: 8px 12px; }
             .editor button { height: 36px; padding: 0 12px; cursor: pointer; }
         `;
@@ -272,7 +275,8 @@ export class OrFleetSearch extends translateMixin(i18next)(OrElement) {
             return html`<div class="panel" @mousedown=${keepFocus}>
                 ${definitions.map((d) => html`
                     <div class="option" @click=${() => { this._input = `${d.kind}:`; }}>
-                        ${translate(d.labelKey)} <small>(${d.kind}:)</small>
+                        ${translate(d.labelKey)} <small class="kind">${d.kind}:</small>
+                        <span class="hint">${translate(`fleet.token.hint.${d.kind}`)}</span>
                     </div>`)}
             </div>`;
         }

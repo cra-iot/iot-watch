@@ -88,7 +88,19 @@
         "invalidDuration": "Enter a duration such as 30m, 24h or 7d.",
         "operatorNotAllowed": "Comparisons and ranges only work on numbers. Use = or plain text."
       },
-      "list": "{{first}} +{{count}} more"
+      "list": "{{first}} +{{count}} more",
+      "hint": {
+        "type": "Meter type, picked from a list",
+        "alarm": "Active alarm, picked from a list",
+        "seen": "Last data older or newer than, e.g. >24h or <7d",
+        "delivery": "Delivery point ID or a part of it",
+        "serial": "Meter serial number or a part of it",
+        "deveui": "Device EUI or a part of it",
+        "battery": "Battery level in %, e.g. <20",
+        "reading": "Meter reading of one meter type, e.g. >100",
+        "site": "Location, including everything below it",
+        "attr": "Any attribute by its name, e.g. attr:meter_id=123"
+      }
     },
     "result": {
       "count_one": "{{count}} meter",
@@ -111,10 +123,18 @@
       "silent": "Silent",
       "ok": "OK"
     },
+    "statusHint": {
+      "alarm": "Active alarm",
+      "silent": "No data for more than 24 hours",
+      "never": "No data received yet"
+    },
     "pager": {
       "range": "{{from}}-{{to}} of {{total}}",
       "previous": "Previous",
-      "next": "Next"
+      "next": "Next",
+      "pageSize": "Rows per page",
+      "pages": "Pages",
+      "page": "Page {{page}}"
     },
     "empty": "No devices found",
     "reading": {

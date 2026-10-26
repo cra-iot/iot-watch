@@ -8,6 +8,7 @@ import type { FleetQueryResult } from "model";
 // client and has no FleetResource.
 import rest from "rest";
 import { resolveHidden } from "../fleet/fleet-columns";
+import { DEFAULT_PAGE_SIZE, parsePageSize } from "../fleet/fleet-pager";
 import {
     fromUrlParams, mergeSiteOptions, readingFollowUp, singlePrimaryRegister, textValues, toFleetQuery, toUrlParams,
     type SiteOption, type Token,
@@ -26,6 +27,8 @@ export function pageFleetProvider(store: EnhancedStore<AppStateKeyed>): PageProv
 
 /** Hidden table columns of this browser; the share URL's hide= wins over it. */
 const HIDDEN_COLUMNS_KEY = "iot-watch.fleet.hiddenColumns";
+/** Rows per page of this browser; the share URL's size= wins over it. */
+const PAGE_SIZE_KEY = "iot-watch.fleet.pageSize";
 
 @customElement("page-fleet")
 export class PageFleet extends Page<AppStateKeyed> {
@@ -46,6 +49,7 @@ export class PageFleet extends Page<AppStateKeyed> {
     @state() protected _loading = false;
     @state() protected _groupBy = "NONE";
     @state() protected _offset = 0;
+    @state() protected _pageSize = DEFAULT_PAGE_SIZE;
     @state() protected _sort = { field: "name", descending: false };
     @state() protected _columns?: string[];
     @state() protected _error?: string;
@@ -84,18 +88,18 @@ export class PageFleet extends Page<AppStateKeyed> {
         this._runQuery();
     }
 
-    protected _storedHidden(): string | null {
+    protected _readSetting(key: string): string | null {
         try {
-            return window.localStorage.getItem(HIDDEN_COLUMNS_KEY);
+            return window.localStorage.getItem(key);
         } catch {
             // Storage unavailable: the defaults apply.
             return null;
         }
     }
 
-    protected _storeHidden(hidden: string[]): void {
+    protected _writeSetting(key: string, value: string): void {
         try {
-            window.localStorage.setItem(HIDDEN_COLUMNS_KEY, hidden.join(","));
+            window.localStorage.setItem(key, value);
         } catch {
             // Remembering the choice is best effort; the URL still carries it.
         }
@@ -130,14 +134,15 @@ export class PageFleet extends Page<AppStateKeyed> {
         this._groupBy = restored.groupBy ?? "NONE";
         this._sort = restored.sort ?? { field: "name", descending: false };
         this._columns = restored.columns;
-        this._hidden = resolveHidden(restored.hidden, this._storedHidden());
+        this._hidden = resolveHidden(restored.hidden, this._readSetting(HIDDEN_COLUMNS_KEY));
+        this._pageSize = restored.pageSize ?? parsePageSize(this._readSetting(PAGE_SIZE_KEY)) ?? DEFAULT_PAGE_SIZE;
         this._offset = 0;
         this._runQuery();
     }
 
     protected _pushUrl(): void {
         const params = toUrlParams(this._tokens, {}, {
-            groupBy: this._groupBy, sort: this._sort, columns: this._columns, hidden: this._hidden,
+            groupBy: this._groupBy, sort: this._sort, columns: this._columns, hidden: this._hidden, pageSize: this._pageSize,
         });
         try {
             // replaceState does not fire hashchange, so the router leaves the page alone. The slash
@@ -152,6 +157,7 @@ export class PageFleet extends Page<AppStateKeyed> {
         const query = toFleetQuery(this._tokens, {
             groupBy: this._groupBy,
             offset: this._offset,
+            limit: this._pageSize,
             sort: this._sort,
             // An empty list means "reset": send nothing and the server picks its default.
             ...(this._columns?.length ? { columns: this._columns } : {}),
@@ -228,6 +234,13 @@ export class PageFleet extends Page<AppStateKeyed> {
                                   this._offset = e.detail.offset;
                                   this._runQuery();
                               }}
+                              @or-fleet-page-size=${(e: CustomEvent) => {
+                                  this._pageSize = e.detail.limit;
+                                  this._writeSetting(PAGE_SIZE_KEY, String(this._pageSize));
+                                  this._offset = 0;
+                                  this._pushUrl();
+                                  this._runQuery();
+                              }}
                               @or-fleet-columns=${(e: CustomEvent) => {
                                   this._columns = e.detail.columns;
                                   this._pushUrl();
@@ -242,7 +255,7 @@ export class PageFleet extends Page<AppStateKeyed> {
                               @or-fleet-hidden=${(e: CustomEvent) => {
                                   // Display only: no query, the result already holds every column.
                                   this._hidden = e.detail.hidden;
-                                  this._storeHidden(this._hidden);
+                                  this._writeSetting(HIDDEN_COLUMNS_KEY, this._hidden.join(","));
                                   this._pushUrl();
                               }}
                               @or-fleet-group=${(e: CustomEvent) => {

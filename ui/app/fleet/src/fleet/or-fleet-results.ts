@@ -2,6 +2,7 @@ import { css, html, nothing, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { Util } from "@openremote/core";
 import { AssetModelUtil } from "@openremote/model";
+import { getAssetsRoute } from "@openremote/manager/routes";
 import { OrElement } from "@openremote/or-element";
 import { i18next, translate as translateMixin } from "@openremote/or-translate";
 import "@openremote/or-icon";
@@ -11,6 +12,7 @@ import {
     selectedRegisters, visibleColumns, type FleetColumn, type HideKey,
 } from "./fleet-columns";
 import { GROUP_OPTIONS, groupInfo, relativeAge, rowStatus, segmentGroups, type RowGroup } from "./fleet-groups";
+import { PAGE_SIZES, pageItems } from "./fleet-pager";
 
 export class OrFleetRowClickEvent extends CustomEvent<{ assetId: string }> {
     public static readonly NAME = "or-fleet-row-click";
@@ -25,6 +27,14 @@ export class OrFleetPageEvent extends CustomEvent<{ offset: number }> {
 
     constructor(offset: number) {
         super(OrFleetPageEvent.NAME, { bubbles: true, composed: true, detail: { offset } });
+    }
+}
+
+export class OrFleetPageSizeEvent extends CustomEvent<{ limit: number }> {
+    public static readonly NAME = "or-fleet-page-size";
+
+    constructor(limit: number) {
+        super(OrFleetPageSizeEvent.NAME, { bubbles: true, composed: true, detail: { limit } });
     }
 }
 
@@ -64,6 +74,7 @@ declare global {
     interface HTMLElementEventMap {
         [OrFleetRowClickEvent.NAME]: OrFleetRowClickEvent;
         [OrFleetPageEvent.NAME]: OrFleetPageEvent;
+        [OrFleetPageSizeEvent.NAME]: OrFleetPageSizeEvent;
         [OrFleetColumnsEvent.NAME]: OrFleetColumnsEvent;
         [OrFleetSortEvent.NAME]: OrFleetSortEvent;
         [OrFleetGroupEvent.NAME]: OrFleetGroupEvent;
@@ -180,9 +191,10 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
             td.age.silent { color: var(--fleet-silent-color); }
             td.actions, th.actions { width: 1%; padding-top: 4px; padding-bottom: 4px; text-align: right; }
             .open { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px;
-                padding: 0; border: none; border-radius: 4px; background: transparent; color: inherit; cursor: pointer;
+                padding: 0; border: none; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; text-decoration: none;
                 --or-icon-width: 20px; --or-icon-height: 20px; }
             .open:hover { background: rgba(0, 0, 0, .08); }
+            .open:focus-visible { outline: 2px solid var(--fleet-focus-color); outline-offset: 2px; }
             tr.divider th { padding: 0; background: var(--or-app-color1, #fff); border-bottom-color: var(--or-app-color5, #ccc); }
             tbody + tbody tr.divider th { border-top: 12px solid var(--or-app-color1, #fff); }
             .group-header { position: sticky; left: 0; display: inline-flex; align-items: baseline; gap: 12px;
@@ -194,7 +206,13 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
             .chip { display: inline-block; margin-right: 4px; padding: 0 8px; border-radius: 12px;
                 border: 1px solid var(--fleet-alarm-color); color: inherit; font-size: 12px; line-height: 20px; }
             .empty { padding: 24px; text-align: center; color: var(--fleet-muted-color); }
-            .pager { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 8px 0; }
+            .pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; padding: 8px 0; }
+            .pager select { padding: 5px 6px; border: 1px solid var(--or-app-color5, #ccc); border-radius: 4px;
+                background: var(--or-app-color1, #fff); color: inherit; font: inherit; }
+            .pages { display: inline-flex; align-items: center; gap: 4px; }
+            .pages button.plain { min-width: 34px; padding: 6px 8px; font-variant-numeric: tabular-nums; }
+            .pages button[aria-current="page"] { background: var(--or-app-color4, #4d9d2a); border-color: var(--or-app-color4, #4d9d2a); color: #fff; cursor: default; }
+            .pages .gap { padding: 0 4px; color: var(--fleet-muted-color); }
             .loading { opacity: .5; pointer-events: none; }
         `;
     }
@@ -271,6 +289,16 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
         return column.labelKey ? translate(column.labelKey) : column.label;
     }
 
+    /** Exact time of the last data, as a tooltip on the relative age, or a note that no data arrived yet. */
+    protected _lastSeenTitle(lastSeen: unknown): string {
+        if (typeof lastSeen !== "number" || Number.isNaN(lastSeen)) { return translate("fleet.statusHint.never"); }
+        return new Intl.DateTimeFormat(i18next.language || "en", { dateStyle: "medium", timeStyle: "short" }).format(lastSeen);
+    }
+
+    protected _statusHint(row: FleetRow, status: string): string {
+        return status === "silent" && row.lastSeen == null ? translate("fleet.statusHint.never") : translate(`fleet.statusHint.${status}`);
+    }
+
     protected _renderAge(lastSeen: unknown, now: number): string {
         const age = relativeAge(lastSeen, now);
         if (!age) { return EM_DASH; }
@@ -282,7 +310,7 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
         const identity = this.hiddenColumns.includes("identity") ? undefined : identityLine(row);
         const name = row.name === undefined || row.name === null || row.name === "" ? EM_DASH : String(row.name);
         return html`
-            <div class="name">${STATUS_ICONS[status] ? html`<or-icon class="status-icon" aria-hidden="true" icon=${STATUS_ICONS[status]}></or-icon>` : nothing}${name}${status !== "ok" ? html`<span class="sr-only">, ${this._statusLabel(status)}</span>` : nothing}</div>
+            <div class="name">${STATUS_ICONS[status] ? html`<or-icon class="status-icon" aria-hidden="true" title=${this._statusHint(row, status)} icon=${STATUS_ICONS[status]}></or-icon>` : nothing}${name}${status !== "ok" ? html`<span class="sr-only">, ${this._statusLabel(status)}</span>` : nothing}</div>
             ${identity ? html`<div class="identity">${identity}</div>` : nothing}`;
     }
 
@@ -388,15 +416,23 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
             const label = translate("fleet.row.open");
             return html`
                 <tr class="row ${status}${index % 2 === 1 ? " stripe" : ""}">
-                    ${columns.map((c) => html`<td class=${this._cellClass(c, status)}>${this._renderCell(result, row, c, status, now)}</td>`)}
+                    ${columns.map((c) => html`<td class=${this._cellClass(c, status)}
+                        title=${c.key === "lastSeen" ? this._lastSeenTitle(row.lastSeen) : nothing}>${this._renderCell(result, row, c, status, now)}</td>`)}
                     <td class="actions">
-                        <button type="button" class="open" aria-label=${label} title=${label}
-                                @click=${() => this.dispatchEvent(new OrFleetRowClickEvent(row.id))}>
+                        <a class="open" href=${`#/${getAssetsRoute(false, row.id)}`} aria-label=${label} title=${label}
+                           @click=${(ev: MouseEvent) => this._onOpen(ev, row.id)}>
                             <or-icon aria-hidden="true" icon="open-in-new"></or-icon>
-                        </button>
+                        </a>
                     </td>
                 </tr>`;
         });
+    }
+
+    /** A plain click navigates in the app; Ctrl/Cmd/Shift-click and middle-click keep the browser's new tab or window. */
+    protected _onOpen(ev: MouseEvent, assetId: string) {
+        if (ev.button !== 0 || ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.altKey) { return; }
+        ev.preventDefault();
+        this.dispatchEvent(new OrFleetRowClickEvent(assetId));
     }
 
     protected _groupName(key: string, label?: string): string {
@@ -468,20 +504,39 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
         const total = result.total ?? 0;
         const offset = result.offset ?? 0;
         const limit = result.limit || (result.rows ?? []).length || 1;
-        if (total <= limit) { return nothing; }
+        // Shown while a smaller page size would page, so a larger choice can be taken back.
+        if (total <= Math.min(limit, PAGE_SIZES[0])) { return nothing; }
         const from = total === 0 ? 0 : offset + 1;
         const to = Math.min(offset + (result.rows ?? []).length, total);
+        const current = Math.floor(offset / limit);
+        const count = Math.ceil(total / limit);
         return html`
             <div class="pager">
+                <label class="control">
+                    <span class="label">${translate("fleet.pager.pageSize")}</span>
+                    <select .value=${String(limit)} @change=${(ev: Event) => this.dispatchEvent(new OrFleetPageSizeEvent(Number((ev.target as HTMLSelectElement).value)))}>
+                        ${PAGE_SIZES.map((size) => html`<option value=${size} ?selected=${size === limit}>${size}</option>`)}
+                    </select>
+                </label>
                 <span>${translate("fleet.pager.range", { from, to, total })}</span>
-                <button type="button" class="plain" ?disabled=${offset <= 0}
-                        @click=${() => this.dispatchEvent(new OrFleetPageEvent(Math.max(0, offset - limit)))}>
-                    ${translate("fleet.pager.previous")}
-                </button>
-                <button type="button" class="plain" ?disabled=${offset + limit >= total}
-                        @click=${() => this.dispatchEvent(new OrFleetPageEvent(offset + limit))}>
-                    ${translate("fleet.pager.next")}
-                </button>
+                ${count > 1 ? html`
+                    <nav class="pages" aria-label=${translate("fleet.pager.pages")}>
+                        <button type="button" class="plain" ?disabled=${current <= 0}
+                                @click=${() => this.dispatchEvent(new OrFleetPageEvent((current - 1) * limit))}>
+                            ${translate("fleet.pager.previous")}
+                        </button>
+                        ${pageItems(current, count).map((item) => item === "gap"
+                            ? html`<span class="gap" aria-hidden="true">…</span>`
+                            : html`<button type="button" class="plain" aria-current=${item === current ? "page" : nothing}
+                                           aria-label=${translate("fleet.pager.page", { page: item + 1 })}
+                                           @click=${() => { if (item !== current) { this.dispatchEvent(new OrFleetPageEvent(item * limit)); } }}>
+                                       ${item + 1}
+                                   </button>`)}
+                        <button type="button" class="plain" ?disabled=${current >= count - 1}
+                                @click=${() => this.dispatchEvent(new OrFleetPageEvent((current + 1) * limit))}>
+                            ${translate("fleet.pager.next")}
+                        </button>
+                    </nav>` : nothing}
             </div>`;
     }
 
