@@ -15,10 +15,20 @@ stages:
 
 variables:
   FLEET_APP_IMAGE: iot-watch/fleet-app
-  CA_ROOT_CRA_URL: https://$PROXY/repository/ca/CA.crt
-  CA_ROOT_CRA_FILE: CAROOTCRA
-  CA_ROOT_CRA_2051_URL: https://$PROXY/repository/ca/CRA-RootCA-2051.crt
-  CA_ROOT_CRA_2051_FILE: CAROOTCRA2051
+
+# CRA root CAs (same list and checksums as the CRA CI catalog), appended to the system bundle
+.cra-ca:
+  before_script:
+    - |
+      echo "https://$PROXY/repository/ca/CA.crt 1e13cb7e27bbc53901c9bbde46034994b840c2e2278fb854f0619dfed46d6cd2
+      https://$PROXY/repository/ca/CRA-RootCA-2051.crt 95b1b5b9a65948ea2d157d85e93b724108e1519409f6c6fc54da6833aa33ce6c
+      " | while read -r CA_URL CA_SHA256; do
+        [ -n "$CA_URL" ] || continue
+        CA_FILE=$(basename "$CA_URL")
+        curl -fsSk -o "$CA_FILE" "$CA_URL" || exit 1
+        echo "$CA_SHA256  $CA_FILE" | sha256sum -c - || exit 1
+        { echo; cat "$CA_FILE"; } >> /etc/ssl/certs/ca-certificates.crt
+      done
 
 build:gradle:
   stage: build
@@ -55,13 +65,19 @@ build:gradle:
       junit: test/build/test-results/test/TEST-*.xml
 
 # The IoT Watch manager app (ui/app/fleet): the manager UI with the fleet page, deployed to
-# {customAppDocroot}/manager. Yarn comes from .yarn/releases (yarnPath), the image only needs Node.
+# {customAppDocroot}/manager. Yarn comes from .yarn/releases (yarnPath), the image only needs Node;
+# packages come from the Nexus npm proxy (the lockfile holds no registry URLs, so --immutable still applies).
 build:fleet-app:
   stage: build_ui
   image: dockerhub.$PROXY/library/node:22
   tags:
-    - docker-internet
-    - iot-internet
+    - docker
+    - iot
+  variables:
+    NODE_EXTRA_CA_CERTS: /etc/ssl/certs/ca-certificates.crt
+    YARN_NPM_REGISTRY_SERVER: https://$PROXY/repository/npm/
+    YARN_NPM_AUTH_IDENT: $PROXY_AUTH_WRITE2
+    YARN_NPM_ALWAYS_AUTH: "true"
   needs:
     - job: build:gradle
       artifacts: true
@@ -73,6 +89,8 @@ build:fleet-app:
     key: yarn-$CI_COMMIT_REF_SLUG
     paths:
       - .yarn/cache
+  before_script:
+    - !reference [.cra-ca, before_script]
   script:
     - yarn install --immutable
     - yarn workspace model run build
@@ -110,10 +128,7 @@ build:fleet-app:image:
     STORAGE_DRIVER: vfs
     BUILDAH_FORMAT: docker
   before_script:
-    - curl -k -o ${CA_ROOT_CRA_FILE} ${CA_ROOT_CRA_URL}
-    - cat ${CA_ROOT_CRA_FILE} >> /etc/ssl/certs/ca-certificates.crt
-    - curl -k -o ${CA_ROOT_CRA_2051_FILE} ${CA_ROOT_CRA_2051_URL}
-    - cat ${CA_ROOT_CRA_2051_FILE} >> /etc/ssl/certs/ca-certificates.crt
+    - !reference [.cra-ca, before_script]
   script:
     - |
       if [[ "${RELEASE_NEEDED}" != "true" ]]; then
@@ -143,6 +158,8 @@ build:fleet-app:image:
         --label "org.opencontainers.image.description=IoT Watch manager app (Helm or.custom.apps content image), built from ${CI_PROJECT_PATH} ${CI_COMMIT_REF_NAME}" \
         "$ctr"
     - buildah commit "$ctr" "$NEXUS_REGISTRY/$IMAGE_TAG"
-    - buildah login --password $NEXUS_REGISTRY_PASSWORD --username $NEXUS_REGISTRY_USER $NEXUS_REGISTRY
+    - printf '%s' "$NEXUS_REGISTRY_PASSWORD" | buildah login -u "$NEXUS_REGISTRY_USER" --password-stdin $NEXUS_REGISTRY
     - echo "Pushing image $NEXUS_REGISTRY/$IMAGE_TAG"
     - buildah push "$NEXUS_REGISTRY/$IMAGE_TAG"
+    - buildah rm "$ctr"
+    - buildah rmi "$NEXUS_REGISTRY/$IMAGE_TAG"
