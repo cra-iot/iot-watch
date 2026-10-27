@@ -61,6 +61,8 @@ public class FleetQueryResult {
 
     /** Matches before paging. */
     public int total;
+    /** Matches the pages cover: total without the rows of collapsed groups (FleetQuery.collapsed). */
+    public int paged;
     public int offset;
     public int limit;
     public List<FleetRow> rows = new ArrayList<>();

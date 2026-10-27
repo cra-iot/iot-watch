@@ -3,11 +3,13 @@ package org.openremote.manager.iotwatch;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 
 import org.openremote.model.iotwatch.FleetQuery;
@@ -90,14 +92,30 @@ public final class FleetResultAssembler {
         result.facets = facets(matched, nowMillis);
         result.unmatchedText = unmatchedText(matched, query);
 
+        // A collapsed group shows only its header, so its rows leave the paging and the open
+        // groups' rows fill the pages instead; total and facets above still count them.
+        List<FleetRow> paged = pageable(matched, query, nowMillis);
+        result.paged = paged.size();
+
         int limit = query.limit <= 0 ? DEFAULT_LIMIT : Math.min(query.limit, MAX_LIMIT);
         int offset = Math.max(0, query.offset);
         result.offset = offset;
         result.limit = limit;
-        result.rows = offset >= matched.size()
+        result.rows = offset >= paged.size()
                 ? List.of()
-                : new ArrayList<>(matched.subList(offset, Math.min(offset + limit, matched.size())));
+                : new ArrayList<>(paged.subList(offset, Math.min(offset + limit, paged.size())));
         return result;
+    }
+
+    private static List<FleetRow> pageable(List<FleetRow> matched, FleetQuery query, long nowMillis) {
+        if (query.groupBy == null || query.groupBy == FleetQuery.GroupBy.NONE
+                || query.collapsed == null || query.collapsed.isEmpty()) {
+            return matched;
+        }
+        Set<String> collapsed = new HashSet<>(query.collapsed);
+        return matched.stream()
+                .filter(row -> !collapsed.contains(groupKey(row, query.groupBy, nowMillis)))
+                .toList();
     }
 
     /**

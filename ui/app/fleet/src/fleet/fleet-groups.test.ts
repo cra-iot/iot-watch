@@ -46,6 +46,24 @@ describe("segmentGroups", () => {
         expect(groups[0].continued).toBe(false);
     });
 
+    it("adds a header for each collapsed group, in group order, on every page", () => {
+        const water = [row("x", { type: "WaterMeterAsset" })];
+        const groups = segmentGroups(result(water, { facets, offset: 0 }), "TYPE", NOW, ["GasMeterAsset"]);
+        expect(groups.map((g) => [g.key, g.rows.length, g.collapsed])).toEqual([["GasMeterAsset", 0, true], ["WaterMeterAsset", 1, false]]);
+    });
+
+    it("leaves collapsed rows out of the continued check", () => {
+        // Gas (4) is collapsed, so water starts at offset 0 of the paged rows: offset 1 is inside it.
+        const water = [row("x", { type: "WaterMeterAsset" })];
+        expect(segmentGroups(result(water, { facets, offset: 1 }), "TYPE", NOW, ["GasMeterAsset"])[1].continued).toBe(true);
+        expect(segmentGroups(result(water, { facets, offset: 1 }), "TYPE", NOW)[0].continued).toBe(false);
+    });
+
+    it("shows only headers when every group is collapsed, and none for a collapsed key that no longer matches", () => {
+        const groups = segmentGroups(result([], { facets }), "TYPE", NOW, ["WaterMeterAsset", "GasMeterAsset", "HeatMeterAsset"]);
+        expect(groups.map((g) => g.key)).toEqual(["GasMeterAsset", "WaterMeterAsset"]);
+    });
+
     it("accounts for rows without a group key, which sort first", () => {
         const untyped = result([row("c")], { facets, offset: 4, total: 12 });
         // 2 untyped rows + 4 gas meters sort before water; offset 4 is inside the gas meters (start at 2).

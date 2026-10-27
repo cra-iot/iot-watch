@@ -63,6 +63,14 @@ export class OrFleetGroupEvent extends CustomEvent<{ groupBy: string }> {
     }
 }
 
+export class OrFleetCollapseEvent extends CustomEvent<{ collapsed: string[] }> {
+    public static readonly NAME = "or-fleet-collapse";
+
+    constructor(collapsed: string[]) {
+        super(OrFleetCollapseEvent.NAME, { bubbles: true, composed: true, detail: { collapsed } });
+    }
+}
+
 export class OrFleetHiddenEvent extends CustomEvent<{ hidden: string[] }> {
     public static readonly NAME = "or-fleet-hidden";
 
@@ -79,6 +87,7 @@ declare global {
         [OrFleetColumnsEvent.NAME]: OrFleetColumnsEvent;
         [OrFleetSortEvent.NAME]: OrFleetSortEvent;
         [OrFleetGroupEvent.NAME]: OrFleetGroupEvent;
+        [OrFleetCollapseEvent.NAME]: OrFleetCollapseEvent;
         [OrFleetHiddenEvent.NAME]: OrFleetHiddenEvent;
     }
 }
@@ -236,14 +245,9 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
     @property({ attribute: false })
     public hiddenColumns: string[] = [...DEFAULT_HIDDEN];
 
-    /** Groups the user collapsed, by key. Reset when the grouping dimension changes. */
-    protected _collapsed = new Set<string>();
-
-    protected willUpdate(changed: Map<string, unknown>) {
-        if (changed.has("groupBy")) {
-            this._collapsed = new Set();
-        }
-    }
+    /** Group keys the user collapsed; the page owns them, the server pages without their rows. */
+    @property({ attribute: false })
+    public collapsed: string[] = [];
 
     /** A new result (another page, sort or search) starts at its first row; the box keeps its sideways scroll. */
     protected updated(changed: Map<string, unknown>) {
@@ -254,10 +258,9 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
     }
 
     protected _toggleGroup(key: string) {
-        const next = new Set(this._collapsed);
-        if (!next.delete(key)) { next.add(key); }
-        this._collapsed = next;
-        this.requestUpdate();
+        this.dispatchEvent(new OrFleetCollapseEvent(this.collapsed.includes(key)
+            ? this.collapsed.filter((k) => k !== key)
+            : [...this.collapsed, key]));
     }
 
     protected _toggleColumn(result: FleetQueryResult, key: string, checked: boolean) {
@@ -447,7 +450,7 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
     /** A group is a tbody whose first row is a full-width divider, so columns align across groups. */
     protected _renderGroup(result: FleetQueryResult, group: RowGroup, columns: FleetColumn[], now: number): TemplateResult {
         const info = groupInfo(result, this.groupBy, group.key);
-        const open = !this._collapsed.has(group.key);
+        const open = !group.collapsed;
         const name = this._groupName(group.key, info.label);
         return html`
             <tbody>
@@ -504,7 +507,8 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
     }
 
     protected _renderPager(result: FleetQueryResult): TemplateResult | typeof nothing {
-        const total = result.total ?? 0;
+        // The pages cover the open groups only; a server without collapsing sends no paged count.
+        const total = result.paged ?? result.total ?? 0;
         const offset = result.offset ?? 0;
         const limit = result.limit || (result.rows ?? []).length || 1;
         // Shown while a smaller page size would page, so a larger choice can be taken back.
@@ -548,7 +552,7 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
         if (!result) { return nothing; }
         const now = Date.now();
         const columns = visibleColumns(result, this.hiddenColumns, formatUnits);
-        const groups = segmentGroups(result, this.groupBy, now);
+        const groups = segmentGroups(result, this.groupBy, now, this.collapsed);
         return html`
             ${this._renderResultBar(result)}
             <div class="body${this.loading ? " loading" : ""}" aria-busy=${this.loading ? "true" : "false"}>

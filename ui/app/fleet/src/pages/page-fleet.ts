@@ -48,6 +48,8 @@ export class PageFleet extends Page<AppStateKeyed> {
     @state() protected _result?: FleetQueryResult;
     @state() protected _loading = false;
     @state() protected _groupBy = "NONE";
+    /** Group keys the user collapsed; reset with the grouping, the realm and the URL, kept across searches. */
+    @state() protected _collapsed: string[] = [];
     @state() protected _offset = 0;
     @state() protected _pageSize = DEFAULT_PAGE_SIZE;
     @state() protected _sort = { field: "name", descending: false };
@@ -82,6 +84,7 @@ export class PageFleet extends Page<AppStateKeyed> {
         this._tokens = [];
         this._sites = [];
         this._result = undefined;
+        this._collapsed = [];
         this._offset = 0;
         this._readingNote = false;
         this._pushUrl();
@@ -132,6 +135,7 @@ export class PageFleet extends Page<AppStateKeyed> {
         const restored = fromUrlParams(new URLSearchParams(hash.includes("?") ? hash.slice(hash.indexOf("?") + 1) : ""));
         this._tokens = restored.tokens;
         this._groupBy = restored.groupBy ?? "NONE";
+        this._collapsed = [];
         this._sort = restored.sort ?? { field: "name", descending: false };
         this._columns = restored.columns;
         this._hidden = resolveHidden(restored.hidden, this._readSetting(HIDDEN_COLUMNS_KEY));
@@ -156,6 +160,7 @@ export class PageFleet extends Page<AppStateKeyed> {
     protected async _fetch(primaryRegister: string | undefined): Promise<FleetQueryResult> {
         const query = toFleetQuery(this._tokens, {
             groupBy: this._groupBy,
+            ...(this._collapsed.length ? { collapsed: this._collapsed } : {}),
             offset: this._offset,
             limit: this._pageSize,
             sort: this._sort,
@@ -229,7 +234,7 @@ export class PageFleet extends Page<AppStateKeyed> {
             ${this._error ? html`<div class="error"><or-translate value=${this._error}></or-translate></div>` : nothing}
             ${this._renderNotFound()}
             ${this._readingNote ? html`<div class="note" role="status"><or-translate value="app:fleet.reading.needsOneType"></or-translate></div>` : nothing}
-            <or-fleet-results .result=${this._result} .groupBy=${this._groupBy} .loading=${this._loading}
+            <or-fleet-results .result=${this._result} .groupBy=${this._groupBy} .collapsed=${this._collapsed} .loading=${this._loading}
                               .sort=${this._sort} .hiddenColumns=${this._hidden}
                               @or-fleet-row-click=${(e: CustomEvent) =>
                                   router.navigate(getAssetsRoute(false, e.detail.assetId))}
@@ -268,8 +273,15 @@ export class PageFleet extends Page<AppStateKeyed> {
                                   this._writeSetting(HIDDEN_COLUMNS_KEY, this._hidden.join(","));
                                   this._pushUrl();
                               }}
+                              @or-fleet-collapse=${(e: CustomEvent) => {
+                                  // Collapsing changes which rows the pages hold: back to the first page.
+                                  this._collapsed = e.detail.collapsed;
+                                  this._offset = 0;
+                                  this._runQuery();
+                              }}
                               @or-fleet-group=${(e: CustomEvent) => {
                                   this._groupBy = e.detail.groupBy;
+                                  this._collapsed = [];
                                   this._offset = 0;
                                   this._pushUrl();
                                   this._runQuery();

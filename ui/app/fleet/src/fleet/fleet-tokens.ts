@@ -277,7 +277,7 @@ function rangeOk(token: Token): boolean {
 export function toFleetQuery(tokens: Token[], extras: Record<string, unknown>): FleetQuery {
     const query: FleetQuery = {};
     // Only contract fields are copied; anything else in extras (primaryRegister) stays client-side.
-    for (const key of ["groupBy", "sort", "columns", "offset", "limit"] as const) {
+    for (const key of ["groupBy", "collapsed", "sort", "columns", "offset", "limit"] as const) {
         if (extras[key] !== undefined) { (query as Record<string, unknown>)[key] = extras[key]; }
     }
     const text: string[] = [];

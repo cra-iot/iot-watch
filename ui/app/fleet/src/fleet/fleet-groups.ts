@@ -15,6 +15,8 @@ export interface RowGroup {
     rows: FleetRow[];
     /** True when earlier rows of this group are on a previous page. */
     continued: boolean;
+    /** A collapsed group: its rows left the paging (FleetQuery.collapsed), only its header shows. */
+    collapsed: boolean;
 }
 
 export function rowStatus(row: FleetRow, now: number): "alarm" | "silent" | "ok" {
@@ -57,15 +59,21 @@ function groupCounts(result: FleetQueryResult, groupBy: string): Map<string, num
     return counts;
 }
 
+/** Same order as the server's group sort (String.compareTo, UTF-16 code units). */
+const byKey = (a: RowGroup, b: RowGroup) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+
 /**
  * Splits the page into groups. The server sorts by group key first, so a group's rows are
  * contiguous. The first group is "continued" when its first row on this page is not its first
- * row overall, which is known from the facet counts of the groups sorting before it.
+ * row overall, which is known from the facet counts of the open groups sorting before it.
+ *
+ * Collapsed groups have no rows on any page, so each one that still matches gets its header on
+ * every page, in group order, where the user can open it again.
  */
-export function segmentGroups(result: FleetQueryResult, groupBy: string, now: number): RowGroup[] {
+export function segmentGroups(result: FleetQueryResult, groupBy: string, now: number, collapsed: string[] = []): RowGroup[] {
     const rows = result.rows ?? [];
     if (groupBy === "NONE" || !groupBy) {
-        return rows.length ? [{ key: "", rows, continued: false }] : [];
+        return rows.length ? [{ key: "", rows, continued: false, collapsed: false }] : [];
     }
     const groups: RowGroup[] = [];
     for (const row of rows) {
@@ -74,21 +82,30 @@ export function segmentGroups(result: FleetQueryResult, groupBy: string, now: nu
         if (last && last.key === key) {
             last.rows.push(row);
         } else {
-            groups.push({ key, rows: [row], continued: false });
+            groups.push({ key, rows: [row], continued: false, collapsed: false });
         }
     }
+    const counts = groupCounts(result, groupBy);
     const first = groups[0];
     const offset = result.offset ?? 0;
     if (first && offset > 0) {
-        const counts = groupCounts(result, groupBy);
         if (counts.has(first.key)) {
             let before = 0;
-            counts.forEach((count, key) => { if (key < first.key) { before += count; } });
+            counts.forEach((count, key) => { if (key < first.key && !collapsed.includes(key)) { before += count; } });
             first.continued = offset > before;
         } else {
             first.continued = true;
         }
     }
+    // The page keeps the server's order; each header goes before the first page group sorting after it.
+    collapsed
+        .filter((key) => counts.has(key) && !groups.some((group) => group.key === key))
+        .sort()
+        .forEach((key) => {
+            const header = { key, rows: [], continued: false, collapsed: true };
+            const index = groups.findIndex((group) => byKey(group, header) > 0);
+            groups.splice(index < 0 ? groups.length : index, 0, header);
+        });
     return groups;
 }
 

@@ -50,6 +50,11 @@ public class FleetQuery {
     public List<AttributeFilter> attributes;
     public SeenFilter seen;
     public GroupBy groupBy = GroupBy.NONE;
+    /**
+     * Group keys (of groupBy) the user collapsed. Their rows stay in total and facets but leave
+     * the paging, so the rows of the open groups fill the pages; ignored without grouping.
+     */
+    public List<String> collapsed;
     public Sort sort = new Sort();
 
     /**

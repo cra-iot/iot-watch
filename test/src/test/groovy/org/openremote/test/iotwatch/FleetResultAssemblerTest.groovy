@@ -240,6 +240,46 @@ class FleetResultAssemblerTest extends Specification {
         matched*.name == ["B", "D", "A", "C"]
     }
 
+    def "collapsed groups leave the paging but stay in total and facets"() {
+        given: "more electricity meters than a page, sorting before the gas meters"
+        def rows = (1..5).collect { row("e$it", "E$it", "ElectricMeterAsset", NOW) } +
+                (1..3).collect { row("g$it", "G$it", "GasMeterAsset", NOW) }
+        def query = new FleetQuery()
+        query.groupBy = FleetQuery.GroupBy.TYPE
+        query.limit = 2
+
+        when: "nothing is collapsed"
+        def open = FleetResultAssembler.assemble(rows, query, NOW)
+
+        then: "the first page holds only electricity meters"
+        open.rows*.type == ["ElectricMeterAsset", "ElectricMeterAsset"]
+        open.paged == 8
+
+        when: "the electricity meters are collapsed"
+        query.collapsed = ["ElectricMeterAsset"]
+        def collapsed = FleetResultAssembler.assemble(rows, query, NOW)
+
+        then: "the gas meters fill the pages, the counts still describe the whole match"
+        collapsed.rows*.name == ["G1", "G2"]
+        collapsed.paged == 3
+        collapsed.total == 8
+        collapsed.facets.types.find { it.key == "ElectricMeterAsset" }.count == 5
+    }
+
+    def "collapsed keys are ignored without grouping"() {
+        given:
+        def rows = [row("1", "A", "ElectricMeterAsset", NOW), row("2", "B", "GasMeterAsset", NOW)]
+        def query = new FleetQuery()
+        query.collapsed = ["ElectricMeterAsset"]
+
+        when:
+        def result = FleetResultAssembler.assemble(rows, query, NOW)
+
+        then:
+        result.rows*.name == ["A", "B"]
+        result.paged == 2
+    }
+
     def "an oversized limit is capped and a zero limit uses the default"() {
         given:
         def rows = (1..600).collect { row("id$it", "M$it", "GasMeterAsset", NOW) }
