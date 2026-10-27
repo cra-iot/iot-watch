@@ -153,8 +153,9 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
             .picker .reset { margin-top: 4px; width: 100%; }
             .body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
             /* Scrolls both ways inside the screen, so a long page never pushes the pager off it. The minimum
-               keeps a few rows on very short windows, where the page itself scrolls instead. */
-            .scroll { overflow: auto; min-height: 200px;
+               keeps a few rows on very short windows, where the page itself scrolls instead. Relative, so it
+               is the containing block of the absolute .sr-only texts and clips them instead of the page growing. */
+            .scroll { position: relative; overflow: auto; min-height: 200px;
                 border: 1px solid var(--or-app-color5, #ccc); border-radius: 4px; }
             table { width: 100%; border-collapse: separate; border-spacing: 0; }
             th, td { text-align: left; padding: 10px 16px; border-bottom: 1px solid var(--or-app-color2, #eee);
