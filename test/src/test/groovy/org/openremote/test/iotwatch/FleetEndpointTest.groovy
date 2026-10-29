@@ -12,6 +12,7 @@ import org.openremote.container.security.IdentityProvider
 import org.openremote.model.Constants
 import org.openremote.model.asset.UserAssetLink
 import org.openremote.model.asset.impl.ThingAsset
+import org.openremote.model.attribute.Attribute
 import org.openremote.model.gasmeter.GasMeterAsset
 import org.openremote.model.iotwatch.FleetQuery
 import org.openremote.model.iotwatch.FleetResource
@@ -43,6 +44,9 @@ class FleetEndpointTest extends Specification implements ManagerContainerTrait {
     static final String PASSWORD = "dummy-test-password-not-a-secret"
     /** Distinctive fixture payload text, so its absence from a response body is meaningful. */
     static final String RAW_PAYLOAD_MARKER = "fleet-fixture-raw-payload"
+    /** Values of attributes stored without ACCESS_RESTRICTED_READ, i.e. withheld from a restricted user. */
+    static final String HIDDEN_MARKER = "fleet-fixture-hidden-value"
+    static final String HIDDEN_EXTERNAL_ID = "TEST-HIDDEN-EXT-0001"
 
     @Shared FleetResource readerResource
     @Shared FleetResource restrictedResource
@@ -98,6 +102,10 @@ class FleetEndpointTest extends Specification implements ManagerContainerTrait {
         rawValue.put("cmd", RAW_PAYLOAD_MARKER)
         waterWithRaw.getAttributes().getOrCreate(WaterMeterAsset.RAW_VALUE_ATTRIBUTE_DESCRIPTOR)
             .setValue(rawValue, getClockTimeOf(container))
+        // No ACCESS_RESTRICTED_READ meta, as on an attribute added in the Manager or an asset older
+        // than the descriptor change: the restricted user must not be able to probe these values.
+        waterWithRaw.getAttributes().addOrReplace(new Attribute<>("chip_id", ValueType.TEXT, HIDDEN_MARKER))
+        waterWithRaw.getAttributes().addOrReplace(new Attribute<>("external_id", ValueType.TEXT, HIDDEN_EXTERNAL_ID))
         waterWithRaw = assetStorageService.merge(waterWithRaw)
         linkedAssetId = waterWithRaw.getId()
 
@@ -415,6 +423,43 @@ class FleetEndpointTest extends Specification implements ManagerContainerTrait {
 
         then:
         thrown(BadRequestException)
+    }
+
+    def "a restricted user cannot probe an attribute they cannot read through a filter"() {
+        given:
+        def filter = new FleetQuery.AttributeFilter()
+        filter.name = "chip_id"
+        filter.value = HIDDEN_MARKER
+        def query = new FleetQuery()
+        query.attributes = [filter]
+
+        expect: "the value really matches for a caller who may read it"
+        readerResource.query(query).rows*.id == [linkedAssetId]
+
+        and: "the restricted user learns nothing: their linked meter does not come back"
+        restrictedResource.query(query).total == 0
+    }
+
+    def "a restricted user's free text does not match an identifier they cannot read"() {
+        given:
+        def query = new FleetQuery(text: [HIDDEN_EXTERNAL_ID])
+
+        expect:
+        readerResource.query(query).rows*.id == [linkedAssetId]
+        restrictedResource.query(query).total == 0
+    }
+
+    def "an anonymous request is rejected"() {
+        when: "no bearer token: the JWT filter lets it through and @RolesAllowed refuses it"
+        def response = getClientApiTarget(serverUri(port), REALM)
+                .path("fleet").path("query")
+                .request(MediaType.APPLICATION_JSON)
+                .post(Entity.json("{}"))
+        def status = response.status
+        response.close()
+
+        then:
+        status in [401, 403]
     }
 
     def "a malformed seen duration is a 400, not a 500"() {

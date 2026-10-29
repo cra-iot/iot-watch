@@ -1,9 +1,12 @@
 package org.openremote.manager.iotwatch;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -69,6 +72,9 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
         }
         // Repeated filters on one attribute are ORed here, over the authorized result only.
         assets = FleetQueryTranslator.filterByAnyOf(assets, fleetQuery);
+        if (isRestrictedUser()) {
+            assets = dropHiddenMatches(realm, assets, fleetQuery);
+        }
 
         Set<String> resultTypes = new LinkedHashSet<>();
         assets.forEach(asset -> resultTypes.add(asset.getType()));
@@ -182,6 +188,75 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
                         && FleetColumns.RAW_VALUE.equalsIgnoreCase(filter.name.trim()))) {
             throw new BadRequestException("Filtering on " + FleetColumns.RAW_VALUE + " is not supported");
         }
+    }
+
+    /**
+     * Restricted callers only: drops the assets that matched on a value the caller cannot read.
+     * Core limits the select of a restricted AssetQuery to ACCESS_RESTRICTED_READ attributes, but
+     * not its WHERE clause, so an attribute filter or an identifier match would otherwise answer
+     * "does this hidden value match" for the caller's own assets. Checked against the stored
+     * assets through the caller's authorization, not against descriptors: the meta is per
+     * attribute instance, and an older asset or one edited in the Manager may lack it.
+     */
+    protected List<Asset<?>> dropHiddenMatches(String realm, List<Asset<?>> assets, FleetQuery fleetQuery) {
+        Set<String> filtered = filteredAttributeNames(fleetQuery);
+        List<String> texts = FleetQueryTranslator.texts(fleetQuery);
+        if (assets.isEmpty() || (filtered.isEmpty() && texts.isEmpty())) {
+            return assets;
+        }
+        Set<String> select = new LinkedHashSet<>(filtered);
+        if (!texts.isEmpty()) {
+            select.addAll(Arrays.asList(FleetQueryTranslator.IDENTIFIER_ATTRIBUTES));
+        }
+        AssetQuery visibleQuery = new AssetQuery()
+                .realm(new RealmPredicate(realm))
+                .ids(assets.stream().map(Asset::getId).distinct().toArray(String[]::new))
+                .select(new AssetQuery.Select().attributes(select.toArray(new String[0])));
+        Map<String, Asset<?>> visible = new HashMap<>();
+        authorizedFindAll(visibleQuery, realm).forEach(asset -> visible.put(asset.getId(), asset));
+        return assets.stream()
+                .filter(asset -> matchesVisibly(visible.get(asset.getId()), filtered, texts))
+                .toList();
+    }
+
+    /** The attribute filters' names as sent, trimmed; validateFilters has rejected null ones. */
+    public static Set<String> filteredAttributeNames(FleetQuery fleetQuery) {
+        Set<String> names = new LinkedHashSet<>();
+        if (fleetQuery.attributes != null) {
+            fleetQuery.attributes.forEach(filter -> names.add(filter.name.trim()));
+        }
+        return names;
+    }
+
+    /**
+     * True when {@code visible}, the asset as the caller may read it, still explains the match:
+     * every filtered attribute is readable, and free text is found in the name or in a readable
+     * identifier. Names compare ignoring case like the SQL filter does, while the select loads
+     * exact names only, so a differently cased filter fails closed.
+     */
+    public static boolean matchesVisibly(Asset<?> visible, Set<String> filtered, List<String> texts) {
+        if (visible == null) {
+            return false;
+        }
+        Set<String> readable = new HashSet<>();
+        visible.getAttributes().values().forEach(attribute -> readable.add(attribute.getName().toLowerCase(Locale.ROOT)));
+        if (!filtered.stream().allMatch(name -> readable.contains(name.toLowerCase(Locale.ROOT)))) {
+            return false;
+        }
+        if (texts.isEmpty()) {
+            return true;
+        }
+        List<String> haystack = new ArrayList<>();
+        if (visible.getName() != null) {
+            haystack.add(visible.getName());
+        }
+        for (String name : FleetQueryTranslator.IDENTIFIER_ATTRIBUTES) {
+            visible.getAttributes().get(name)
+                    .flatMap(Attribute::getValue)
+                    .ifPresent(value -> haystack.add(value.toString()));
+        }
+        return haystack.stream().map(value -> value.toUpperCase(Locale.ROOT)).anyMatch(value ->
+                texts.stream().anyMatch(text -> value.contains(text.toUpperCase(Locale.ROOT))));
     }
 
     /**
