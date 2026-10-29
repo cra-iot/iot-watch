@@ -67,6 +67,7 @@
     },
     "token": {
       "type": "Typ",
+      "status": "Stav",
       "alarm": "Alarm",
       "seen": "Naposledy viděno",
       "delivery": "Odběrné místo",
@@ -91,6 +92,7 @@
       "list": "{{first}} +{{count}} další",
       "hint": {
         "type": "Typ měřidla, výběr ze seznamu",
+        "status": "Alarm, bez dat nebo OK, výběr ze seznamu",
         "alarm": "Aktivní alarm, výběr ze seznamu",
         "seen": "Poslední data starší nebo novější než, např. >24h nebo <7d",
         "delivery": "Číslo odběrného místa nebo jeho část",
@@ -130,7 +132,8 @@
     "statusHint": {
       "alarm": "Aktivní alarm",
       "silent": "Žádná data déle než 24 hodin",
-      "never": "Zatím nepřišla žádná data"
+      "never": "Zatím nepřišla žádná data",
+      "ok": "Data přijata během posledních 24 hodin"
     },
     "pager": {
       "range": "{{from}}–{{to}} z {{total}}",
@@ -140,12 +143,24 @@
       "pages": "Stránky",
       "page": "Stránka {{page}}"
     },
-    "empty": "Nebyla nalezena žádná zařízení",
     "reading": {
-      "needsOneType": "Filtr stavu měřidla vyžaduje právě jeden typ assetu. Přidejte filtr type:."
+      "needsOneType": "Filtr stavu měřidla vyžaduje právě jeden typ assetu. Přidejte filtr type:.",
+      "perType": "Stav měřidla podle typu:"
     },
     "search": {
       "notFound": "Nenalezeno {{missing}} z {{count}} hodnot: {{values}}"
+    },
+    "emptyState": {
+      "filtered": "Hledání neodpovídá žádné měřidlo",
+      "realm": "V tomto realmu zatím nejsou žádná měřidla",
+      "hint": "Odeberte filtr nebo vymažte hledání.",
+      "clear": "Vymazat hledání"
+    },
+    "loading": "Načítání měřidel…",
+    "updated": {
+      "justNow": "Aktualizováno právě teď",
+      "ago": "Aktualizováno {{age}}",
+      "refresh": "Obnovit"
     }
   }
 }

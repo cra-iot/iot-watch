@@ -36,11 +36,18 @@ export class PageFleet extends Page<AppStateKeyed> {
     static get styles() {
         // language=CSS
         return css`
-            /* Centred with a cap, so wide screens get margins instead of a stretched table. */
-            :host { display: flex; flex-direction: column; width: 100%; max-width: 1680px; margin: 0 auto;
-                min-height: 0; padding: 12px 24px; box-sizing: border-box; }
+            /* A panel as on the stock manager pages (page-users), with a wider cap and slimmer padding for
+               the table. No page title: the header's active tab names the page. */
+            :host { display: flex; flex-direction: column; width: 100%; min-height: 0; padding: 8px 12px; box-sizing: border-box; }
+            .panel { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; max-width: 1680px;
+                margin: 0 auto; padding: 8px 12px; box-sizing: border-box;
+                background-color: var(--or-app-color1, #fff); border: 1px solid #e5e5e5; border-radius: 5px; }
             .error { color: var(--or-app-color4, #e3000a); padding: 8px 0; }
             .note { color: var(--or-app-color3, #4c4c4c); padding: 8px 0; }
+            @media screen and (max-width: 768px) {
+                :host { padding: 0 0 12px; }
+                .panel { border-radius: 0; border-left: 0; border-right: 0; padding: 8px 16px; }
+            }
         `;
     }
 
@@ -60,6 +67,13 @@ export class PageFleet extends Page<AppStateKeyed> {
     @state() protected _readingNote = false;
     /** Locations seen in results so far, for the site: token; keeps a chosen site's name after narrowing. */
     @state() protected _sites: SiteOption[] = [];
+    /** When the shown result arrived. */
+    @state() protected _updatedAt?: number;
+    /** The shown result reloaded the one before it (refresh); a superseded refresh never sets it. */
+    @state() protected _refreshed = false;
+
+    /** The status: token values, kept per tokens array so the results table gets a stable array. */
+    protected _statusCache?: { tokens: Token[]; status: string[] };
 
     /** Drops answers of superseded queries, so a slow earlier response cannot overwrite a newer one. */
     protected _requestId = 0;
@@ -174,7 +188,7 @@ export class PageFleet extends Page<AppStateKeyed> {
     }
 
     /** False when this query failed; a query overtaken by a newer one counts as done. */
-    protected async _runQuery(): Promise<boolean> {
+    protected async _runQuery(refresh = false): Promise<boolean> {
         const requestId = ++this._requestId;
         this._loading = true;
         this._error = undefined;
@@ -194,6 +208,8 @@ export class PageFleet extends Page<AppStateKeyed> {
             }
             this._readingNote = followUp.action !== "none";
             this._result = result;
+            this._refreshed = refresh;
+            this._updatedAt = Date.now();
             this._rememberSites(result);
             return true;
         } catch (e) {
@@ -222,70 +238,102 @@ export class PageFleet extends Page<AppStateKeyed> {
             .options=${{ missing: missing.length, count, values: missing.join(", ") }}></or-translate></div>`;
     }
 
+    protected _status(): string[] {
+        if (this._statusCache?.tokens !== this._tokens) {
+            const status = this._tokens.filter((token) => token.kind === "status").map((token) => token.value);
+            this._statusCache = { tokens: this._tokens, status };
+        }
+        return this._statusCache.status;
+    }
+
+    /** Replaces the status: tokens, keeping every other filter. */
+    protected _setStatus(status: string[]): void {
+        this._tokens = [
+            ...this._tokens.filter((token) => token.kind !== "status"),
+            ...status.map((value): Token => ({ kind: "status", value })),
+        ];
+        this._offset = 0;
+        this._pushUrl();
+        this._runQuery();
+    }
+
     protected render(): TemplateResult {
         return html`
-            <or-fleet-search .tokens=${this._tokens} .sites=${this._sites}
-                             @or-fleet-search-change=${(e: CustomEvent) => {
-                                 this._tokens = e.detail.tokens;
-                                 this._offset = 0;
-                                 this._pushUrl();
-                                 this._runQuery();
-                             }}></or-fleet-search>
-            ${this._error ? html`<div class="error"><or-translate value=${this._error}></or-translate></div>` : nothing}
-            ${this._renderNotFound()}
-            ${this._readingNote ? html`<div class="note" role="status"><or-translate value="app:fleet.reading.needsOneType"></or-translate></div>` : nothing}
-            <or-fleet-results .result=${this._result} .groupBy=${this._groupBy} .collapsed=${this._collapsed} .loading=${this._loading}
-                              .sort=${this._sort} .hiddenColumns=${this._hidden}
-                              @or-fleet-row-click=${(e: CustomEvent) =>
-                                  router.navigate(getAssetsRoute(false, e.detail.assetId))}
-                              @or-fleet-page=${(e: CustomEvent) => {
-                                  this._offset = e.detail.offset;
-                                  this._runQuery();
-                              }}
-                              @or-fleet-page-size=${async (e: CustomEvent) => {
-                                  // The pager pages by the size of the shown result, so a size that
-                                  // failed to load is dropped and the shown page stays as it was.
-                                  const previous = { pageSize: this._pageSize, offset: this._offset };
-                                  this._pageSize = e.detail.limit;
-                                  this._offset = 0;
-                                  if (await this._runQuery()) {
-                                      this._writeSetting(PAGE_SIZE_KEY, String(this._pageSize));
+            <div class="panel">
+                <or-fleet-search .tokens=${this._tokens} .sites=${this._sites}
+                                 @or-fleet-search-change=${(e: CustomEvent) => {
+                                     this._tokens = e.detail.tokens;
+                                     this._offset = 0;
+                                     this._pushUrl();
+                                     this._runQuery();
+                                 }}></or-fleet-search>
+                ${this._error ? html`<div class="error"><or-translate value=${this._error}></or-translate></div>` : nothing}
+                ${this._renderNotFound()}
+                ${this._readingNote ? html`<div class="note" role="status"><or-translate value="app:fleet.reading.needsOneType"></or-translate></div>` : nothing}
+                <or-fleet-results .result=${this._result} .groupBy=${this._groupBy} .collapsed=${this._collapsed} .loading=${this._loading}
+                                  .sort=${this._sort} .hiddenColumns=${this._hidden} .updatedAt=${this._updatedAt} .refreshed=${this._refreshed}
+                                  .status=${this._status()}
+                                  .filtered=${this._tokens.length > 0}
+                                  @or-fleet-status=${(e: CustomEvent) => this._setStatus(e.detail.status)}
+                                  @or-fleet-refresh=${() => this._runQuery(true)}
+                                  @or-fleet-clear=${() => {
+                                      this._tokens = [];
+                                      this._offset = 0;
+                                      this._readingNote = false;
                                       this._pushUrl();
-                                  } else {
-                                      this._pageSize = previous.pageSize;
-                                      this._offset = previous.offset;
-                                  }
-                              }}
-                              @or-fleet-columns=${(e: CustomEvent) => {
-                                  this._columns = e.detail.columns;
-                                  this._pushUrl();
-                                  this._runQuery();
-                              }}
-                              @or-fleet-sort=${(e: CustomEvent) => {
-                                  this._sort = e.detail.sort;
-                                  this._offset = 0;
-                                  this._pushUrl();
-                                  this._runQuery();
-                              }}
-                              @or-fleet-hidden=${(e: CustomEvent) => {
-                                  // Display only: no query, the result already holds every column.
-                                  this._hidden = e.detail.hidden;
-                                  this._writeSetting(HIDDEN_COLUMNS_KEY, this._hidden.join(","));
-                                  this._pushUrl();
-                              }}
-                              @or-fleet-collapse=${(e: CustomEvent) => {
-                                  // Collapsing changes which rows the pages hold: back to the first page.
-                                  this._collapsed = e.detail.collapsed;
-                                  this._offset = 0;
-                                  this._runQuery();
-                              }}
-                              @or-fleet-group=${(e: CustomEvent) => {
-                                  this._groupBy = e.detail.groupBy;
-                                  this._collapsed = [];
-                                  this._offset = 0;
-                                  this._pushUrl();
-                                  this._runQuery();
-                              }}></or-fleet-results>
+                                      this._runQuery();
+                                  }}
+                                  @or-fleet-row-click=${(e: CustomEvent) =>
+                                      router.navigate(getAssetsRoute(false, e.detail.assetId))}
+                                  @or-fleet-page=${(e: CustomEvent) => {
+                                      this._offset = e.detail.offset;
+                                      this._runQuery();
+                                  }}
+                                  @or-fleet-page-size=${async (e: CustomEvent) => {
+                                      // The pager pages by the size of the shown result, so a size that
+                                      // failed to load is dropped and the shown page stays as it was.
+                                      const previous = { pageSize: this._pageSize, offset: this._offset };
+                                      this._pageSize = e.detail.limit;
+                                      this._offset = 0;
+                                      if (await this._runQuery()) {
+                                          this._writeSetting(PAGE_SIZE_KEY, String(this._pageSize));
+                                          this._pushUrl();
+                                      } else {
+                                          this._pageSize = previous.pageSize;
+                                          this._offset = previous.offset;
+                                      }
+                                  }}
+                                  @or-fleet-columns=${(e: CustomEvent) => {
+                                      this._columns = e.detail.columns;
+                                      this._pushUrl();
+                                      this._runQuery();
+                                  }}
+                                  @or-fleet-sort=${(e: CustomEvent) => {
+                                      this._sort = e.detail.sort;
+                                      this._offset = 0;
+                                      this._pushUrl();
+                                      this._runQuery();
+                                  }}
+                                  @or-fleet-hidden=${(e: CustomEvent) => {
+                                      // Display only: no query, the result already holds every column.
+                                      this._hidden = e.detail.hidden;
+                                      this._writeSetting(HIDDEN_COLUMNS_KEY, this._hidden.join(","));
+                                      this._pushUrl();
+                                  }}
+                                  @or-fleet-collapse=${(e: CustomEvent) => {
+                                      // Collapsing changes which rows the pages hold: back to the first page.
+                                      this._collapsed = e.detail.collapsed;
+                                      this._offset = 0;
+                                      this._runQuery();
+                                  }}
+                                  @or-fleet-group=${(e: CustomEvent) => {
+                                      this._groupBy = e.detail.groupBy;
+                                      this._collapsed = [];
+                                      this._offset = 0;
+                                      this._pushUrl();
+                                      this._runQuery();
+                                  }}></or-fleet-results>
+            </div>
         `;
     }
 }

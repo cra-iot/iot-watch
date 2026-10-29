@@ -57,6 +57,21 @@ describe("toFleetQuery", () => {
         ]);
     });
 
+    it("ORs status: tokens into the status list", () => {
+        const query = toFleetQuery(parseSearch("status:alarm status:silent"), {});
+        expect(query.status).toEqual(["alarm", "silent"]);
+        expect(toFleetQuery(parseSearch("kotelna"), {}).status).toBeUndefined();
+    });
+
+    it("offers the three statuses as status: values and rejects any other", () => {
+        const defs = tokenDefinitions([], (name) => name, undefined, (key) => `S:${key}`);
+        expect(defs.find((d) => d.kind === "status")!.values).toEqual([
+            { value: "alarm", label: "S:alarm" }, { value: "silent", label: "S:silent" }, { value: "ok", label: "S:ok" },
+        ]);
+        expect(validateToken({ kind: "status", value: "ok" }, defs, [])).toEqual({ ok: true });
+        expect(validateToken({ kind: "status", value: "broken" }, defs, []).ok).toBe(false);
+    });
+
     it("turns seen:>24h into an ISO-8601 olderThan duration", () => {
         expect(toFleetQuery(parseSearch("seen:>24h"), {}).seen).toEqual({ olderThan: "PT24H" });
     });

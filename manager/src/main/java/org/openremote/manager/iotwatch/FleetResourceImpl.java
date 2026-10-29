@@ -109,9 +109,17 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
 
     /**
      * Malformed attribute filters are the caller's error: a null element or a filter without a
-     * name would otherwise surface as a NullPointerException, i.e. a 500.
+     * name would otherwise surface as a NullPointerException, i.e. a 500. An unknown status
+     * would silently match nothing.
      */
     public static void validateFilters(FleetQuery fleetQuery) {
+        if (fleetQuery.status != null) {
+            for (String status : fleetQuery.status) {
+                if (status == null || !FleetResultAssembler.STATUSES.contains(status)) {
+                    throw new BadRequestException("Unknown status: " + status);
+                }
+            }
+        }
         if (fleetQuery.attributes == null) {
             return;
         }

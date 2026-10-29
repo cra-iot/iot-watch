@@ -51,6 +51,33 @@ class FleetHiddenFilterTest extends Specification {
         filter << [null, new FleetQuery.AttributeFilter(), queryOn("  ").attributes[0]]
     }
 
+    def "an unknown or null status is a 400, not a 500"() {
+        given:
+        def query = new FleetQuery()
+        query.status = status
+
+        when:
+        FleetResourceImpl.validateFilters(query)
+
+        then:
+        thrown(BadRequestException)
+
+        where:
+        status << [["Alarm"], ["silent "], ["ok", "broken"], [null]]
+    }
+
+    def "the known statuses pass validation"() {
+        given:
+        def query = new FleetQuery()
+        query.status = ["alarm", "silent", "ok"]
+
+        when:
+        FleetResourceImpl.validateFilters(query)
+
+        then:
+        noExceptionThrown()
+    }
+
     def "well-formed filters, a null operator and no filters pass validation"() {
         given:
         def withNullOperator = queryOn("battery_level")

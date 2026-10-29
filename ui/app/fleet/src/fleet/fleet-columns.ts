@@ -23,6 +23,8 @@ export interface FleetColumn {
     attribute?: boolean;
     /** The key the Columns menu and the hide= parameter use for it; absent for always-shown columns. */
     hideKey?: HideKey;
+    /** Reading only: the one register every row shows, when the result has a single primary register. */
+    register?: string;
 }
 
 /**
@@ -90,7 +92,8 @@ function toColumn(descriptor: Descriptor,
         label: descriptor.label ?? descriptor.name!,
         units: descriptor.units?.length ? formatUnits(descriptor.units) : undefined,
         numeric: descriptor.numeric,
-        sortable: true,
+        // The server sorts register columns numerically, so a text register would not reorder.
+        sortable: !!descriptor.numeric,
         attribute: true,
     };
 }
@@ -115,10 +118,40 @@ function extraRegisters(result: FleetQueryResult): Descriptor[] {
     return uniqueByName((result.columns ?? []).filter((descriptor) => descriptor.selected && !descriptor.primary));
 }
 
+/**
+ * Each type's primary register, one per type; what the mixed Reading column's rows show. The
+ * columns cover the types before the last-seen and status filters, so the type facet narrows
+ * them to the types of the match when it is there.
+ */
+export function primaryRegisters(result: FleetQueryResult): Descriptor[] {
+    const types = result.facets?.types?.map((facet) => facet.key);
+    return (result.columns ?? []).filter((descriptor) => descriptor.primary && descriptor.name
+        && (!types || types.includes(descriptor.assetType)));
+}
+
+/**
+ * Reading as one register when the result has a single primary register (fleet-tokens'
+ * singlePrimaryRegister rule): its label and units go to the header instead of every row.
+ */
+function readingColumn(result: FleetQueryResult, formatUnits: UnitFormatter): FleetColumn {
+    const primaries = primaryRegisters(result);
+    if (primaries.length !== 1) {
+        return READING;
+    }
+    const [descriptor] = primaries;
+    return {
+        ...READING,
+        label: descriptor.label ?? descriptor.name!,
+        labelKey: undefined,
+        units: descriptor.units?.length ? formatUnits(descriptor.units) : undefined,
+        register: descriptor.name,
+    };
+}
+
 /** Every column the result has, hidden or not: the meter, details, Reading, extra registers, details. */
 export function allColumns(result: FleetQueryResult, formatUnits: UnitFormatter): FleetColumn[] {
     const registers = extraRegisters(result).map((descriptor) => toColumn(descriptor, formatUnits));
-    return [METER, ...LEADING, READING, ...registers, ...TRAILING];
+    return [METER, ...LEADING, readingColumn(result, formatUnits), ...registers, ...TRAILING];
 }
 
 /** The columns to render: everything not hidden. "identity" hides no column, only the meter's second line. */
@@ -147,10 +180,19 @@ export function readingValue(row: FleetRow, result: FleetQueryResult, formatUnit
     if (!name || !row.values || !(name in row.values)) {
         return EM_DASH;
     }
-    const named = (result.columns ?? []).filter((descriptor) => descriptor.name === name);
-    const descriptor = named.find((d) => d.assetType === row.type) ?? named[0];
+    const descriptor = readingDescriptor(row, result);
     const units = descriptor?.units?.length ? formatUnits(descriptor.units) : undefined;
     return formatValue(row.values[name], units);
+}
+
+function readingDescriptor(row: FleetRow, result: FleetQueryResult): Descriptor | undefined {
+    const named = (result.columns ?? []).filter((descriptor) => descriptor.name === row.primaryName);
+    return named.find((d) => d.assetType === row.type) ?? named[0];
+}
+
+/** What the Reading cell of a row holds: its primary register's label, else its name. */
+export function readingLabel(row: FleetRow, result: FleetQueryResult): string | undefined {
+    return row.primaryName ? readingDescriptor(row, result)?.label ?? row.primaryName : undefined;
 }
 
 /** The muted second line under the meter name: serial and devEUI, whichever exist. */

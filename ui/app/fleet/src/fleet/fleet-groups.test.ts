@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GROUP_OPTIONS, groupInfo, relativeAge, rowStatus, segmentGroups } from "./fleet-groups";
+import { GROUP_OPTIONS, groupInfo, isStale, relativeAge, rowStatus, segmentGroups } from "./fleet-groups";
 
 const NOW = 1_000_000_000_000;
 const row = (id: string, over: Record<string, unknown> = {}) =>
@@ -13,6 +13,14 @@ describe("rowStatus", () => {
         expect(rowStatus(row("a", { lastSeen: undefined }) as never, NOW)).toBe("silent");
         expect(rowStatus(row("a", { lastSeen: NOW - 25 * 3600_000 }) as never, NOW)).toBe("silent");
         expect(rowStatus(row("a") as never, NOW)).toBe("ok");
+    });
+});
+
+describe("isStale", () => {
+    it("is true for an old or missing last seen, also on an alarm row", () => {
+        expect(isStale(row("a", { alarms: ["x"], lastSeen: NOW - 25 * 3600_000 }) as never, NOW)).toBe(true);
+        expect(isStale(row("a", { lastSeen: undefined }) as never, NOW)).toBe(true);
+        expect(isStale(row("a") as never, NOW)).toBe(false);
     });
 });
 

@@ -68,6 +68,11 @@ public class FleetQueryResult {
     public List<FleetRow> rows = new ArrayList<>();
     public Facets facets = new Facets();
     /**
+     * Status counts of the match without FleetQuery.status applied, so the UI's status filter can
+     * show what the other statuses hold; facets.status counts the filtered match like every facet.
+     */
+    public List<Facet> statusCounts = new ArrayList<>();
+    /**
      * The free-text values (FleetQuery.text) that match no row of the whole match, in query
      * order; empty when every value matched. Lets the UI name the pasted identifiers it did not find.
      */

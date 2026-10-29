@@ -19,11 +19,19 @@ export interface RowGroup {
     collapsed: boolean;
 }
 
+/** Row status keys in the order the UI lists them; the server's FleetResultAssembler.status values. */
+export const STATUS_KEYS = ["alarm", "silent", "ok"] as const;
+
+/** Nothing heard for SILENT_AFTER_MS, or never; true for an alarm row too, unlike rowStatus. */
+export function isStale(row: FleetRow, now: number): boolean {
+    return row.lastSeen == null || row.lastSeen <= now - SILENT_AFTER_MS;
+}
+
 export function rowStatus(row: FleetRow, now: number): "alarm" | "silent" | "ok" {
     if ((row.alarms ?? []).length) {
         return "alarm";
     }
-    return row.lastSeen == null || row.lastSeen <= now - SILENT_AFTER_MS ? "silent" : "ok";
+    return isStale(row, now) ? "silent" : "ok";
 }
 
 /** Same key the server groups and sorts by (FleetResultAssembler.groupKey). */

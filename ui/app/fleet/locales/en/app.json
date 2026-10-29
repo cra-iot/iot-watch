@@ -67,6 +67,7 @@
     },
     "token": {
       "type": "Type",
+      "status": "Status",
       "alarm": "Alarm",
       "seen": "Last seen",
       "delivery": "Delivery point",
@@ -91,6 +92,7 @@
       "list": "{{first}} +{{count}} more",
       "hint": {
         "type": "Meter type, picked from a list",
+        "status": "Alarm, silent or OK, picked from a list",
         "alarm": "Active alarm, picked from a list",
         "seen": "Last data older or newer than, e.g. >24h or <7d",
         "delivery": "Delivery point ID or a part of it",
@@ -126,7 +128,8 @@
     "statusHint": {
       "alarm": "Active alarm",
       "silent": "No data for more than 24 hours",
-      "never": "No data received yet"
+      "never": "No data received yet",
+      "ok": "Data received in the last 24 hours"
     },
     "pager": {
       "range": "{{from}}-{{to}} of {{total}}",
@@ -136,12 +139,24 @@
       "pages": "Pages",
       "page": "Page {{page}}"
     },
-    "empty": "No devices found",
     "reading": {
-      "needsOneType": "The reading filter needs exactly one asset type. Add a type: filter."
+      "needsOneType": "The reading filter needs exactly one asset type. Add a type: filter.",
+      "perType": "Reading per meter type:"
     },
     "search": {
       "notFound": "{{missing}} of {{count}} values not found: {{values}}"
+    },
+    "emptyState": {
+      "filtered": "No meters match this search",
+      "realm": "No meters in this realm yet",
+      "hint": "Remove a filter or clear the search.",
+      "clear": "Clear search"
+    },
+    "loading": "Loading meters…",
+    "updated": {
+      "justNow": "Updated just now",
+      "ago": "Updated {{age}}",
+      "refresh": "Refresh"
     }
   }
 }

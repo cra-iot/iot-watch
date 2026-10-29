@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-    allColumns, cellValue, DEFAULT_HIDDEN, EM_DASH, formatValue, identityLine, offeredColumns, parseHidden, readingValue,
+    allColumns, cellValue, DEFAULT_HIDDEN, primaryRegisters, readingLabel, EM_DASH, formatValue, identityLine, offeredColumns, parseHidden, readingValue,
     resolveHidden, selectedRegisters, serializeHidden, visibleColumns,
 } from "./fleet-columns";
 
@@ -81,6 +81,45 @@ describe("allColumns", () => {
         const reading = allColumns(result([]), units).find((c) => c.key === "reading");
         expect(reading?.sortable).toBe(true);
         expect(reading?.numeric).toBe(true);
+    });
+
+    it("makes only numeric register columns sortable, as the server sorts them numerically", () => {
+        const columns = allColumns(result([column("gas_temperature"), column("valve_state", { numeric: false })]), units);
+        expect(columns.find((c) => c.key === "gas_temperature")?.sortable).toBe(true);
+        expect(columns.find((c) => c.key === "valve_state")?.sortable).toBe(false);
+    });
+});
+
+describe("readingColumn", () => {
+    const reading = (columns: unknown[]) => allColumns(result(columns), units).find((c) => c.key === "reading")!;
+
+    it("names the one primary register, with its units, in the header", () => {
+        const header = reading([column("volume", { primary: true, label: "Volume", units: ["metre", "cubed"] })]);
+        expect(header).toMatchObject({ label: "Volume", labelKey: undefined, units: "m³", register: "volume", sortable: true });
+    });
+
+    it("stays the generic Reading with several primary registers", () => {
+        const header = reading([column("volume", { primary: true }), column("energy", { primary: true, assetType: "HeatMeterAsset" })]);
+        expect(header.labelKey).toBe("fleet.column.reading");
+        expect(header.register).toBeUndefined();
+    });
+});
+
+describe("primaryRegisters", () => {
+    it("keeps the types the match still has, by the type facet", () => {
+        const columns = [column("volume", { primary: true }), column("energy", { primary: true, assetType: "ElectricMeterAsset" })];
+        const narrowed = { ...(result(columns) as object), facets: { types: [{ key: "GasMeterAsset", count: 2 }] } } as never;
+        expect(primaryRegisters(narrowed).map((d) => d.name)).toEqual(["volume"]);
+        expect(primaryRegisters(result(columns))).toHaveLength(2);
+    });
+});
+
+describe("readingLabel", () => {
+    it("is the label of the row type's primary register, else its name", () => {
+        const columns = [column("energy", { primary: true, label: "Energy import", assetType: "ElectricMeterAsset" })];
+        expect(readingLabel({ type: "ElectricMeterAsset", primaryName: "energy" } as never, result(columns))).toBe("Energy import");
+        expect(readingLabel({ type: "X", primaryName: "flow" } as never, result(columns))).toBe("flow");
+        expect(readingLabel({ type: "X" } as never, result(columns))).toBeUndefined();
     });
 });
 

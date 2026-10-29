@@ -49,6 +49,8 @@ public class FleetQuery {
     public boolean recursive;
     public List<AttributeFilter> attributes;
     public SeenFilter seen;
+    /** Row status keys ("alarm", "silent", "ok"), ORed; null or empty means every status. */
+    public List<String> status;
     public GroupBy groupBy = GroupBy.NONE;
     /**
      * Group keys (of groupBy) the user collapsed. Their rows stay in total and facets but leave

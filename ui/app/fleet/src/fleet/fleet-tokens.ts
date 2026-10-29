@@ -3,11 +3,11 @@
 import { AssetModelUtil, type AttributeDescriptor } from "@openremote/model";
 import type { FleetQuery, FleetQueryAttributeFilter, FleetQueryOperator } from "model";
 import { parseHidden, serializeHidden } from "./fleet-columns";
-import { GROUP_OPTIONS } from "./fleet-groups";
+import { GROUP_OPTIONS, STATUS_KEYS } from "./fleet-groups";
 import { DEFAULT_PAGE_SIZE, parsePageSize } from "./fleet-pager";
 
 export type TokenKind =
-    | "text" | "type" | "alarm" | "seen" | "delivery" | "serial"
+    | "text" | "type" | "status" | "alarm" | "seen" | "delivery" | "serial"
     | "deveui" | "battery" | "reading" | "site" | "attr";
 
 export type TokenOperator =
@@ -88,6 +88,7 @@ function descriptorLabel(attribute: AttributeDescriptor): string {
 export function tokenDefinitions(
     sites: SiteOption[] = [], typeLabel: (name: string) => string = (name) => name,
     alarmLabel: (attribute: AttributeDescriptor) => string = descriptorLabel,
+    statusLabel: (key: string) => string = (key) => key,
 ): TokenDefinition[] {
     const alarms = new Map<string, string>();
     const types: { value: string; label: string }[] = [];
@@ -109,6 +110,7 @@ export function tokenDefinitions(
 
     return [
         { kind: "type", labelKey: "fleet.token.type", values: types },
+        { kind: "status", labelKey: "fleet.token.status", values: STATUS_KEYS.map((key) => ({ value: key, label: statusLabel(key) })) },
         {
             kind: "alarm", labelKey: "fleet.token.alarm",
             values: [...alarms].map(([value, label]) => ({ value, label })),
@@ -127,7 +129,7 @@ export function tokenDefinitions(
 const KINDS = new Set<string>(tokenDefinitionKinds());
 
 function tokenDefinitionKinds(): TokenKind[] {
-    return ["type", "alarm", "seen", "delivery", "serial", "deveui", "battery", "reading", "site", "attr"];
+    return ["type", "status", "alarm", "seen", "delivery", "serial", "deveui", "battery", "reading", "site", "attr"];
 }
 
 /** Splits on whitespace but keeps double-quoted runs together; an unterminated quote runs to the end. */
@@ -262,7 +264,7 @@ function isNumeric(value: string | undefined): boolean {
  * has no meaning, and the server rejects one with a 400 (FleetResourceImpl.validateOperators).
  * attr: belongs here because its value is always sent as a string.
  */
-const TEXT_KINDS = new Set<TokenKind>(["delivery", "serial", "deveui", "site", "type", "alarm", "attr"]);
+const TEXT_KINDS = new Set<TokenKind>(["delivery", "serial", "deveui", "site", "type", "status", "alarm", "attr"]);
 
 /** True for `>`, `>=`, `<`, `<=` or a `..` range on a text kind; `=` and no operator are fine. */
 function comparisonOnText(token: Token): boolean {
@@ -282,6 +284,7 @@ export function toFleetQuery(tokens: Token[], extras: Record<string, unknown>): 
     }
     const text: string[] = [];
     const types: string[] = [];
+    const status: string[] = [];
     const parentIds: string[] = [];
     const attributes: FleetQueryAttributeFilter[] = [];
 
@@ -289,6 +292,7 @@ export function toFleetQuery(tokens: Token[], extras: Record<string, unknown>): 
         switch (token.kind) {
             case "text": text.push(...(token.values ?? [token.value])); break;
             case "type": types.push(token.value); break;
+            case "status": status.push(token.value); break;
             case "site": parentIds.push(token.value); break;
             case "alarm":
                 attributes.push({ name: token.value, operator: "EQUALS" as FleetQueryOperator, value: true });
@@ -343,6 +347,7 @@ export function toFleetQuery(tokens: Token[], extras: Record<string, unknown>): 
     // Each value is matched on its own and the matches are ORed.
     if (text.length) { query.text = text; }
     if (types.length) { query.types = types; }
+    if (status.length) { query.status = status; }
     if (parentIds.length) { query.parentIds = parentIds; query.recursive = true; }
     if (attributes.length) { query.attributes = attributes; }
     return query;

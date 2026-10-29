@@ -36,6 +36,7 @@
     "@rspack/core": "^1.7.10",
     "cross-env": "*",
     "css-loader": "*",
+    "jsdom": "^25",
     "shx": "*",
     "ts-loader": "*",
     "typescript": "^5.9.3",

@@ -179,6 +179,28 @@ class FleetResultAssemblerTest extends Specification {
         status["ok"] == 1
     }
 
+    def "a status filter keeps the rows of the given statuses, ORed, and status counts ignore it"() {
+        given:
+        def rows = [row("alarm", "A", "GasMeterAsset", NOW, ["leakage"]),
+                    row("silent", "S", "GasMeterAsset", NOW - 48 * HOUR),
+                    row("never", "N", "GasMeterAsset", null),
+                    row("ok", "O", "GasMeterAsset", NOW)]
+        def query = new FleetQuery()
+        query.status = ["alarm", "silent"]
+
+        when:
+        def result = FleetResultAssembler.assemble(rows, query, NOW)
+
+        then: "the match, its facets and the export hold the filtered rows only"
+        result.rows*.id == ["alarm", "never", "silent"]
+        result.total == 3
+        result.facets.status.collectEntries { [it.key, it.count] } == [silent: 2, alarm: 1]
+        FleetResultAssembler.match(rows, query, NOW)*.id == ["alarm", "never", "silent"]
+
+        and: "status counts still name every status"
+        result.statusCounts.collectEntries { [it.key, it.count] } == [silent: 2, alarm: 1, ok: 1]
+    }
+
     def "match returns every row the query selected, ignoring the page limit"() {
         given: "more rows than any page would return"
         def rows = (1..600).collect { row("id$it", "M$it", "GasMeterAsset", NOW) }
@@ -314,6 +336,24 @@ class FleetResultAssemblerTest extends Specification {
         then: "a value matched only by a row the seen filter dropped is unmatched too"
         result.rows.size() == 1
         result.unmatchedText == ["W49651272", "MISSING-1"]
+    }
+
+    def "a value only a status filter hides is not unmatched: the meter was found"() {
+        given:
+        def alarm = row("alarm", "A", "WaterMeterAsset", NOW, ["leakage"])
+        alarm.devEui = "70B3D5D0003E8A1D"
+        def ok = row("ok", "O", "WaterMeterAsset", NOW)
+        ok.devEui = "70B3D5D0003E8A1E"
+        def query = new FleetQuery()
+        query.text = ["70B3D5D0003E8A1D", "70B3D5D0003E8A1E", "MISSING-1"]
+        query.status = ["alarm"]
+
+        when:
+        def result = FleetResultAssembler.assemble([alarm, ok], query, NOW)
+
+        then:
+        result.rows*.id == ["alarm"]
+        result.unmatchedText == ["MISSING-1"]
     }
 
     def "without free text nothing is unmatched"() {

@@ -9,10 +9,10 @@ import { i18next, translate as translateMixin } from "@openremote/or-translate";
 import "@openremote/or-icon";
 import type { FleetQueryResult, FleetRow } from "model";
 import {
-    allColumns, cellValue, DEFAULT_HIDDEN, DEVICE_DETAILS, EM_DASH, identityLine, offeredColumns, readingValue,
-    selectedRegisters, visibleColumns, type FleetColumn, type HideKey,
+    allColumns, cellValue, DEFAULT_HIDDEN, DEVICE_DETAILS, EM_DASH, identityLine, offeredColumns, primaryRegisters,
+    readingLabel, readingValue, selectedRegisters, visibleColumns, type FleetColumn, type HideKey,
 } from "./fleet-columns";
-import { GROUP_OPTIONS, groupInfo, relativeAge, rowStatus, segmentGroups, type RowGroup } from "./fleet-groups";
+import { GROUP_OPTIONS, groupInfo, isStale, relativeAge, rowStatus, segmentGroups, STATUS_KEYS, type RowGroup } from "./fleet-groups";
 import { PAGE_SIZES, pageItems } from "./fleet-pager";
 
 export class OrFleetRowClickEvent extends CustomEvent<{ assetId: string }> {
@@ -79,6 +79,30 @@ export class OrFleetHiddenEvent extends CustomEvent<{ hidden: string[] }> {
     }
 }
 
+export class OrFleetStatusEvent extends CustomEvent<{ status: string[] }> {
+    public static readonly NAME = "or-fleet-status";
+
+    constructor(status: string[]) {
+        super(OrFleetStatusEvent.NAME, { bubbles: true, composed: true, detail: { status } });
+    }
+}
+
+export class OrFleetRefreshEvent extends CustomEvent<void> {
+    public static readonly NAME = "or-fleet-refresh";
+
+    constructor() {
+        super(OrFleetRefreshEvent.NAME, { bubbles: true, composed: true });
+    }
+}
+
+export class OrFleetClearEvent extends CustomEvent<void> {
+    public static readonly NAME = "or-fleet-clear";
+
+    constructor() {
+        super(OrFleetClearEvent.NAME, { bubbles: true, composed: true });
+    }
+}
+
 declare global {
     interface HTMLElementEventMap {
         [OrFleetRowClickEvent.NAME]: OrFleetRowClickEvent;
@@ -89,6 +113,9 @@ declare global {
         [OrFleetGroupEvent.NAME]: OrFleetGroupEvent;
         [OrFleetCollapseEvent.NAME]: OrFleetCollapseEvent;
         [OrFleetHiddenEvent.NAME]: OrFleetHiddenEvent;
+        [OrFleetStatusEvent.NAME]: OrFleetStatusEvent;
+        [OrFleetRefreshEvent.NAME]: OrFleetRefreshEvent;
+        [OrFleetClearEvent.NAME]: OrFleetClearEvent;
     }
 }
 
@@ -110,6 +137,12 @@ function translate(key: string, options?: Record<string, unknown>): string {
     return i18next.t(key.includes(":") ? key : `app:${key}`, options);
 }
 
+/** How often the relative times (last seen, updated) are redrawn. */
+const TICK_MS = 30_000;
+
+/** Placeholder rows while the first result loads. */
+const SKELETON_ROWS = 8;
+
 /** Util.resolveUnits has an optional second argument that must not receive a map index. */
 const formatUnits = (units?: string[]) => Util.resolveUnits(units);
 
@@ -128,6 +161,8 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
                 /* The app has no amber of its own; this one keeps 4.5:1 on white. */
                 --fleet-alarm-color: var(--or-app-color4, #e3000a);
                 --fleet-silent-color: #9a5b00;
+                /* Fixed, as the brand colour (color4) is red in some realms. */
+                --fleet-ok-color: #2e7d32;
                 --fleet-muted-color: #6b6b6b;
                 --fleet-focus-color: var(--or-app-color3, #222);
                 --fleet-stripe-color: color-mix(in srgb, var(--or-app-color2, #f5f5f5) 55%, var(--or-app-color1, #fff));
@@ -199,7 +234,11 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
             tr.row td.meter { box-shadow: inset 3px 0 0 transparent; }
             tr.row.alarm td.meter { box-shadow: inset 3px 0 0 var(--fleet-alarm-color); }
             tr.row.silent td.meter { box-shadow: inset 3px 0 0 var(--fleet-silent-color); }
-            td.age.silent { color: var(--fleet-silent-color); }
+            td.age.stale { color: var(--fleet-silent-color); }
+            /* Which register the reading is. */
+            td .what { margin-top: 2px; font-size: 12px; color: var(--fleet-muted-color); }
+            /* Same second line as the meter's identity. */
+            td.age .when { margin-top: 2px; font-size: 12px; color: var(--fleet-muted-color); font-variant-numeric: tabular-nums; }
             td.actions, th.actions { width: 1%; padding-top: 4px; padding-bottom: 4px; text-align: right; }
             .open { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px;
                 padding: 0; border: none; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; text-decoration: none;
@@ -216,7 +255,6 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
             .group-header .continued { font-style: italic; color: var(--fleet-muted-color); font-weight: normal; }
             .chip { display: inline-block; margin-right: 4px; padding: 0 8px; border-radius: 12px;
                 border: 1px solid var(--fleet-alarm-color); color: inherit; font-size: 12px; line-height: 20px; }
-            .empty { padding: 24px; text-align: center; color: var(--fleet-muted-color); }
             .pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; padding: 8px 0; }
             .pager select { padding: 5px 6px; border: 1px solid var(--or-app-color5, #ccc); border-radius: 4px;
                 background: var(--or-app-color1, #fff); color: inherit; font: inherit; }
@@ -224,7 +262,47 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
             .pages button.plain { min-width: 34px; padding: 6px 8px; font-variant-numeric: tabular-nums; }
             .pages button[aria-current="page"] { background: var(--or-app-color4, #4d9d2a); border-color: var(--or-app-color4, #4d9d2a); color: #fff; cursor: default; }
             .pages .gap { padding: 0 4px; color: var(--fleet-muted-color); }
-            .loading { opacity: .5; pointer-events: none; }
+            .body { position: relative; }
+            .loading .scroll { opacity: .5; pointer-events: none; transition: opacity .15s; }
+            /* An indeterminate bar over the table's top edge while a query runs. */
+            .progress { position: absolute; top: 0; left: 0; right: 0; z-index: 4; height: 3px; overflow: hidden; border-radius: 4px 4px 0 0; }
+            .progress::after { content: ""; position: absolute; top: 0; bottom: 0; left: -40%; width: 40%;
+                background: var(--or-app-color4, #4d9d2a); animation: fleet-progress 1.2s ease-in-out infinite; }
+            @keyframes fleet-progress { to { left: 100%; } }
+            .skeleton td { padding: 14px 16px; }
+            .skeleton .bone { height: 12px; border-radius: 6px; background: var(--or-app-color2, #eee);
+                animation: fleet-pulse 1.4s ease-in-out infinite; }
+            @keyframes fleet-pulse { 50% { opacity: .45; } }
+            @media (prefers-reduced-motion: reduce) {
+                .progress::after, .skeleton .bone { animation: none; }
+                .progress::after { left: 0; width: 100%; opacity: .5; }
+            }
+            .empty { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 48px 24px;
+                border: 1px dashed var(--or-app-color5, #ccc); border-radius: 4px; }
+            .empty .title { font-weight: 600; color: var(--or-app-color3, #222); }
+            .empty or-icon { --or-icon-width: 32px; --or-icon-height: 32px; --or-icon-fill: var(--fleet-muted-color); }
+            .statuses { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+            .status-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 16px;
+                border: 1px solid var(--or-app-color5, #ccc); background: var(--or-app-color1, #fff);
+                color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
+            .status-chip:hover { background: var(--fleet-hover-color); }
+            .status-chip[aria-pressed="true"] { border-color: var(--or-app-color3, #222); box-shadow: inset 0 0 0 1px var(--or-app-color3, #222); }
+            .status-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fleet-ok-color); }
+            .status-chip.alarm .dot { background: var(--fleet-alarm-color); }
+            .status-chip.silent .dot { background: var(--fleet-silent-color); }
+            .status-chip .n { font-weight: 600; font-variant-numeric: tabular-nums; }
+            .updated { display: inline-flex; align-items: center; gap: 2px; color: var(--fleet-muted-color); font-size: 13px; }
+            .icon-button { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px;
+                padding: 0; border: none; border-radius: 4px; background: transparent; color: inherit; cursor: pointer;
+                --or-icon-width: 20px; --or-icon-height: 20px; }
+            .icon-button:hover { background: rgba(0, 0, 0, .08); }
+            .icon-button:disabled { opacity: .5; cursor: default; }
+            /* On a phone only the button stays, with the age in its tooltip, so the bar takes fewer rows. */
+            @media screen and (max-width: 768px) {
+                .updated .age-text { display: none; }
+                /* Still names the toggle group through aria-labelledby; Columns then fits next to it. */
+                #group-label { display: none; }
+            }
         `;
     }
 
@@ -249,12 +327,50 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
     @property({ attribute: false })
     public collapsed: string[] = [];
 
-    /** A new result (another page, sort or search) starts at its first row; the box keeps its sideways scroll. */
+    /** Statuses the search filters on (status: tokens); none means every status. */
+    @property({ attribute: false })
+    public status: string[] = [];
+
+    /** True when the search has any filter, so an empty result can offer to clear it. */
+    @property({ type: Boolean })
+    public filtered = false;
+
+    /** When the shown result arrived (epoch millis). */
+    @property({ attribute: false })
+    public updatedAt?: number;
+
+    /** The result is the shown one reloaded (a refresh), so the table keeps its scroll position. */
+    @property({ type: Boolean })
+    public refreshed = false;
+
+    protected _timer?: ReturnType<typeof setInterval>;
+
+    connectedCallback() {
+        super.connectedCallback();
+        // Redraws relative times; a hidden tab skips the work.
+        this._timer = setInterval(() => { if (!document.hidden) { this.requestUpdate(); } }, TICK_MS);
+    }
+
+    disconnectedCallback() {
+        clearInterval(this._timer);
+        super.disconnectedCallback();
+    }
+
+    /**
+     * A new result (another page, sort or search) starts at its first row; a refresh keeps the
+     * position. The box keeps its sideways scroll either way.
+     */
     protected updated(changed: Map<string, unknown>) {
-        if (changed.has("result")) {
+        if (changed.has("result") && !this.refreshed) {
             const scroll = this.shadowRoot?.querySelector<HTMLElement>(".scroll");
             if (scroll) { scroll.scrollTop = 0; }
         }
+    }
+
+    protected _toggleStatus(key: string) {
+        this.dispatchEvent(new OrFleetStatusEvent(this.status.includes(key)
+            ? this.status.filter((k) => k !== key)
+            : [...this.status, key]));
     }
 
     protected _toggleGroup(key: string) {
@@ -329,10 +445,12 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
             case "type":
                 return row.type ? Util.getAssetTypeLabel(row.type) : EM_DASH;
             case "reading":
-                return readingValue(row, result, formatUnits);
+                return this._renderReading(result, row, column);
             case "lastSeen":
-                // The exact time is a tooltip for the mouse and hidden text for screen readers.
-                return html`${this._renderAge(row.lastSeen, now)}<span class="sr-only">, ${this._lastSeenTitle(row.lastSeen)}</span>`;
+                // The age to scan, the exact time of the last message below it; never reported has neither.
+                return relativeAge(row.lastSeen, now)
+                    ? html`<div>${this._renderAge(row.lastSeen, now)}</div><div class="when">${this._lastSeenTitle(row.lastSeen)}</div>`
+                    : html`${EM_DASH}<span class="sr-only">, ${this._lastSeenTitle(row.lastSeen)}</span>`;
             case "batteryLevel":
                 return typeof row.batteryLevel === "number" && !Number.isNaN(row.batteryLevel) ? `${row.batteryLevel} %` : EM_DASH;
             case "alarms": {
@@ -348,11 +466,27 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
         }
     }
 
-    protected _cellClass(column: FleetColumn, status: string): string {
+    /** The value, and below it what it is; with one register the header names it instead. */
+    protected _renderReading(result: FleetQueryResult, row: FleetRow, column: FleetColumn): TemplateResult | string {
+        const value = readingValue(row, result, formatUnits);
+        const label = column.register ? undefined : readingLabel(row, result);
+        if (value === EM_DASH || !label) { return value; }
+        return html`<div>${value}</div><div class="what">${label}</div>`;
+    }
+
+    /** Mixed types: which register each type's Reading shows, as the header's tooltip. */
+    protected _readingTitle(result: FleetQueryResult, column: FleetColumn): string | undefined {
+        if (column.key !== "reading" || column.register) { return undefined; }
+        const lines = primaryRegisters(result).map((d) => `${Util.getAssetTypeLabel(d.assetType!)}: ${d.label ?? d.name}`);
+        return lines.length ? [translate("fleet.reading.perType"), ...lines].join("\n") : undefined;
+    }
+
+    /** `stale` marks an old last seen even on an alarm row, whose status hides the silence. */
+    protected _cellClass(column: FleetColumn, status: string, stale = false): string {
         return [
             column.key === "name" ? "meter" : "",
             column.numeric ? "numeric" : "",
-            column.key === "lastSeen" ? `age ${status}` : "",
+            column.key === "lastSeen" ? `age${stale ? " stale" : ""}` : "",
         ].filter(Boolean).join(" ");
     }
 
@@ -396,11 +530,45 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
             </details>`;
     }
 
-    protected _renderResultBar(result: FleetQueryResult): TemplateResult {
+    /** Counts before the status filter, so every chip keeps its number; an older server sends only facets. */
+    protected _renderStatusChips(result: FleetQueryResult): TemplateResult {
+        const counts = new Map((result.statusCounts?.length ? result.statusCounts : result.facets?.status ?? [])
+            .map((facet) => [facet.key ?? "", facet.count ?? 0]));
+        return html`
+            <span class="statuses" role="group" aria-label=${translate("fleet.token.status")}>
+                ${STATUS_KEYS.map((key) => html`
+                    <button type="button" class="status-chip ${key}" aria-pressed=${this.status.includes(key) ? "true" : "false"}
+                            title=${translate(`fleet.statusHint.${key}`)} @click=${() => this._toggleStatus(key)}>
+                        <span class="dot" aria-hidden="true"></span>
+                        <span>${this._statusLabel(key)}</span>
+                        <span class="n">${counts.get(key) ?? 0}</span>
+                    </button>`)}
+            </span>`;
+    }
+
+    protected _renderUpdated(now: number): TemplateResult {
+        const seconds = this.updatedAt === undefined ? 0 : Math.max(0, Math.floor((now - this.updatedAt) / 1000));
+        const age = seconds < 60
+            ? translate("fleet.updated.justNow")
+            : translate("fleet.updated.ago", { age: this._renderAge(this.updatedAt, now) });
+        const label = translate("fleet.updated.refresh");
+        return html`
+            <span class="updated">
+                <span class="age-text" title=${this.updatedAt === undefined ? nothing : this._lastSeenTitle(this.updatedAt)}>${age}</span>
+                <button type="button" class="icon-button" aria-label=${label} title=${`${label} (${age})`} ?disabled=${this.loading}
+                        @click=${() => this.dispatchEvent(new OrFleetRefreshEvent())}>
+                    <or-icon aria-hidden="true" icon="refresh"></or-icon>
+                </button>
+            </span>`;
+    }
+
+    protected _renderResultBar(result: FleetQueryResult, now: number): TemplateResult {
         return html`
             <div class="bar">
                 <span class="count">${translate("fleet.result.count", { count: result.total ?? 0 })}</span>
+                ${this._renderStatusChips(result)}
                 <span class="spacer"></span>
+                ${this._renderUpdated(now)}
                 <span class="control">
                     <span class="label" id="group-label">${translate("fleet.groupBy.label")}</span>
                     <span class="toggle" role="group" aria-labelledby="group-label">
@@ -419,11 +587,11 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
         // The stripe index is per call, so it restarts in every group.
         return rows.map((row, index) => {
             const status = rowStatus(row, now);
+            const stale = isStale(row, now);
             const label = translate("fleet.row.open");
             return html`
                 <tr class="row ${status}${index % 2 === 1 ? " stripe" : ""}">
-                    ${columns.map((c) => html`<td class=${this._cellClass(c, status)}
-                        title=${c.key === "lastSeen" ? this._lastSeenTitle(row.lastSeen) : nothing}>${this._renderCell(result, row, c, status, now)}</td>`)}
+                    ${columns.map((c) => html`<td class=${this._cellClass(c, status, stale)}>${this._renderCell(result, row, c, status, now)}</td>`)}
                     <td class="actions">
                         <a class="open" href=${`#/${getAssetsRoute(false, row.id)}`} aria-label=${label} title=${label}
                            @click=${(ev: MouseEvent) => this._onOpen(ev, row.id)}>
@@ -492,7 +660,7 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
                             const sorted = sortField === c.key;
                             const label = html`${this._columnLabel(c)}${c.units ? html` <small>(${c.units})</small>` : nothing}`;
                             return html`
-                                <th scope="col" class="${this._cellClass(c, "")}${sorted ? " sorted" : ""}"
+                                <th scope="col" class="${this._cellClass(c, "")}${sorted ? " sorted" : ""}" title=${this._readingTitle(result, c) ?? nothing}
                                     aria-sort=${sorted ? (this.sort?.descending ? "descending" : "ascending") : "none"}>
                                     ${c.sortable ? this._renderSortButton(c, label, sorted) : label}
                                 </th>`;
@@ -547,18 +715,48 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
             </div>`;
     }
 
+    /** Grey bars in the shape of the default columns while the first result loads. */
+    protected _renderSkeleton(): TemplateResult {
+        const widths = ["70%", "50%", "40%", "30%", "40%"];
+        // The announcement stays outside the busy box: screen readers may hold back live text inside one.
+        return html`
+            <span class="sr-only" role="status">${translate("fleet.loading")}</span>
+            <div class="body loading" aria-busy="true">
+                <div class="progress" aria-hidden="true"></div>
+                <div class="scroll">
+                    <table class="skeleton" aria-hidden="true">
+                        ${Array.from({ length: SKELETON_ROWS }, () => html`
+                            <tr>${widths.map((width) => html`<td><div class="bone" style="width: ${width}"></div></td>`)}</tr>`)}
+                    </table>
+                </div>
+            </div>`;
+    }
+
+    /** Nothing matched: say whether the search or the realm is empty, and offer the way out. */
+    protected _renderEmpty(): TemplateResult {
+        return html`
+            <div class="empty" role="status">
+                <or-icon aria-hidden="true" icon=${this.filtered ? "magnify-close" : "database-off-outline"}></or-icon>
+                <span class="title">${translate(this.filtered ? "fleet.emptyState.filtered" : "fleet.emptyState.realm")}</span>
+                ${this.filtered ? html`
+                    <span>${translate("fleet.emptyState.hint")}</span>
+                    <button type="button" class="plain" @click=${() => this.dispatchEvent(new OrFleetClearEvent())}>
+                        ${translate("fleet.emptyState.clear")}
+                    </button>` : nothing}
+            </div>`;
+    }
+
     protected render() {
         const result = this.result;
-        if (!result) { return nothing; }
+        if (!result) { return this.loading ? this._renderSkeleton() : nothing; }
         const now = Date.now();
         const columns = visibleColumns(result, this.hiddenColumns, formatUnits);
         const groups = segmentGroups(result, this.groupBy, now, this.collapsed);
         return html`
-            ${this._renderResultBar(result)}
+            ${this._renderResultBar(result, now)}
             <div class="body${this.loading ? " loading" : ""}" aria-busy=${this.loading ? "true" : "false"}>
-                ${groups.length === 0
-                    ? html`<div class="empty">${translate("fleet.empty")}</div>`
-                    : this._renderTable(result, groups, columns, now)}
+                ${this.loading ? html`<div class="progress" aria-hidden="true"></div>` : nothing}
+                ${groups.length === 0 ? this._renderEmpty() : this._renderTable(result, groups, columns, now)}
             </div>
             ${this._renderPager(result)}`;
     }

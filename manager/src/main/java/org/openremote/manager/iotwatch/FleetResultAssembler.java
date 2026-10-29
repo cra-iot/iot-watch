@@ -31,21 +31,38 @@ public final class FleetResultAssembler {
     /** An asset is "silent" once nothing has been heard for this long. */
     public static final Duration SILENT_AFTER = Duration.ofHours(24);
 
+    /** The status keys rows are grouped, counted and filtered (FleetQuery.status) by. */
+    public static final Set<String> STATUSES = Set.of("alarm", "silent", "ok");
+
     private FleetResultAssembler() {
     }
 
     /**
-     * The matched set with no page applied: deduplicated, last-seen filtered, sorted.
+     * The matched set with no page applied: deduplicated, last-seen and status filtered, sorted.
      * The overview pages this; the CSV export consumes it whole.
      */
     public static List<FleetRow> match(List<FleetRow> rows, FleetQuery query, long nowMillis) {
+        return statusFilteredAndSorted(selected(rows, query, nowMillis), query, nowMillis);
+    }
+
+    /** Deduplicated and last-seen filtered; the status filter is not applied yet. */
+    private static List<FleetRow> selected(List<FleetRow> rows, FleetQuery query, long nowMillis) {
         // Parsed once, before any row: a malformed duration is rejected even for an empty match.
         Long olderThreshold = query.seen == null || query.seen.olderThan == null
                 ? null : nowMillis - parseDuration(query.seen.olderThan).toMillis();
         Long newerThreshold = query.seen == null || query.seen.newerThan == null
                 ? null : nowMillis - parseDuration(query.seen.newerThan).toMillis();
-        List<FleetRow> matched = new ArrayList<>(deduplicate(rows));
-        matched.removeIf(row -> !matchesSeen(row, olderThreshold, newerThreshold));
+        List<FleetRow> selected = new ArrayList<>(deduplicate(rows));
+        selected.removeIf(row -> !matchesSeen(row, olderThreshold, newerThreshold));
+        return selected;
+    }
+
+    private static List<FleetRow> statusFilteredAndSorted(List<FleetRow> selected, FleetQuery query, long nowMillis) {
+        List<FleetRow> matched = new ArrayList<>(selected);
+        if (query.status != null && !query.status.isEmpty()) {
+            Set<String> status = new HashSet<>(query.status);
+            matched.removeIf(row -> !status.contains(status(row, nowMillis)));
+        }
         // When grouping, the group key sorts first, so each group's rows are contiguous across
         // server pages and the UI can label a group with its facet count rather than counting
         // the rows of one page.
@@ -85,12 +102,16 @@ public final class FleetResultAssembler {
     }
 
     public static FleetQueryResult assemble(List<FleetRow> rows, FleetQuery query, long nowMillis) {
-        List<FleetRow> matched = match(rows, query, nowMillis);
+        List<FleetRow> selected = selected(rows, query, nowMillis);
+        List<FleetRow> matched = statusFilteredAndSorted(selected, query, nowMillis);
 
         FleetQueryResult result = new FleetQueryResult();
         result.total = matched.size();
         result.facets = facets(matched, nowMillis);
-        result.unmatchedText = unmatchedText(matched, query);
+        // Before the status filter, so picking one status still shows how many rows the others hold.
+        result.statusCounts = counted(selected, nowMillis, row -> List.of(status(row, nowMillis)));
+        // Before the status filter: a pasted identifier that a status chip hides was still found.
+        result.unmatchedText = unmatchedText(selected, query);
 
         // A collapsed group shows only its header, so its rows leave the paging and the open
         // groups' rows fill the pages instead; total and facets above still count them.

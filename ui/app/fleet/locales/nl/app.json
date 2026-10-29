@@ -40,6 +40,7 @@
     },
     "token": {
       "type": "Type",
+      "status": "Status",
       "alarm": "Alarm",
       "seen": "Last seen",
       "delivery": "Delivery point",
@@ -61,7 +62,10 @@
         "invalidDuration": "Enter a duration such as 30m, 24h or 7d.",
         "operatorNotAllowed": "Vergelijkingen en bereiken werken alleen met getallen. Gebruik = of gewone tekst."
       },
-      "list": "{{first}} +{{count}} meer"
+      "list": "{{first}} +{{count}} meer",
+      "hint": {
+        "status": "Alarm, stil of OK, gekozen uit een lijst"
+      }
     },
     "result": {
       "count_one": "{{count}} meter",
@@ -84,17 +88,35 @@
       "silent": "Silent",
       "ok": "OK"
     },
+    "statusHint": {
+      "alarm": "Actief alarm",
+      "silent": "Meer dan 24 uur geen gegevens",
+      "never": "Nog geen gegevens ontvangen",
+      "ok": "Gegevens ontvangen in de afgelopen 24 uur"
+    },
     "pager": {
       "range": "{{from}}-{{to}} of {{total}}",
       "previous": "Previous",
       "next": "Next"
     },
-    "empty": "No devices found",
     "reading": {
-      "needsOneType": "Het meterstandfilter vereist precies één assettype. Voeg een type:-filter toe."
+      "needsOneType": "Het meterstandfilter vereist precies één assettype. Voeg een type:-filter toe.",
+      "perType": "Meterstand per metertype:"
     },
     "search": {
       "notFound": "{{missing}} van {{count}} waarden niet gevonden: {{values}}"
+    },
+    "emptyState": {
+      "filtered": "Geen meters gevonden voor deze zoekopdracht",
+      "realm": "Nog geen meters in deze realm",
+      "hint": "Verwijder een filter of wis de zoekopdracht.",
+      "clear": "Zoekopdracht wissen"
+    },
+    "loading": "Meters laden…",
+    "updated": {
+      "justNow": "Zojuist bijgewerkt",
+      "ago": "Bijgewerkt {{age}}",
+      "refresh": "Vernieuwen"
     }
   }
 }
