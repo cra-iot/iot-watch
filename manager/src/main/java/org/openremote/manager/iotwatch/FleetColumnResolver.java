@@ -110,9 +110,10 @@ public class FleetColumnResolver {
 
     /**
      * Every column these types offer: the selected ones first, then the rest for the picker.
-     * The picker is broader than the primary rule: any numeric descriptor carrying units is
-     * offered, so a type whose values are not stored as datapoints (a tracker's battery) still
-     * has something to show, while only a measurement can become the primary register.
+     * The picker is broader than the primary rule: any numeric descriptor carrying units or
+     * stored as datapoints is offered, so a type whose values are not stored as datapoints (a
+     * tracker's battery) and a count that has no unit (a people counter's period_out) both have
+     * something to show, while only a measurement can become the primary register.
      * Pass the types actually present in the result, not the query's type filter: an empty
      * filter means "whole realm", and resolving over every registered type would offer the
      * columns of OpenRemote built-ins nobody has.
@@ -181,21 +182,30 @@ public class FleetColumnResolver {
     }
 
     /**
-     * A picker column: numeric with units. Infrastructure attributes (battery_level) have their
-     * own row fields and rawValue is never a column.
+     * A picker column: numeric, with units or stored as datapoints. OpenRemote has no unit for a
+     * count, so a counter is recognised by its datapoints instead. Infrastructure attributes
+     * (battery_level) have their own row fields and rawValue is never a column. The primary
+     * register fallback (isMeasurement) still requires units, so this wider rule changes what
+     * the picker offers, never which register is guessed.
      */
-    private static boolean isOffered(AttributeDescriptor<?> descriptor) {
+    static boolean isOffered(AttributeDescriptor<?> descriptor) {
         String name = descriptor.getName();
         return isNumeric(descriptor)
-                && descriptor.getUnits() != null && descriptor.getUnits().length > 0
+                && (hasUnits(descriptor) || storesDataPoints(descriptor))
                 && !FleetColumns.RAW_VALUE.equals(name)
                 && !Arrays.asList(FleetColumns.INFRASTRUCTURE_ATTRIBUTES).contains(name);
     }
 
     private static boolean isMeasurement(AttributeDescriptor<?> descriptor) {
-        return isNumeric(descriptor)
-                && descriptor.getUnits() != null && descriptor.getUnits().length > 0
-                && descriptor.getMeta() != null
+        return isNumeric(descriptor) && hasUnits(descriptor) && storesDataPoints(descriptor);
+    }
+
+    private static boolean hasUnits(AttributeDescriptor<?> descriptor) {
+        return descriptor.getUnits() != null && descriptor.getUnits().length > 0;
+    }
+
+    private static boolean storesDataPoints(AttributeDescriptor<?> descriptor) {
+        return descriptor.getMeta() != null
                 && descriptor.getMeta().get(MetaItemType.STORE_DATA_POINTS).isPresent();
     }
 

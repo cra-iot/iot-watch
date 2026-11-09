@@ -30,6 +30,7 @@ class FleetColumnResolverTest extends Specification {
         "GasMeterAsset"       | "volume"
         "ElectricMeterAsset"  | "energy_active_total"
         "HeatMeterAsset"      | "energy_heating"
+        "PassageCounterAsset"  | "period_in"
     }
 
     def "a configuration override beats the declaration"() {
@@ -174,9 +175,44 @@ class FleetColumnResolverTest extends Specification {
         resolver().primaryRegister("TrackerAsset") == null
     }
 
+    def "people counters offer their unit-less counts in the picker"() {
+        when:
+        def columns = resolver().columnsFor(["PassageCounterAsset"], null)
+        def byName = columns.collectEntries { [it.name, it] }
+
+        then: "period_in is the reading, shown without units"
+        byName["period_in"].primary
+        byName["period_in"].selected
+        byName["period_in"].units == null
+        byName["period_in"].label == "Příchody za interval"
+
+        and: "the other counts and the temperature are offered but not selected"
+        ["period_out", "total_in", "total_out", "temperature"].every {
+            byName.containsKey(it) && !byName[it].selected && !byName[it].primary
+        }
+
+        and: "infrastructure attributes and rawValue stay out"
+        !byName.containsKey("battery_level")
+        !byName.containsKey("rawValue")
+    }
+
+    def "a unit-less number is offered only when it stores data points"() {
+        given:
+        def stored = new AttributeDescriptor<>("visits", ValueType.POSITIVE_INTEGER,
+                new MetaItem<>(MetaItemType.STORE_DATA_POINTS))
+        def notStored = new AttributeDescriptor<>("setting", ValueType.POSITIVE_INTEGER)
+
+        expect:
+        FleetColumnResolver.isOffered(stored)
+        !FleetColumnResolver.isOffered(notStored)
+
+        and: "an existing type gains its unit-less stored numbers as columns: the electric meter tariff"
+        resolver().columnsFor(["ElectricMeterAsset"], null).any { it.name == "tariff" }
+    }
+
     def "infrastructure attributes and rawValue are never offered as picker columns"() {
         when:
-        def names = resolver().columnsFor(["GasMeterAsset", "WaterMeterAsset", "TrackerAsset"], null)*.name
+        def names = resolver().columnsFor(["GasMeterAsset", "WaterMeterAsset", "TrackerAsset", "PassageCounterAsset"], null)*.name
 
         then:
         !names.contains("battery_level")
@@ -188,7 +224,8 @@ class FleetColumnResolverTest extends Specification {
         def types = FleetColumnResolver.deviceTypes()
 
         then: "every device type the ingest writes to"
-        types.containsAll(["WaterMeterAsset", "GasMeterAsset", "ElectricMeterAsset", "HeatMeterAsset", "TrackerAsset"])
+        types.containsAll(["WaterMeterAsset", "GasMeterAsset", "ElectricMeterAsset", "HeatMeterAsset", "TrackerAsset",
+                           "PassageCounterAsset"])
 
         and: "resolved from the model: each one declares rawValue, and no other type is included"
         types == ValueUtil.getAssetInfos(null)

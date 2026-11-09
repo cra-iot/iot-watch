@@ -6,6 +6,7 @@
       "ElectricMeterAsset": "Elektriciteitsmeter",
       "GasMeterAsset": "Gasmeter",
       "HeatMeterAsset": "Warmtemeter",
+      "PassageCounterAsset": "Doorgangsteller",
       "RfidChipAsset": "RFID-chip",
       "RfidReaderAsset": "RFID-lezer",
       "ShipTrackerAsset": "Scheepstracker",
