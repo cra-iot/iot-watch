@@ -7,8 +7,10 @@ import org.openremote.model.asset.impl.ThingAsset
 import org.openremote.model.gasmeter.GasMeterAsset
 import org.openremote.model.heatmeter.HeatMeterAsset
 import org.openremote.model.attribute.Attribute
+import org.openremote.model.peoplecounter.PeopleCounterAsset
 import org.openremote.model.tracker.TrackerAsset
 import org.openremote.model.util.ValueUtil
+import org.openremote.model.value.ValueType
 import org.openremote.model.watermeter.WaterMeterAsset
 import spock.lang.Specification
 
@@ -208,6 +210,101 @@ class DecoderRegistryTest extends Specification {
         !byName.containsKey("conversion_factor")
     }
 
+    def "builds a same-name plan for people counters"() {
+        given:
+        def asset = new PeopleCounterAsset("P")
+        asset.getAttributes().clear()
+        asset.getAttributes().getOrCreate(PeopleCounterAsset.PERIOD_IN_ATTRIBUTE_DESCRIPTOR)
+        asset.getAttributes().getOrCreate(PeopleCounterAsset.TOTAL_COUNT_ALARM_ATTRIBUTE_DESCRIPTOR)
+
+        when:
+        def plan = registry.planFor(asset)
+
+        then:
+        plan.isPresent()
+        plan.get().decoder() instanceof SameNameDecoder
+        plan.get().targetNames() == ["period_in", "total_count_alarm"] as Set
+        registry.assetClasses().contains(PeopleCounterAsset)
+    }
+
+    // Guards the contract with the transform-repository VS350/VS351 decoder: these are exactly
+    // the keys docs/people-counter-dictionary.md defines. The message is built the way
+    // IngestPayload builds it, so the counts arrive with their production Java type.
+    def "decodes the people-counter key set onto a fully provisioned asset"() {
+        given: "an asset provisioned with every attribute this device fills"
+        def asset = new PeopleCounterAsset("P")
+        [PeopleCounterAsset.METER_ID_ATTRIBUTE_DESCRIPTOR,
+         PeopleCounterAsset.PERIOD_IN_ATTRIBUTE_DESCRIPTOR,
+         PeopleCounterAsset.PERIOD_OUT_ATTRIBUTE_DESCRIPTOR,
+         PeopleCounterAsset.TOTAL_IN_ATTRIBUTE_DESCRIPTOR,
+         PeopleCounterAsset.TOTAL_OUT_ATTRIBUTE_DESCRIPTOR,
+         PeopleCounterAsset.TEMPERATURE_ATTRIBUTE_DESCRIPTOR,
+         PeopleCounterAsset.BATTERY_LEVEL_ATTRIBUTE_DESCRIPTOR,
+         PeopleCounterAsset.PERIOD_COUNT_ALARM_ATTRIBUTE_DESCRIPTOR,
+         PeopleCounterAsset.TOTAL_COUNT_ALARM_ATTRIBUTE_DESCRIPTOR,
+         PeopleCounterAsset.TEMPERATURE_ALARM_ATTRIBUTE_DESCRIPTOR,
+         PeopleCounterAsset.HIGH_TEMPERATURE_ALARM_ATTRIBUTE_DESCRIPTOR].each {
+            asset.getAttributes().getOrCreate(it)
+        }
+        def plan = registry.planFor(asset).get()
+        def message = ingested('''{"data_decoded": {
+            "decoded": true,
+            "period_in": 12,
+            "period_out": 0,
+            "total_in": 4353,
+            "total_out": 4360,
+            "temperature": 26.8,
+            "battery_level": 100,
+            "meter_id": "6723D12345678901",
+            "period_count_alarm": false,
+            "total_count_alarm": true,
+            "temperature_alarm": false,
+            "high_temperature_alarm": false,
+            "battery": 100,
+            "ipso_version": "v0.1"
+        }}''')
+
+        when:
+        def events = plan.decoder().decode("asset1", message, plan.targetNames(), 1000L)
+        def byName = events.collectEntries { [it.ref.name, it.value.get()] }
+
+        then:
+        byName["period_in"] == 12
+        !(byName["period_in"] instanceof Double)
+        byName["period_out"] == 0
+        byName["total_in"] == 4353
+        byName["total_out"] == 4360
+        byName["temperature"] == 26.8d
+        byName["battery_level"] == 100
+        byName["meter_id"] == "6723D12345678901"
+        byName["period_count_alarm"] == false
+        byName["total_count_alarm"] == true
+        byName["temperature_alarm"] == false
+        byName["high_temperature_alarm"] == false
+
+        and: "the decode flag, Milesight's own battery key and device information are not attributes"
+        !byName.containsKey("decoded")
+        !byName.containsKey("battery")
+        !byName.containsKey("ipso_version")
+    }
+
+    def "a mains-powered counter without battery_level still decodes its counts"() {
+        given:
+        def asset = new PeopleCounterAsset("P")
+        asset.getAttributes().clear()
+        asset.getAttributes().getOrCreate(PeopleCounterAsset.PERIOD_IN_ATTRIBUTE_DESCRIPTOR)
+        asset.getAttributes().getOrCreate(PeopleCounterAsset.PERIOD_OUT_ATTRIBUTE_DESCRIPTOR)
+        def message = ingested('{"data_decoded": {"period_in": 3, "period_out": 2, "battery_level": 90}}')
+
+        when:
+        def plan = registry.planFor(asset)
+        def events = plan.get().decoder().decode("asset1", message, plan.get().targetNames(), 1000L)
+
+        then:
+        plan.get().targetNames() == ["period_in", "period_out"] as Set
+        events*.ref*.name as Set == ["period_in", "period_out"] as Set
+    }
+
     def "returns empty for an unregistered asset type"() {
         expect:
         registry.planFor(new ThingAsset("C")).isEmpty()
@@ -220,5 +317,9 @@ class DecoderRegistryTest extends Specification {
 
         expect:
         registry.planFor(asset).isEmpty()
+    }
+
+    private static Map<String, Object> ingested(String json) {
+        return ValueUtil.JSON.convertValue(ValueUtil.JSON.readTree(json), ValueType.ObjectMap.class)
     }
 }
