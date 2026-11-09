@@ -315,6 +315,18 @@ class DecoderRegistryTest extends Specification {
         }
     }
 
+    // The built-in PeopleCounterAsset has no devEui/rawValue, so ingest never reaches it. A
+    // look-alike icon would invite an operator to create that type for a VS350/VS351 by mistake.
+    def "the passage counter does not look like the built-in people counter"() {
+        given:
+        def builtIn = ValueUtil.getAssetInfo(org.openremote.model.asset.impl.PeopleCounterAsset).get().assetDescriptor
+        def ours = ValueUtil.getAssetInfo(PassageCounterAsset).get().assetDescriptor
+
+        expect:
+        ours.icon != builtIn.icon
+        ours.colour != builtIn.colour
+    }
+
     def "returns empty for an unregistered asset type"() {
         expect:
         registry.planFor(new ThingAsset("C")).isEmpty()

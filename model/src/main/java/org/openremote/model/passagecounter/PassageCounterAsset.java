@@ -109,9 +109,11 @@ public class PassageCounterAsset extends Asset<PassageCounterAsset> {
     public static final AttributeDescriptor<Boolean> HIGH_TEMPERATURE_ALARM_ATTRIBUTE_DESCRIPTOR =
             alarm("high_temperature_alarm", "Vysoká teplota");
 
-    // Purple keeps the type distinct from the meter, tracker and RFID colours.
+    // "turnstile", not "account-multiple": that is the icon of the built-in PeopleCounterAsset,
+    // and a look-alike invites creating the built-in type, which ingest never reaches. Purple
+    // keeps the type distinct from the meter, tracker and RFID colours.
     public static final AssetDescriptor<PassageCounterAsset> PASSAGE_COUNTER_ASSET_DESCRIPTOR =
-            new AssetDescriptor<>("account-multiple", "7B1FA2", PassageCounterAsset.class);
+            new AssetDescriptor<>("turnstile", "7B1FA2", PassageCounterAsset.class);
 
     // -- Descriptor factory helpers (measurement/alarm meta is identical everywhere) --
 
