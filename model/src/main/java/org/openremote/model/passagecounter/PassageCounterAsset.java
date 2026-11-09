@@ -1,4 +1,4 @@
-package org.openremote.model.peoplecounter;
+package org.openremote.model.passagecounter;
 
 import jakarta.persistence.Entity;
 
@@ -17,6 +17,10 @@ import org.openremote.model.value.ValueType;
  * VS350 passage counter, VS351 thermopile counter - both report the same values). A shop with
  * several entrances is modelled as one counter per entrance under a shop parent asset.
  *
+ * Named PassageCounterAsset, not PeopleCounterAsset: OpenRemote ships a built-in
+ * org.openremote.model.asset.impl.PeopleCounterAsset, and asset types are keyed by simple class
+ * name, so the same name would resolve to the built-in type (no rawValue, different attributes).
+ *
  * devEui + rawValue are required; every measurement and alarm is an optional descriptor the
  * operator adds per instance - a mains-powered VS351 reports no battery. Attribute-name strings
  * equal the decoder's canonical snake_case keys, so SameNameDecoder needs no mapping table.
@@ -32,11 +36,11 @@ import org.openremote.model.value.ValueType;
  * them with the next plain count report. Alarm booleans are cracked out of the frames by the
  * platform decoder, not here; this model holds no bit logic.
  *
- * See docs/people-counter-dictionary.md for the key contract and docs/ingest-data-spec.md for
+ * See docs/passage-counter-dictionary.md for the key contract and docs/ingest-data-spec.md for
  * the device-agnostic envelope, reserved keys and failure signalling.
  */
 @Entity
-public class PeopleCounterAsset extends Asset<PeopleCounterAsset> {
+public class PassageCounterAsset extends Asset<PassageCounterAsset> {
 
     // -- Identity / ingest ----------------------------------------------------
 
@@ -106,8 +110,8 @@ public class PeopleCounterAsset extends Asset<PeopleCounterAsset> {
             alarm("high_temperature_alarm", "Vysoká teplota");
 
     // Purple keeps the type distinct from the meter, tracker and RFID colours.
-    public static final AssetDescriptor<PeopleCounterAsset> PEOPLE_COUNTER_ASSET_DESCRIPTOR =
-            new AssetDescriptor<>("account-multiple", "7B1FA2", PeopleCounterAsset.class);
+    public static final AssetDescriptor<PassageCounterAsset> PASSAGE_COUNTER_ASSET_DESCRIPTOR =
+            new AssetDescriptor<>("account-multiple", "7B1FA2", PassageCounterAsset.class);
 
     // -- Descriptor factory helpers (measurement/alarm meta is identical everywhere) --
 
@@ -143,11 +147,11 @@ public class PeopleCounterAsset extends Asset<PeopleCounterAsset> {
                 .withOptional(true);
     }
 
-    protected PeopleCounterAsset() {
+    protected PassageCounterAsset() {
         // For JPA/Jackson
     }
 
-    public PeopleCounterAsset(String name) {
+    public PassageCounterAsset(String name) {
         super(name);
     }
 

@@ -7,7 +7,7 @@ import org.openremote.model.asset.impl.ThingAsset
 import org.openremote.model.gasmeter.GasMeterAsset
 import org.openremote.model.heatmeter.HeatMeterAsset
 import org.openremote.model.attribute.Attribute
-import org.openremote.model.peoplecounter.PeopleCounterAsset
+import org.openremote.model.passagecounter.PassageCounterAsset
 import org.openremote.model.tracker.TrackerAsset
 import org.openremote.model.util.ValueUtil
 import org.openremote.model.value.ValueType
@@ -212,10 +212,10 @@ class DecoderRegistryTest extends Specification {
 
     def "builds a same-name plan for people counters"() {
         given:
-        def asset = new PeopleCounterAsset("P")
+        def asset = new PassageCounterAsset("P")
         asset.getAttributes().clear()
-        asset.getAttributes().getOrCreate(PeopleCounterAsset.PERIOD_IN_ATTRIBUTE_DESCRIPTOR)
-        asset.getAttributes().getOrCreate(PeopleCounterAsset.TOTAL_COUNT_ALARM_ATTRIBUTE_DESCRIPTOR)
+        asset.getAttributes().getOrCreate(PassageCounterAsset.PERIOD_IN_ATTRIBUTE_DESCRIPTOR)
+        asset.getAttributes().getOrCreate(PassageCounterAsset.TOTAL_COUNT_ALARM_ATTRIBUTE_DESCRIPTOR)
 
         when:
         def plan = registry.planFor(asset)
@@ -224,26 +224,26 @@ class DecoderRegistryTest extends Specification {
         plan.isPresent()
         plan.get().decoder() instanceof SameNameDecoder
         plan.get().targetNames() == ["period_in", "total_count_alarm"] as Set
-        registry.assetClasses().contains(PeopleCounterAsset)
+        registry.assetClasses().contains(PassageCounterAsset)
     }
 
     // Guards the contract with the transform-repository VS350/VS351 decoder: these are exactly
-    // the keys docs/people-counter-dictionary.md defines. The message is built the way
+    // the keys docs/passage-counter-dictionary.md defines. The message is built the way
     // IngestPayload builds it, so the counts arrive with their production Java type.
     def "decodes the people-counter key set onto a fully provisioned asset"() {
         given: "an asset provisioned with every attribute this device fills"
-        def asset = new PeopleCounterAsset("P")
-        [PeopleCounterAsset.METER_ID_ATTRIBUTE_DESCRIPTOR,
-         PeopleCounterAsset.PERIOD_IN_ATTRIBUTE_DESCRIPTOR,
-         PeopleCounterAsset.PERIOD_OUT_ATTRIBUTE_DESCRIPTOR,
-         PeopleCounterAsset.TOTAL_IN_ATTRIBUTE_DESCRIPTOR,
-         PeopleCounterAsset.TOTAL_OUT_ATTRIBUTE_DESCRIPTOR,
-         PeopleCounterAsset.TEMPERATURE_ATTRIBUTE_DESCRIPTOR,
-         PeopleCounterAsset.BATTERY_LEVEL_ATTRIBUTE_DESCRIPTOR,
-         PeopleCounterAsset.PERIOD_COUNT_ALARM_ATTRIBUTE_DESCRIPTOR,
-         PeopleCounterAsset.TOTAL_COUNT_ALARM_ATTRIBUTE_DESCRIPTOR,
-         PeopleCounterAsset.TEMPERATURE_ALARM_ATTRIBUTE_DESCRIPTOR,
-         PeopleCounterAsset.HIGH_TEMPERATURE_ALARM_ATTRIBUTE_DESCRIPTOR].each {
+        def asset = new PassageCounterAsset("P")
+        [PassageCounterAsset.METER_ID_ATTRIBUTE_DESCRIPTOR,
+         PassageCounterAsset.PERIOD_IN_ATTRIBUTE_DESCRIPTOR,
+         PassageCounterAsset.PERIOD_OUT_ATTRIBUTE_DESCRIPTOR,
+         PassageCounterAsset.TOTAL_IN_ATTRIBUTE_DESCRIPTOR,
+         PassageCounterAsset.TOTAL_OUT_ATTRIBUTE_DESCRIPTOR,
+         PassageCounterAsset.TEMPERATURE_ATTRIBUTE_DESCRIPTOR,
+         PassageCounterAsset.BATTERY_LEVEL_ATTRIBUTE_DESCRIPTOR,
+         PassageCounterAsset.PERIOD_COUNT_ALARM_ATTRIBUTE_DESCRIPTOR,
+         PassageCounterAsset.TOTAL_COUNT_ALARM_ATTRIBUTE_DESCRIPTOR,
+         PassageCounterAsset.TEMPERATURE_ALARM_ATTRIBUTE_DESCRIPTOR,
+         PassageCounterAsset.HIGH_TEMPERATURE_ALARM_ATTRIBUTE_DESCRIPTOR].each {
             asset.getAttributes().getOrCreate(it)
         }
         def plan = registry.planFor(asset).get()
@@ -290,10 +290,10 @@ class DecoderRegistryTest extends Specification {
 
     def "a mains-powered counter without battery_level still decodes its counts"() {
         given:
-        def asset = new PeopleCounterAsset("P")
+        def asset = new PassageCounterAsset("P")
         asset.getAttributes().clear()
-        asset.getAttributes().getOrCreate(PeopleCounterAsset.PERIOD_IN_ATTRIBUTE_DESCRIPTOR)
-        asset.getAttributes().getOrCreate(PeopleCounterAsset.PERIOD_OUT_ATTRIBUTE_DESCRIPTOR)
+        asset.getAttributes().getOrCreate(PassageCounterAsset.PERIOD_IN_ATTRIBUTE_DESCRIPTOR)
+        asset.getAttributes().getOrCreate(PassageCounterAsset.PERIOD_OUT_ATTRIBUTE_DESCRIPTOR)
         def message = ingested('{"data_decoded": {"period_in": 3, "period_out": 2, "battery_level": 90}}')
 
         when:
@@ -303,6 +303,16 @@ class DecoderRegistryTest extends Specification {
         then:
         plan.get().targetNames() == ["period_in", "period_out"] as Set
         events*.ref*.name as Set == ["period_in", "period_out"] as Set
+    }
+
+    // Asset types are keyed by simple class name, so a class named like an OpenRemote built-in
+    // (PeopleCounterAsset exists in org.openremote.model.asset.impl) silently resolves to the
+    // built-in type instead of ours.
+    def "every decoded asset type resolves to its own class, not a built-in of the same name"() {
+        expect:
+        registry.assetClasses().every { cls ->
+            ValueUtil.getAssetInfo(cls.simpleName).map { it.assetDescriptor.type }.orElse(null) == cls
+        }
     }
 
     def "returns empty for an unregistered asset type"() {

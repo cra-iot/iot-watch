@@ -4,7 +4,7 @@ import org.openremote.model.asset.Asset;
 import org.openremote.model.electricmeter.ElectricMeterAsset;
 import org.openremote.model.gasmeter.GasMeterAsset;
 import org.openremote.model.heatmeter.HeatMeterAsset;
-import org.openremote.model.peoplecounter.PeopleCounterAsset;
+import org.openremote.model.passagecounter.PassageCounterAsset;
 import org.openremote.model.tracker.ShipTrackerAsset;
 import org.openremote.model.tracker.TrackerAsset;
 import org.openremote.model.watermeter.WaterMeterAsset;
@@ -34,7 +34,7 @@ public class DecoderRegistry {
             ElectricMeterAsset.class, sameName,
             HeatMeterAsset.class, sameName,
             GasMeterAsset.class, sameName,
-            PeopleCounterAsset.class, sameName,
+            PassageCounterAsset.class, sameName,
             TrackerAsset.class, gnss,
             ShipTrackerAsset.class, gnss);
     }
@@ -42,7 +42,7 @@ public class DecoderRegistry {
     /** Asset classes to narrow the event subscription to (Task 4). */
     public List<Class<? extends Asset>> assetClasses() {
         return List.of(WaterMeterAsset.class, ElectricMeterAsset.class, HeatMeterAsset.class,
-            GasMeterAsset.class, PeopleCounterAsset.class, TrackerAsset.class, ShipTrackerAsset.class);
+            GasMeterAsset.class, PassageCounterAsset.class, TrackerAsset.class, ShipTrackerAsset.class);
     }
 
     public Optional<DecodePlan> planFor(Asset<?> asset) {
