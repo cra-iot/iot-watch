@@ -18,8 +18,8 @@ OpenRemote is licensed under [AGPL-3.0](https://github.com/openremote/openremote
 ### Features
 
 - **Custom asset types** (`model/`) representing CRA IoT device data — the main customization of this project.
-- **Custom web app** for CRA customers (`ui/app/`) built on OpenRemote UI components.
-- **CRA branding** (`deployment/`): logos, Manager UI configuration, map settings, and Keycloak theme.
+- **IoT Watch manager app** (`ui/app/fleet`): the OpenRemote manager UI extended with a **Fleet** page, a searchable overview of all meters in a realm with alarm / silent / ok status, backed by the `POST /api/{realm}/fleet/query` endpoint in `manager/`. Served at `/manager` in place of the built-in app.
+- **Deployment content** (`deployment/`): Manager UI configuration and logos, map settings, and Keycloak themes. These are still the template defaults; CRA branding and the CRA Keycloak theme are in progress.
 - **Data ingestion** from the CRA IoT Platform via its HTTP egress, received by a custom, API-key-authenticated HTTP ingest endpoint implemented in `manager/`. The MQTT egress → built-in OpenRemote MQTT agent path (configured in the Manager; no custom protocol code) remains supported but is no longer used.
 - **Device decoding** (`manager/`): a decode service turns each message's `rawValue` into typed attributes, independent of how `rawValue` arrived — so it serves both ingest paths. Replaces the earlier Manager-authored Groovy decode rules.
 - **Groovy rules** authored in the Manager UI; this repository versions their backups.
@@ -32,6 +32,8 @@ OpenRemote itself runs unmodified — the customizations above are delivered to 
 - **Egress** — delivery of device messages from the IoT Platform to customer endpoints (HTTP or MQTT). IoT Watch consumes the HTTP egress; the MQTT egress is still supported but no longer used.
 - **Manager (UI)** — the OpenRemote administration and dashboard UI, deployed at `https://<hostname>/manager/`.
 - **Realm** — a Keycloak/OpenRemote tenant. IoT Watch uses one realm per CRA customer.
+- **Restricted user** — a customer's Keycloak user, limited to the assets linked to them and to attributes marked for restricted read; never sees the raw message (`rawValue`). Operators are unrestricted.
+- **Fleet page** — the meter overview in the IoT Watch manager app; a meter is *silent* when it has not reported for 24 hours.
 - **Asset / attribute** — OpenRemote's data model: devices and their measurements are represented as assets with attributes.
 - **Agent** — an OpenRemote component connecting external protocols to assets via agent links; the built-in MQTT agent is supported but no longer used, as ingestion now goes through the HTTP endpoint.
 - **Extension (JAR)** — a JAR the manager loads at startup from `/deployment/manager/extensions`; the mechanism by which the custom asset types, services, and setup tasks from this repository reach the unmodified OpenRemote image.
@@ -56,7 +58,7 @@ CRA IoT Platform
      decode service → typed attributes (location, battery, currentReading, …)
                           │
                           ▼
-      Manager UI dashboards + custom app (ui/app/)
+  Manager UI dashboards + Fleet page (ui/app/fleet, fleet/query)
                           ▲
                           │
         CRA customers (one Keycloak realm per customer)
@@ -77,7 +79,8 @@ All requests from and towards running services go through the [HAProxy](https://
 The TEST and PROD instances run the **unmodified official OpenRemote images** on CRA Kubernetes; Helm charts and deployment configuration are maintained in a separate repository on the CRA GitLab. No custom OpenRemote image is built from this repository. Instead, `./gradlew clean installDist` assembles the deployment content under `deployment/build/image/`, and the relevant parts are mounted into the pods:
 
 - `manager/extensions/*.jar` — the extension JARs (custom asset types, custom services, setup tasks). The manager loads every JAR found in `/deployment/manager/extensions`.
-- Branding files (`manager/app/`), Keycloak themes, and map settings — mounted the same way.
+- `manager/app/manager/` — the IoT Watch manager app. CI publishes it as the `iot-watch/fleet-app` content image, which the Helm chart copies into the pod with an init container (`or.custom.apps.manager`).
+- Manager UI configuration and logos (`manager/app/`), Keycloak themes, and map settings — mounted the same way.
 
 The `docker-compose.yml` in the root of this repository is the upstream template's deployment profile and serves local development and manual runs only; there the same content is delivered through the `deployment` image and a shared volume instead of a mount.
 
@@ -115,7 +118,8 @@ For UI development, start the backend from a dev profile (it pulls `deploy.yml` 
 ```bash
 docker compose -f profile/dev-ui.yml -p iot-watch up -d
 yarn install
-cd ui/app/fleet && yarn run serve    # http://localhost:9000/fleet/?realm=<realm>
+cd ui/app/fleet && yarn run serveNoModelBuild --env managerUrl=http://localhost:8080 --env keycloakUrl=http://localhost:8081/auth
+# http://localhost:9000/fleet/?realm=<realm>
 ```
 
 ### Examples
