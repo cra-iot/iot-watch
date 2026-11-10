@@ -4,6 +4,7 @@ import org.openremote.manager.iotwatch.SameNameDecoder
 import org.openremote.model.electricmeter.ElectricMeterAsset
 import org.openremote.model.gasmeter.GasMeterAsset
 import org.openremote.model.heatmeter.HeatMeterAsset
+import org.openremote.model.passagecounter.PassageCounterAsset
 import org.openremote.model.util.ValueUtil
 import org.openremote.model.watermeter.WaterMeterAsset
 import spock.lang.Specification
@@ -162,7 +163,7 @@ class SameNameDecoderTest extends Specification {
         events*.ref*.name == ["currentReading"]
     }
 
-    def "delivery_point_id is not a candidate attribute name for any meter type"() {
+    def "delivery_point_id is not a candidate attribute name for any decoded type"() {
         expect:
         !decoder.candidateAttributeNames(asset).contains("delivery_point_id")
 
@@ -171,7 +172,8 @@ class SameNameDecoderTest extends Specification {
             new WaterMeterAsset("w"),
             new GasMeterAsset("g"),
             new ElectricMeterAsset("e"),
-            new HeatMeterAsset("h")
+            new HeatMeterAsset("h"),
+            new PassageCounterAsset("p")
         ]
     }
 }

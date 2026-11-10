@@ -3,6 +3,7 @@ package org.openremote.test.iotwatch
 import org.openremote.model.electricmeter.ElectricMeterAsset
 import org.openremote.model.gasmeter.GasMeterAsset
 import org.openremote.model.heatmeter.HeatMeterAsset
+import org.openremote.model.passagecounter.PassageCounterAsset
 import org.openremote.model.rfid.RfidChipAsset
 import org.openremote.model.rfid.RfidReaderAsset
 import org.openremote.model.tracker.ShipTrackerAsset
@@ -29,7 +30,8 @@ class DevEuiDescriptorTest extends Specification {
             RfidReaderAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR,
             ElectricMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR,
             HeatMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR,
-            GasMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR
+            GasMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR,
+            PassageCounterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR
         ]
     }
 
@@ -46,7 +48,8 @@ class DevEuiDescriptorTest extends Specification {
             RfidReaderAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR,
             ElectricMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR,
             HeatMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR,
-            GasMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR
+            GasMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR,
+            PassageCounterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR
         ]
     }
 
@@ -63,7 +66,8 @@ class DevEuiDescriptorTest extends Specification {
             RfidReaderAsset.RAW_VALUE_ATTRIBUTE_DESCRIPTOR,
             ElectricMeterAsset.RAW_VALUE_ATTRIBUTE_DESCRIPTOR,
             HeatMeterAsset.RAW_VALUE_ATTRIBUTE_DESCRIPTOR,
-            GasMeterAsset.RAW_VALUE_ATTRIBUTE_DESCRIPTOR
+            GasMeterAsset.RAW_VALUE_ATTRIBUTE_DESCRIPTOR,
+            PassageCounterAsset.RAW_VALUE_ATTRIBUTE_DESCRIPTOR
         ]
     }
 }
