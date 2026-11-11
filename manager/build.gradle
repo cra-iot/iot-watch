@@ -3,7 +3,6 @@ plugins {
 }
 
 dependencies {
-    api project(":agent")
     api project(":model")
     api libs.openremote.container
     api libs.openremote.manager
