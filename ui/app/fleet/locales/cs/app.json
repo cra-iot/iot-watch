@@ -51,7 +51,7 @@
     },
     "column": {
       "actions": "Akce",
-      "meter": "Měřidlo",
+      "meter": "Zařízení",
       "type": "Typ",
       "deliveryPoint": "Odběrné místo",
       "identity": "Výrobní číslo a devEUI",

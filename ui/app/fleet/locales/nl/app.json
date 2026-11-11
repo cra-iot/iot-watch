@@ -20,7 +20,7 @@
     },
     "column": {
       "actions": "Acties",
-      "meter": "Meter",
+      "meter": "Apparaat",
       "type": "Type",
       "deliveryPoint": "Delivery point",
       "identity": "Serienummer en devEUI",

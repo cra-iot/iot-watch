@@ -51,7 +51,7 @@
     },
     "column": {
       "actions": "Actions",
-      "meter": "Meter",
+      "meter": "Device",
       "type": "Type",
       "deliveryPoint": "Delivery point",
       "identity": "Serial & devEUI",

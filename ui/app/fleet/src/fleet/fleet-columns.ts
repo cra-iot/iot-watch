@@ -63,7 +63,7 @@ export function resolveHidden(fromUrl: readonly string[] | undefined, stored: st
 }
 
 /** The meter name is always shown. A column's key is also its server sort field. */
-const METER: FleetColumn = { key: "name", label: "Meter", labelKey: "fleet.column.meter", sortable: true };
+const METER: FleetColumn = { key: "name", label: "Device", labelKey: "fleet.column.meter", sortable: true };
 
 const LEADING: FleetColumn[] = [
     { key: "type", label: "Type", labelKey: "fleet.column.type", sortable: true, hideKey: "type" },
