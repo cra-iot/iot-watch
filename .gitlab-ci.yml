@@ -14,7 +14,7 @@ stages:
   - release
 
 variables:
-  FLEET_APP_IMAGE: iot-watch/fleet-app
+  DEPLOYMENT_IMAGE: iot-watch/deployment
 
 # CRA root CAs (same list and checksums as the CRA CI catalog), appended to the system bundle
 .cra-ca:
@@ -58,6 +58,8 @@ build:gradle:
     when: always
     expire_in: 1 days
     paths:
+      - deployment/build/image/manager/extensions/iot-watch-model-*.jar
+      - deployment/build/image/manager/extensions/iot-watch-manager-*.jar
       - ui/component/model/src/model.ts
       - ui/component/model/src/typescript-generator-info.json
       - ui/component/rest/src/restclient.ts
@@ -102,16 +104,17 @@ build:fleet-app:
     paths:
       - fleet-app/
 
-# Content image for the Helm chart (or.custom.apps): the app under /app, copied by an init container.
+# Content image for the Helm chart (or.custom.image): extension JARs under /content/extensions,
+# apps under /content/apps/<name>, copied into an emptyDir by an init container.
 # Same versioning as the go-microservice component: main pushes $NEXT_VERSION when auto-release
 # decides a release, other branches always push <sha>-<branch>-<pipeline>.
-build:fleet-app:image:
+build:deployment:image:
   stage: build_docker
   image: quay.$PROXY/containers/buildah:v1.40.1-immutable
   tags:
     - docker
     - iot
-  # No needs: by stage order the job gets fleet-app/ and the auto-release dotenv (NEXT_VERSION, RELEASE_NEEDED)
+  # No needs: by stage order the job gets the build:gradle JARs, fleet-app/ and the auto-release dotenv (NEXT_VERSION, RELEASE_NEEDED)
   cache: []
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event" || $CI_COMMIT_TAG'
@@ -139,15 +142,29 @@ build:fleet-app:image:
         echo "RELEASE_NEEDED=true but VERSION is empty. Check the auto-release version job." >&2
         exit 1
       fi
-    - IMAGE_TAG="${FLEET_APP_IMAGE}:${VERSION}"
+    # Only the model and manager JARs are shipped (the setup and agent JARs in the same directory are not)
+    - |
+      EXT=deployment/build/image/manager/extensions
+      test -f fleet-app/index.html || { echo "fleet-app/ missing: build:fleet-app artifact not available" >&2; exit 1; }
+      for m in model manager; do
+        n=$(find "$EXT" -maxdepth 1 -name "iot-watch-$m-*.jar" | wc -l)
+        [ "$n" -eq 1 ] || { echo "expected 1 iot-watch-$m JAR, found $n" >&2; exit 1; }
+      done
+      OR_VERSION=$(sed -n 's/^openremote = "\(.*\)"/\1/p' gradle/libs.versions.toml)
+      test -n "$OR_VERSION" || { echo "openremote version not found in gradle/libs.versions.toml" >&2; exit 1; }
+    - IMAGE_TAG="${DEPLOYMENT_IMAGE}:${VERSION}"
     - ctr=$(buildah from --creds=$PROXY_AUTH_WRITE dockerhub.$PROXY/library/alpine:3)
     - mnt=$(buildah mount "$ctr")
-    - mkdir -p "$mnt/app"
-    - cp -R fleet-app/. "$mnt/app/"
+    - mkdir -p "$mnt/content/extensions" "$mnt/content/apps/manager"
+    - cp "$EXT"/iot-watch-model-*.jar "$EXT"/iot-watch-manager-*.jar "$mnt/content/extensions/"
+    - cp -R fleet-app/. "$mnt/content/apps/manager/"
+    - chmod -R a+rX "$mnt/content"
     - buildah umount "$ctr"
     - |
       buildah config \
-        --workingdir /app \
+        --workingdir /content \
+        --user 1000 \
+        --label "org.openremote.version=${OR_VERSION}" \
         --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         --label "org.opencontainers.image.version=${VERSION}" \
         --label "org.opencontainers.image.revision=${CI_COMMIT_SHA}" \
@@ -155,7 +172,7 @@ build:fleet-app:image:
         --label "org.opencontainers.image.vendor=CRA" \
         --label "org.opencontainers.image.source=${CI_PROJECT_URL}" \
         --label "org.opencontainers.image.url=${CI_PROJECT_URL}" \
-        --label "org.opencontainers.image.description=IoT Watch manager app (Helm or.custom.apps content image), built from ${CI_PROJECT_PATH} ${CI_COMMIT_REF_NAME}" \
+        --label "org.opencontainers.image.description=IoT Watch deployment content (extensions + manager app) for the Helm chart, built from ${CI_PROJECT_PATH} ${CI_COMMIT_REF_NAME}" \
         "$ctr"
     - buildah commit "$ctr" "$NEXUS_REGISTRY/$IMAGE_TAG"
     - printf '%s' "$NEXUS_REGISTRY_PASSWORD" | buildah login -u "$NEXUS_REGISTRY_USER" --password-stdin $NEXUS_REGISTRY
