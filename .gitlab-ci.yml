@@ -150,6 +150,12 @@ build:deployment:image:
         n=$(find "$EXT" -maxdepth 1 -name "iot-watch-$m-*.jar" | wc -l)
         [ "$n" -eq 1 ] || { echo "expected 1 iot-watch-$m JAR, found $n" >&2; exit 1; }
       done
+      for j in "$EXT"/*.jar; do
+        case "$(basename "$j")" in
+          iot-watch-model-*.jar|iot-watch-manager-*.jar|iot-watch-setup-*.jar|iot-watch-agent-*.jar) ;;
+          *) echo "unexpected JAR $(basename "$j") in $EXT: teach the image job to ship it (setup and agent are intentionally not shipped)" >&2; exit 1 ;;
+        esac
+      done
       OR_VERSION=$(sed -n 's/^openremote = "\(.*\)"/\1/p' gradle/libs.versions.toml)
       test -n "$OR_VERSION" || { echo "openremote version not found in gradle/libs.versions.toml" >&2; exit 1; }
     - IMAGE_TAG="${DEPLOYMENT_IMAGE}:${VERSION}"
