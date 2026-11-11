@@ -76,11 +76,12 @@ All requests from and towards running services go through the [HAProxy](https://
 
 ### Deployment (Kubernetes)
 
-The TEST and PROD instances run the **unmodified official OpenRemote images** on CRA Kubernetes; Helm charts and deployment configuration are maintained in a separate repository on the CRA GitLab. No custom OpenRemote image is built from this repository. Instead, `./gradlew clean installDist` assembles the deployment content under `deployment/build/image/`, and the relevant parts are mounted into the pods:
+The TEST and PROD instances run the **unmodified official OpenRemote images** on CRA Kubernetes; Helm charts and deployment configuration are maintained in a separate repository on the CRA GitLab. No custom OpenRemote image is built from this repository. Instead, CI packs the deployment content into one small content image, `iot-watch/deployment`:
 
-- `manager/extensions/*.jar` — the extension JARs (custom asset types, custom services, setup tasks). The manager loads every JAR found in `/deployment/manager/extensions`.
-- `manager/app/manager/` — the IoT Watch manager app. CI publishes it as the `iot-watch/fleet-app` content image, which the Helm chart copies into the pod with an init container (`or.custom.apps.manager`).
-- Manager UI configuration and logos (`manager/app/`), Keycloak themes, and map settings — mounted the same way.
+- `/content/extensions/` — the `iot-watch-model` and `iot-watch-manager` extension JARs. The manager loads every JAR found in `/deployment/manager/extensions`. The setup and agent JARs are not shipped.
+- `/content/apps/manager/` — the IoT Watch manager app, served by the manager at `/manager` in place of the built-in app.
+
+The Helm chart runs the image as an init container that copies `/content` into an `emptyDir`; the manager container mounts only the `extensions` folder at `/deployment/manager/extensions` and the app folder under the custom app docroot. Manager UI configuration (`manager_config.json`) and map settings are provided by the environment's deployment configuration, and Keycloak themes are not part of the image.
 
 The `docker-compose.yml` in the root of this repository is the upstream template's deployment profile and serves local development and manual runs only; there the same content is delivered through the `deployment` image and a shared volume instead of a mount.
 
@@ -88,8 +89,8 @@ The `docker-compose.yml` in the root of this repository is the upstream template
 
 - **Version coupling.** The extension JARs are compiled against the OpenRemote version pinned in `gradle/libs.versions.toml`. When the manager image tag is bumped in the Helm charts, the JARs must be rebuilt against the same version — a mismatch can fail at startup or misbehave silently.
 - **Startup-only loading.** The manager scans `/deployment/manager/extensions` only at boot. Replacing a JAR on the mounted volume has no effect until the manager pod is restarted; every JAR update must be paired with a rollout restart.
-- **Artifact delivery.** Copying JARs to a volume by hand is unversioned and hard to roll back. The recommended variant of the same architecture: build the deployment image this repository already produces (`deployment/Dockerfile`) and run it as an init container that copies `/deployment` into an `emptyDir` shared with the manager container. A deployment then becomes an image tag in Helm — versioned, reproducible, with rollback and pod restart for free.
-- **Whole content, not just extensions.** The custom UI app and branding are served by the manager from the same `/deployment` volume, so the mount must carry the complete `deployment/build/image/` content, not only the `extensions/` folder.
+- **Artifact delivery.** A deployment is an image tag in the environment's deployment configuration — versioned, reproducible, with rollback (revert to the previous tag) and a pod restart for free. The image carries the OpenRemote version it was built against as the label `org.openremote.version`.
+- **Partial mounts, not the whole `/deployment`.** Only the extensions and the app folder are mounted from the image. Mounting the complete content would shadow `manager_config.json` and the map settings, which are owned by the deployment configuration (the former via a ConfigMap, the latter on persistent storage).
 
 ## Developer Guide
 
@@ -104,7 +105,7 @@ Build the Java modules and assemble the deployment image content:
 ./gradlew clean installDist
 ```
 
-The extension JARs end up in `deployment/build/image/manager/extensions/` — this is the artifact mounted into the Kubernetes manager pod.
+The extension JARs end up in `deployment/build/image/manager/extensions/`; CI packs the model and manager JARs from there into the deployment content image.
 
 Run the full local stack (fetch the base compose profile once, see [Docker Compose files](#docker-compose-files)):
 
