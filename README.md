@@ -88,7 +88,7 @@ The `docker-compose.yml` in the root of this repository is the upstream template
 #### Deployment considerations
 
 - **Version coupling.** The extension JARs are compiled against the OpenRemote version pinned in `gradle/libs.versions.toml`. When the manager image tag is bumped in the Helm charts, the JARs must be rebuilt against the same version — a mismatch can fail at startup or misbehave silently.
-- **Startup-only loading.** The manager scans `/deployment/manager/extensions` only at boot. The manager loads JARs only at boot, so a JAR update ships as a new image tag, which rolls the manager pod on deploy.
+- **Startup-only loading.** The manager scans `/deployment/manager/extensions` only at boot, so a JAR update ships as a new image tag, which rolls the manager pod on deploy.
 - **Artifact delivery.** A deployment is an image tag in the environment's deployment configuration — versioned, reproducible, with rollback (revert to the previous tag) and a pod restart for free. The image carries the OpenRemote version it was built against as the label `org.openremote.version`.
 - **Partial mounts, not the whole `/deployment`.** Only the extensions and the app folder are mounted from the image. Mounting the complete content would shadow `manager_config.json` and the map settings, which are owned by the deployment configuration (the former via a ConfigMap, the latter on persistent storage).
 
