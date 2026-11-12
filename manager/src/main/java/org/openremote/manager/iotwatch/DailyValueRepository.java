@@ -11,6 +11,7 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
@@ -18,19 +19,20 @@ import java.util.Map;
 
 /**
  * Reads the end-of-day values of the fleet CSV export straight from asset_datapoint (a TimescaleDB
- * hypertable whose timestamp column is "timestamp without time zone" holding UTC). Data points with
+ * hypertable whose timestamp column is "timestamp without time zone" holding JVM-default-zone local time,
+ * as OpenRemote writes it). Data points with
  * a JSON null value are ignored, so a Reading never has a null value.
  */
 public class DailyValueRepository {
 
     public static final int DEFAULT_LOOKBACK_WEEKS = 260;
 
-    // The day is the calendar date of the data point in the export zone (UTC wall time -> timestamptz
+    // The day is the calendar date of the data point in the export zone (stored wall time -> timestamptz
     // -> zone wall time -> date), so a day with a DST change is still one day. public.last is
     // schema-qualified, as in OpenRemote's own AssetDatapointService.
     private static final String DAILY_SQL =
             "SELECT ad.entity_id, ad.attribute_name, "
-                    + "((ad.timestamp AT TIME ZONE 'UTC') AT TIME ZONE ?)::date AS day, "
+                    + "((ad.timestamp AT TIME ZONE ?) AT TIME ZONE ?)::date AS day, "
                     + "public.last(ad.value #>> '{}', ad.timestamp) AS value, "
                     + "max(ad.timestamp) AS reading_at "
                     + "FROM asset_datapoint ad "
@@ -65,15 +67,17 @@ public class DailyValueRepository {
         if (assetIds.isEmpty() || attributes.isEmpty()) {
             return result;
         }
-        String zoneId = range.zone().getId();
+        String zoneId = sqlZone(range.zone());
+        String storedZone = sqlZone(ZoneId.systemDefault());
         return persistenceService.doReturningTransaction(em ->
                 em.unwrap(Session.class).doReturningWork(connection -> {
                     try (PreparedStatement st = connection.prepareStatement(DAILY_SQL)) {
-                        st.setString(1, zoneId);
-                        st.setArray(2, varcharArray(connection, assetIds));
-                        st.setArray(3, varcharArray(connection, attributes));
-                        st.setObject(4, utc(range.start()));
-                        st.setObject(5, utc(range.end()));
+                        st.setString(1, storedZone);
+                        st.setString(2, zoneId);
+                        st.setArray(3, varcharArray(connection, assetIds));
+                        st.setArray(4, varcharArray(connection, attributes));
+                        st.setObject(5, stored(range.start()));
+                        st.setObject(6, stored(range.end()));
                         try (ResultSet rs = st.executeQuery()) {
                             while (rs.next()) {
                                 LocalDate day = rs.getObject("day", LocalDate.class);
@@ -96,7 +100,7 @@ public class DailyValueRepository {
             return result;
         }
         int weeks = lookbackWeeks <= 0 ? DEFAULT_LOOKBACK_WEEKS : lookbackWeeks;
-        LocalDateTime upper = utc(range.start());
+        LocalDateTime upper = stored(range.start());
         LocalDateTime lower = upper.minusWeeks(weeks);
         return persistenceService.doReturningTransaction(em ->
                 em.unwrap(Session.class).doReturningWork(connection -> {
@@ -121,12 +125,18 @@ public class DailyValueRepository {
         return connection.createArrayOf("varchar", values.toArray());
     }
 
-    private static LocalDateTime utc(Instant instant) {
-        return LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
+    /** A region-safe zone name for PostgreSQL: "Z" and fixed offsets would be read with reversed sign. */
+    private static String sqlZone(ZoneId zone) {
+        return zone instanceof ZoneOffset || zone.getId().matches("(UTC|GMT|UT)[+-].*") ? "UTC" : zone.getId();
     }
 
-    /** The column holds UTC without a zone; read it as a local date-time and label it UTC. */
+    /** As OpenRemote writes the column: local time in the JVM default zone. */
+    private static LocalDateTime stored(Instant instant) {
+        return LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
+    }
+
+    /** The column holds JVM-default-zone local time, as OpenRemote writes it. */
     private static Instant instant(ResultSet rs, String column) throws SQLException {
-        return rs.getObject(column, LocalDateTime.class).toInstant(ZoneOffset.UTC);
+        return rs.getObject(column, LocalDateTime.class).atZone(ZoneId.systemDefault()).toInstant();
     }
 }

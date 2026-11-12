@@ -26,7 +26,15 @@ public record FleetExportRange(LocalDate from, LocalDate to, ZoneId zone, Instan
         LocalDate fromDate;
         LocalDate toDate;
         try {
-            zone = timeZone == null || timeZone.isBlank() ? ZoneOffset.UTC : ZoneId.of(timeZone.trim());
+            if (timeZone == null || timeZone.isBlank()) {
+                zone = ZoneOffset.UTC;
+            } else {
+                zone = ZoneId.of(timeZone.trim());
+                // Only region IDs: PostgreSQL reads "+02:00" or "UTC+2" as a POSIX offset with reversed sign
+                if (zone instanceof ZoneOffset || zone.getId().matches("(UTC|GMT|UT)[+-].*")) {
+                    throw new DateTimeException("Not a region time zone: " + timeZone);
+                }
+            }
         } catch (DateTimeException e) {
             throw new IllegalArgumentException("Unknown time zone: " + timeZone);
         }

@@ -37,6 +37,13 @@ class FleetExportRangeTest extends Specification {
         "a bad date"      | "2026-13-01" | "2026-11-10" | null
         "a null from"     | null         | "2026-11-10" | null
         "an unknown zone" | "2026-10-01" | "2026-10-31" | "Mars/Base"
+        "a fixed offset"  | "2026-10-01" | "2026-10-31" | "+02:00"
+        "a UTC offset"    | "2026-10-01" | "2026-10-31" | "UTC+2"
+    }
+
+    def "accepts the plain UTC zone"() {
+        expect:
+        FleetExportRange.parse("2026-10-01", "2026-10-31", "UTC", NOW).utc()
     }
 
     def "accepts 366 days and yesterday"() {
