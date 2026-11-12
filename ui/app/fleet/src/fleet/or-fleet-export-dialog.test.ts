@@ -115,6 +115,27 @@ describe("or-fleet-export-dialog", () => {
         expect(form(element)!.period).toBe("last3");
     });
 
+    it("starts a reopened dialog from the remembered choice, not the last one shown", async () => {
+        const element = await mount();
+        form(element)!.period = "last12";
+        await settle(element);
+        cancelButton(element).click();
+        element.open = false;
+        await settle(element);
+        element.open = true;
+        await settle(element);
+        expect(form(element)!.period).toBe("lastMonth");
+
+        window.localStorage.setItem("fleet.export.choice", JSON.stringify({ assetType: "GasMeterAsset", report: "DAILY", period: "last3" }));
+        element.open = false;
+        await settle(element);
+        element.open = true;
+        await settle(element);
+        expect(form(element)!.assetType).toBe("GasMeterAsset");
+        expect(form(element)!.report).toBe("DAILY");
+        expect(form(element)!.period).toBe("last3");
+    });
+
     it("falls back to the defaults when browser storage fails", async () => {
         Object.defineProperty(window, "localStorage", { configurable: true, get: () => { throw new Error("blocked"); } });
         const element = await mount();

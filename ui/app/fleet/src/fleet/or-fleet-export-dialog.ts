@@ -1,5 +1,6 @@
 import { css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { keyed } from "lit/directives/keyed.js";
 import { OrElement } from "@openremote/or-element";
 import { i18next, translate as translateMixin } from "@openremote/or-translate";
 import "@openremote/or-vaadin-components/or-vaadin-dialog";
@@ -70,7 +71,10 @@ export class OrFleetExportDialog extends translateMixin(i18next)(OrElement) {
     @state() protected _busy = false;
     @state() protected _problem?: Problem;
 
-    /** Drops an options answer that arrives after the dialog was closed or reopened. */
+    /**
+     * Drops an options answer that arrives after the dialog was closed or reopened. Each load also gets
+     * a new form, so a reopened dialog starts from the remembered choice, not the last one shown.
+     */
     protected _loadId = 0;
 
     protected updated(changed: PropertyValues): void {
@@ -174,9 +178,10 @@ export class OrFleetExportDialog extends translateMixin(i18next)(OrElement) {
             <or-vaadin-dialog .opened=${this.open} .headerTitle=${i18next.t("app:fleet.export.title")}
                               .noCloseOnEsc=${this._busy} no-close-on-outside-click
                               @opened-changed=${(e: CustomEvent) => this._onOpenedChanged(e)}>
-                <or-fleet-export-form .options=${this._options} .assetType=${this._assetType} .report=${this._report}
-                                      .period=${this._period} .busy=${this._busy}
-                                      @or-fleet-export-form-change=${(e: CustomEvent<FleetExportChoice>) => this._onChoice(e)}></or-fleet-export-form>
+                ${keyed(this._loadId, html`
+                    <or-fleet-export-form .options=${this._options} .assetType=${this._assetType} .report=${this._report}
+                                          .period=${this._period} .busy=${this._busy}
+                                          @or-fleet-export-form-change=${(e: CustomEvent<FleetExportChoice>) => this._onChoice(e)}></or-fleet-export-form>`)}
                 <div class="status" role="status">${this._busy
                     ? html`<or-translate value="app:fleet.export.exporting"></or-translate>` : nothing}</div>
                 <div class="error" role="alert">${problem

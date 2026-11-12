@@ -123,6 +123,17 @@ describe("or-fleet-export-form", () => {
         expect(last(changes).problem).toBe("app:fleet.export.error.future");
     });
 
+    it("keeps a cleared custom date empty and reports it missing", async () => {
+        const { form, changes } = await mount({ options: OPTIONS, report: "DAILY" as never, period: "custom" });
+        change($(form, "or-vaadin-date-picker.from")!, "2026-09-15");
+        await settle(form);
+        change($(form, "or-vaadin-date-picker.to")!, "");
+        await settle(form);
+        expect(form.customFrom).toBe("2026-09-15");
+        expect(form.customTo).toBe("");
+        expect(last(changes)).toMatchObject({ from: "2026-09-15", to: "", problem: "app:fleet.export.error.missing" });
+    });
+
     it("shows a note and nothing else when no type can be exported", async () => {
         const { form, changes } = await mount({ options: { ...OPTIONS, types: [] } });
         expect(($(form, ".note or-translate") as unknown as { value?: string } | null)?.value).toBe("app:fleet.export.noTypes");

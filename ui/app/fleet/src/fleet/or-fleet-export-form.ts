@@ -105,8 +105,10 @@ export class OrFleetExportForm extends translateMixin(i18next)(OrElement) {
             this.period = "lastMonth";
         }
         // A custom range starts as last month; the other report's range does not fit the pickers.
+        // A field the user cleared later stays empty, so the missing problem shows.
         const reportSwitched = changed.has("report") && changed.get("report") !== undefined;
-        if (this.period === "custom" && (reportSwitched || !this.customFrom || !this.customTo)) {
+        const entered = changed.has("period") || changed.has("options");
+        if (this.period === "custom" && (reportSwitched || (entered && (!this.customFrom || !this.customTo)))) {
             const lastMonth = choices.find((choice) => choice.key === "lastMonth")!;
             this.customFrom = lastMonth.from;
             this.customTo = lastMonth.to;
