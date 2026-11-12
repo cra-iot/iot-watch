@@ -1,16 +1,20 @@
 package org.openremote.test.iotwatch
 
-import org.openremote.manager.iotwatch.DailyRows
-import org.openremote.manager.iotwatch.DailyValueRepository
 import org.openremote.manager.iotwatch.FleetExportCsv
-import org.openremote.manager.iotwatch.FleetExportRange
+import org.openremote.manager.iotwatch.FleetExportPeriod
 import org.openremote.manager.iotwatch.FleetExporter
 import org.openremote.manager.iotwatch.FleetResourceImpl
+import org.openremote.manager.iotwatch.PeriodRows
+import org.openremote.manager.iotwatch.PeriodValueRepository
 import org.openremote.model.asset.Asset
+import org.openremote.model.attribute.MetaItem
 import org.openremote.model.electricmeter.ElectricMeterAsset
+import org.openremote.model.gasmeter.GasMeterAsset
+import org.openremote.model.iotwatch.FleetExportReport
 import org.openremote.model.iotwatch.FleetExportRequest
 import org.openremote.model.iotwatch.FleetQuery
 import org.openremote.model.util.ValueUtil
+import org.openremote.model.value.MetaItemType
 import org.openremote.model.watermeter.WaterMeterAsset
 import spock.lang.Specification
 
@@ -19,7 +23,6 @@ import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.util.function.LongSupplier
-import java.util.zip.ZipInputStream
 
 class FleetExporterTest extends Specification {
 
@@ -30,32 +33,54 @@ class FleetExporterTest extends Specification {
         ValueUtil.initialise(null)
     }
 
-    /** Canned values for every requested asset and attribute; optionally fails for one attribute. */
-    static class FakeRepository extends DailyValueRepository {
+    /**
+     * For every requested asset and attribute: seed 5 one hour before the range, then 10, 20, 30...
+     * one hour into each period (t1 and t2 one and two minutes later). empty: no readings at all;
+     * failOn: fails for that attribute.
+     */
+    static class FakeRepository extends PeriodValueRepository {
         String failOn
+        boolean empty
+        List<List<String>> queried = []
+        static final Map<String, Integer> MINUTES = ["energy_active_t1": 1, "energy_active_t2": 2]
 
         FakeRepository() {
             super(null, 0)
         }
 
         @Override
-        Map<String, Map<LocalDate, Map<String, DailyRows.Reading>>> daily(
-                List<String> assetIds, List<String> attributes, FleetExportRange range) {
+        Map<String, Map<LocalDate, Map<String, PeriodRows.Reading>>> lastPerPeriod(
+                List<String> assetIds, List<String> attributes, FleetExportPeriod period) {
+            queried << attributes
             if (failOn != null && attributes.contains(failOn)) {
                 throw new IllegalStateException("database gone")
             }
+            if (empty) {
+                return [:]
+            }
             def result = [:]
             assetIds.each { id ->
-                def perAttribute = attributes.collectEntries { [(it): new DailyRows.Reading("5", range.start().plusSeconds(3600))] }
-                result[id] = [(range.from()): perAttribute]
+                def perPeriod = [:]
+                period.periods().eachWithIndex { LocalDate start, int i ->
+                    def at = start.atStartOfDay(FleetExportPeriod.ZONE).toInstant().plusSeconds(3600)
+                    perPeriod[start] = attributes.collectEntries {
+                        [(it): new PeriodRows.Reading(String.valueOf(10 * (i + 1)), at.plusSeconds(60 * MINUTES.getOrDefault(it, 0)))]
+                    }
+                }
+                result[id] = perPeriod
             }
             return result
         }
 
         @Override
-        Map<String, Map<String, DailyRows.Reading>> seed(
-                List<String> assetIds, List<String> attributes, FleetExportRange range) {
-            return [:]
+        Map<String, Map<String, PeriodRows.Reading>> seed(
+                List<String> assetIds, List<String> attributes, FleetExportPeriod period) {
+            if (empty) {
+                return [:]
+            }
+            return assetIds.collectEntries { id ->
+                [(id): attributes.collectEntries { [(it): new PeriodRows.Reading("5", period.start().minusSeconds(3600))] }]
+            }
         }
     }
 
@@ -63,6 +88,7 @@ class FleetExporterTest extends Specification {
         def asset = new WaterMeterAsset(name)
         asset.setId(id)
         asset.getAttributes().getOrCreate(WaterMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR).setValue("TEST-EUI-" + id)
+        asset.getAttributes().getOrCreate(WaterMeterAsset.METER_ID_ATTRIBUTE_DESCRIPTOR).setValue("M-" + id)
         asset.getAttributes().getOrCreate(WaterMeterAsset.CURRENT_READING_ATTRIBUTE_DESCRIPTOR)
         return asset
     }
@@ -72,15 +98,26 @@ class FleetExporterTest extends Specification {
         asset.setId(id)
         asset.getAttributes().getOrCreate(ElectricMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR).setValue("TEST-EUI-" + id)
         asset.getAttributes().getOrCreate(ElectricMeterAsset.ENERGY_ACTIVE_TOTAL_ATTRIBUTE_DESCRIPTOR)
+        asset.getAttributes().getOrCreate(ElectricMeterAsset.ENERGY_ACTIVE_T1_ATTRIBUTE_DESCRIPTOR)
+        asset.getAttributes().getOrCreate(ElectricMeterAsset.ENERGY_ACTIVE_T2_ATTRIBUTE_DESCRIPTOR)
         return asset
     }
 
-    static FleetExportRequest request(Map<String, List<String>> attributes, String from = "2026-10-01", String to = "2026-10-02") {
+    static GasMeterAsset gas(String id, String name) {
+        def asset = new GasMeterAsset(name)
+        asset.setId(id)
+        asset.getAttributes().getOrCreate(GasMeterAsset.VOLUME_ATTRIBUTE_DESCRIPTOR)
+        return asset
+    }
+
+    static FleetExportRequest request(String assetType, FleetExportReport report = FleetExportReport.DAILY,
+                                      String from = "2026-10-01", String to = "2026-10-02") {
         def request = new FleetExportRequest()
         request.query = new FleetQuery()
+        request.assetType = assetType
+        request.report = report
         request.from = from
         request.to = to
-        request.attributes = attributes
         return request
     }
 
@@ -88,6 +125,12 @@ class FleetExporterTest extends Specification {
         def text = new String(bytes, StandardCharsets.UTF_8)
         assert text.startsWith(BOM)
         return text.substring(BOM.length()).split("\r\n").toList()
+    }
+
+    /** Takes ACCESS_RESTRICTED_READ off a descriptor until the returned closure restores it. */
+    static Closure hideFromRestricted(def descriptor) {
+        descriptor.getMeta().remove(MetaItemType.ACCESS_RESTRICTED_READ)
+        return { descriptor.getMeta().addOrReplace(new MetaItem<>(MetaItemType.ACCESS_RESTRICTED_READ)) }
     }
 
     def exporter = new FleetExporter(new FakeRepository(), 1_000_000, 2)
@@ -100,7 +143,7 @@ class FleetExporterTest extends Specification {
      * loader answers with the matched assets of a type (here: all of them, as an admin sees them).
      */
     FleetExporter.ExportPlan planFor(FleetExporter exporter, FleetExportRequest request,
-                                  Map<String, List<Asset<?>>> devices, boolean restricted) {
+                                     Map<String, List<Asset<?>>> devices, boolean restricted = false) {
         Map<String, Set<String>> matchedIds = devices.collectEntries { type, assets ->
             [(type): assets.collect { it.id } as LinkedHashSet<String>]
         }
@@ -110,42 +153,113 @@ class FleetExporterTest extends Specification {
         } as FleetExporter.AssetLoader, restricted, NOW)
     }
 
+    byte[] export(FleetExporter.ExportPlan plan) {
+        def out = new ByteArrayOutputStream()
+        exporter.write(plan, out)
+        return out.toByteArray()
+    }
+
+    def "monthly water export writes one row per meter and month"() {
+        given:
+        Map<String, List<Asset<?>>> devices = ["WaterMeterAsset": [water("id2", "B"), water("id1", "A")]]
+        def plan = planFor(exporter, request("WaterMeterAsset", FleetExportReport.MONTHLY, "2026-09-01", "2026-10-01"), devices)
+        def out = new ByteArrayOutputStream()
+
+        when:
+        def rows = exporter.write(plan, out)
+        def lines = lines(out.toByteArray())
+
+        then:
+        rows == 4
+        lines.size() == 5
+        lines[0].split(",").toList() == ["month", "assetId", "name", "meter_id", "devEui", "external_id", "delivery_point_id",
+                                         "end_reading_at", "volume_start_m3", "volume_end_m3", "volume_consumption_m3"]
+        lines[1].startsWith("2026-09,")
+        lines[1] == "2026-09,id1,A,M-id1,TEST-EUI-id1,,,2026-08-31T23:00:00Z,5,10,5"
+        lines[2] == "2026-10,id1,A,M-id1,TEST-EUI-id1,,,2026-09-30T23:00:00Z,10,20,10"
+        lines.drop(1).collect { it.split(",")[1] } == ["id1", "id1", "id2", "id2"]
+        loads == [["WaterMeterAsset", ["id2", "id1"] as LinkedHashSet,
+                   ["meter_id", "devEui", "external_id", "delivery_point_id", "currentReading"]]]
+        exporter.contentType(plan) == "text/csv; charset=UTF-8"
+    }
+
+    def "electricity rows carry total, t1 and t2 groups"() {
+        given:
+        def plan = planFor(exporter, request("ElectricMeterAsset"), ["ElectricMeterAsset": [electric("id1", "E")]])
+
+        when:
+        def lines = lines(export(plan))
+
+        then:
+        lines[0].endsWith(",end_reading_at,total_start_kWh,total_end_kWh,total_consumption_kWh," +
+                "t1_start_kWh,t1_end_kWh,t1_consumption_kWh,t2_start_kWh,t2_end_kWh,t2_consumption_kWh")
+        lines[1] == "2026-10-01,id1,E,,TEST-EUI-id1,,,2026-09-30T23:00:00Z,5,10,5,5,10,5,5,10,5"
+    }
+
+    def "a group the asset lacks is written empty"() {
+        given:
+        def meter = electric("id1", "E")
+        meter.getAttributes().remove("energy_active_t2")
+        def repository = new FakeRepository()
+        def exporter = new FleetExporter(repository, 1_000_000, 2)
+        def plan = planFor(exporter, request("ElectricMeterAsset"), ["ElectricMeterAsset": [meter]])
+        def out = new ByteArrayOutputStream()
+
+        when:
+        exporter.write(plan, out)
+        def lines = lines(out.toByteArray())
+
+        then:
+        lines[0].split(",").size() == 17
+        lines[1] == "2026-10-01,id1,E,,TEST-EUI-id1,,,2026-09-30T23:00:00Z,5,10,5,5,10,5,,,"
+        repository.queried.every { !it.contains("energy_active_t2") }
+    }
+
+    def "end_reading_at follows the first group the asset has"() {
+        given:
+        def meter = electric("id1", "E")
+        meter.getAttributes().remove("energy_active_total")
+        def plan = planFor(exporter, request("ElectricMeterAsset"), ["ElectricMeterAsset": [meter]])
+
+        when:
+        def lines = lines(export(plan))
+
+        then:
+        lines[1] == "2026-10-01,id1,E,,TEST-EUI-id1,,,2026-09-30T23:01:00Z,,,,5,10,5,5,10,5"
+    }
+
+    def "a meter without readings still gets every row"() {
+        given:
+        def exporter = new FleetExporter(new FakeRepository(empty: true), 1_000_000, 2)
+        def plan = planFor(exporter, request("WaterMeterAsset", FleetExportReport.DAILY, "2026-10-01", "2026-10-03"),
+                ["WaterMeterAsset": [water("id1", "A")]])
+        def out = new ByteArrayOutputStream()
+
+        when:
+        def rows = exporter.write(plan, out)
+        def lines = lines(out.toByteArray())
+
+        then:
+        rows == 3
+        lines.drop(1) == [
+                "2026-10-01,id1,A,M-id1,TEST-EUI-id1,,,,,,",
+                "2026-10-02,id1,A,M-id1,TEST-EUI-id1,,,,,,",
+                "2026-10-03,id1,A,M-id1,TEST-EUI-id1,,,,,,"]
+    }
+
+    def "a type no longer matched is a 400"() {
+        when:
+        planFor(exporter, request("WaterMeterAsset"), ["GasMeterAsset": [gas("id1", "G")]])
+
+        then:
+        def e = thrown(IllegalArgumentException)
+        e.message == "No matched devices of type WaterMeterAsset"
+        loads.isEmpty()
+    }
+
     def "plan rejects"() {
-        given:
-        def exporter = new FleetExporter(new FakeRepository(), maxRows, 2)
-        Map<String, List<Asset<?>>> assets = ["WaterMeterAsset": (1..3).collect { water("id" + it, "W" + it) }]
-
         when:
-        planFor(exporter, request(attributes, from, "2026-10-31"), assets, false)
-
-        then:
-        def e = thrown(IllegalArgumentException)
-        e.message == message
-
-        where:
-        attributes                                    | from         | maxRows   | message
-        [:]                                           | "2026-10-01" | 1_000_000 | "Select at least one attribute to export"
-        ["ElectricMeterAsset": ["energy_active_total"]] | "2026-10-01" | 1_000_000 | "No matched devices of type ElectricMeterAsset"
-        ["WaterMeterAsset": ["battery_level"]]        | "2026-10-01" | 1_000_000 | "Attribute battery_level cannot be exported for WaterMeterAsset"
-        ["WaterMeterAsset": ["rawValue"]]             | "2026-10-01" | 1_000_000 | "Attribute rawValue cannot be exported for WaterMeterAsset"
-        ["WaterMeterAsset": ["currentReading"]]       | "2025-10-31" | 1000      | "Export too large: narrow the search or the date range"
-    }
-
-    def "plan forbids generic attributes to restricted callers"() {
-        when:
-        planFor(exporter, request(["WaterMeterAsset": ["devEui", "notes"]]),
-                ["WaterMeterAsset": [water("id1", "A")]], true)
-
-        then:
-        thrown(SecurityException)
-    }
-
-    def "the selection is validated whenever the search matched devices"() {
-        given:
-        Map<String, List<Asset<?>>> devices = ["WaterMeterAsset": [water("id1", "W")]]
-
-        when:
-        planFor(exporter, request(attributes), devices, restricted)
+        planFor(exporter, request(assetType), ["WaterMeterAsset": [water("id1", "W")], "TrackerAsset": [water("id2", "T")]])
 
         then:
         def e = thrown(IllegalArgumentException)
@@ -153,53 +267,110 @@ class FleetExporterTest extends Specification {
         loads.isEmpty()
 
         where:
-        attributes                                     | restricted | message
-        ["WaterMeterAsset": []]                        | false      | "Select at least one attribute to export"
-        ["WaterMeterAsset": null]                      | false      | "Select at least one attribute to export"
-        ["ElectricMeterAsset": ["energy_active_total"]] | false      | "No matched devices of type ElectricMeterAsset"
-        ["ElectricMeterAsset": ["notes"]]              | true       | "No matched devices of type ElectricMeterAsset"
-        ["WaterMeterAsset"   : ["currentReading"],
-         "ElectricMeterAsset": ["energy_active_total"]] | false      | "No matched devices of type ElectricMeterAsset"
+        assetType      | message
+        null           | "Select a meter type"
+        " "            | "Select a meter type"
+        "TrackerAsset" | "Meter type TrackerAsset has no readings to export"
     }
 
-    def "a forbidden attribute is rejected before anything is loaded"() {
+    def "the period is validated first"() {
         when:
-        planFor(exporter, request(["WaterMeterAsset": ["devEui", "notes"]]), ["WaterMeterAsset": [water("id1", "A")]], true)
+        planFor(exporter, request("WaterMeterAsset", FleetExportReport.DAILY, "2026-10-01", "2026-11-12"), [:])
 
         then:
-        thrown(SecurityException)
-        loads.isEmpty()
+        def e = thrown(IllegalArgumentException)
+        e.message == "The last day must be yesterday or earlier"
     }
 
-    def "a search without matches gives a header-only plan whatever the selection"() {
+    def "an empty search gives a header-only CSV"() {
+        given:
+        def plan = planFor(exporter, request("WaterMeterAsset"), [:])
+        def out = new ByteArrayOutputStream()
+
         when:
-        def plan = planFor(exporter, request(attributes), [:], restricted)
+        def rows = exporter.write(plan, out)
 
         then:
-        plan.types().isEmpty()
+        rows == 0
+        new String(out.toByteArray(), StandardCharsets.UTF_8) == BOM + "date,assetId,name,meter_id,devEui,external_id," +
+                "delivery_point_id,end_reading_at,volume_start_m3,volume_end_m3,volume_consumption_m3\r\n"
         loads.isEmpty()
+        exporter.fileName(plan).startsWith("WaterMeterAsset_daily_")
+        exporter.contentType(plan) == "text/csv; charset=UTF-8"
+    }
+
+    def "an empty search for a type without readings has only the fixed columns"() {
+        given:
+        def plan = planFor(exporter, request(assetType), [:])
+        def out = new ByteArrayOutputStream()
+
+        when:
+        exporter.write(plan, out)
+
+        then:
+        lines(out.toByteArray()) == ["date,assetId,name,meter_id,devEui,external_id,delivery_point_id,end_reading_at"]
+        exporter.fileName(plan).startsWith("fleet-export_daily_2026-10-01_2026-10-02_")
 
         where:
-        attributes                                     | restricted
-        [:]                                            | false
-        ["WaterMeterAsset": []]                        | false
-        ["WaterMeterAsset": ["notes"]]                 | true
-        ["ElectricMeterAsset": ["energy_active_total"]] | false
+        assetType << [null, "TrackerAsset", "bad\"name"]
     }
 
-    def "each selected type is loaded once with its matched ids and the selected attributes"() {
+    def "row cap counts devices times periods"() {
         given:
-        Map<String, List<Asset<?>>> devices = [
-                "WaterMeterAsset"   : [water("id1", "W"), water("id3", "V")],
-                "ElectricMeterAsset": [electric("id2", "E")]]
+        def exporter = new FleetExporter(new FakeRepository(), 23, 2)
 
         when:
-        def plan = planFor(exporter, request(["WaterMeterAsset": ["currentReading", "devEui", "devEui"]]), devices, false)
+        planFor(exporter, request("WaterMeterAsset", FleetExportReport.MONTHLY, "2024-11-01", "2026-10-01"),
+                ["WaterMeterAsset": [water("id1", "W")]])
 
         then:
-        loads == [["WaterMeterAsset", ["id1", "id3"] as LinkedHashSet, ["currentReading", "devEui"]]]
-        plan.types()*.assetType() == ["WaterMeterAsset"]
-        plan.types()[0].assets()*.id == ["id3", "id1"]
+        def e = thrown(IllegalArgumentException)
+        e.message == "Export too large: narrow the search or the period"
+        loads.isEmpty()
+    }
+
+    def "row cap allows exactly the limit"() {
+        given:
+        def exporter = new FleetExporter(new FakeRepository(), 24, 2)
+
+        when:
+        def plan = planFor(exporter, request("WaterMeterAsset", FleetExportReport.MONTHLY, "2024-11-01", "2026-10-01"),
+                ["WaterMeterAsset": [water("id1", "W")]])
+
+        then:
+        plan.devices() == 1
+    }
+
+    def "restricted caller without readable groups is a 403"() {
+        given:
+        def restore = hideFromRestricted(WaterMeterAsset.CURRENT_READING_ATTRIBUTE_DESCRIPTOR)
+
+        when:
+        planFor(exporter, request("WaterMeterAsset"), ["WaterMeterAsset": [water("id1", "W")]], true)
+
+        then:
+        def e = thrown(SecurityException)
+        e.message == "No readable readings for WaterMeterAsset"
+        loads.isEmpty()
+
+        cleanup:
+        restore()
+    }
+
+    def "a restricted caller gets the readable groups"() {
+        when:
+        def plan = planFor(exporter, request("ElectricMeterAsset"), ["ElectricMeterAsset": [electric("id1", "E")]], true)
+
+        then:
+        plan.groups()*.key() == ["total", "t1", "t2"]
+    }
+
+    def "file name"() {
+        expect:
+        exporter.fileName(planFor(exporter, request("WaterMeterAsset", FleetExportReport.MONTHLY, "2025-11-01", "2026-10-01"),
+                ["WaterMeterAsset": [water("id1", "W")]])) == "WaterMeterAsset_monthly_2025-11_2026-10_20261112T0930Z.csv"
+        exporter.fileName(planFor(exporter, request("WaterMeterAsset", FleetExportReport.DAILY, "2026-10-01", "2026-10-31"),
+                ["WaterMeterAsset": [water("id1", "W")]])) == "WaterMeterAsset_daily_2026-10-01_2026-10-31_20261112T0930Z.csv"
     }
 
     def "max concurrent exports is at least one"() {
@@ -230,116 +401,27 @@ class FleetExporterTest extends Specification {
         byte[] flushedAtQuery = null
         def repository = new FakeRepository() {
             @Override
-            Map<String, Map<LocalDate, Map<String, DailyRows.Reading>>> daily(
-                    List<String> assetIds, List<String> attributes, FleetExportRange range) {
+            Map<String, Map<LocalDate, Map<String, PeriodRows.Reading>>> lastPerPeriod(
+                    List<String> assetIds, List<String> attributes, FleetExportPeriod period) {
                 flushedAtQuery = out.flushed
-                return super.daily(assetIds, attributes, range)
+                return super.lastPerPeriod(assetIds, attributes, period)
             }
         }
         def exporter = new FleetExporter(repository, 1_000_000, 2)
-        def plan = planFor(exporter, request(["WaterMeterAsset": ["currentReading"]]),
-                ["WaterMeterAsset": [water("id1", "W")]], false)
+        def plan = planFor(exporter, request("WaterMeterAsset"), ["WaterMeterAsset": [water("id1", "W")]])
 
         when:
         exporter.write(plan, out)
 
         then:
-        new String(flushedAtQuery, StandardCharsets.UTF_8) == BOM + "date,assetId,name,lastReadingAt,currentReading\r\n"
+        new String(flushedAtQuery, StandardCharsets.UTF_8) == BOM + "date,assetId,name,meter_id,devEui,external_id," +
+                "delivery_point_id,end_reading_at,volume_start_m3,volume_end_m3,volume_consumption_m3\r\n"
     }
 
-    def "no matched devices gives a header-only csv"() {
+    def "a failure while writing propagates and leaves the csv truncated"() {
         given:
-        def plan = planFor(exporter, request(["WaterMeterAsset": ["currentReading"]]), [:], false)
-        def out = new ByteArrayOutputStream()
-
-        when:
-        def rows = exporter.write(plan, out)
-
-        then:
-        rows == 0
-        new String(out.toByteArray(), StandardCharsets.UTF_8) == BOM + "date,assetId,name,lastReadingAt\r\n"
-        exporter.fileName(plan).endsWith(".csv")
-        exporter.contentType(plan) == "text/csv; charset=UTF-8"
-    }
-
-    def "writes one row per device per day, sorted by name then id"() {
-        given:
-        Map<String, List<Asset<?>>> assets = ["WaterMeterAsset": [water("id3", "B"), water("id2", "A"), water("id1", "A")]]
-        // Request order deliberately differs from the column order
-        def plan = planFor(exporter, request(["WaterMeterAsset": ["currentReading", "devEui"]]), assets, false)
-        def out = new ByteArrayOutputStream()
-
-        when:
-        def rows = exporter.write(plan, out)
-        def lines = lines(out.toByteArray())
-
-        then:
-        rows == 6
-        lines[0] == "date,assetId,name,lastReadingAt,devEui,currentReading"
-        lines.drop(1).collect { it.split(",")[1] } == ["id1", "id1", "id2", "id2", "id3", "id3"]
-        lines[1] == "2026-10-01,id1,A,2026-10-01T01:00:00Z,TEST-EUI-id1,5"
-        lines[2] == "2026-10-02,id1,A,2026-10-01T01:00:00Z,TEST-EUI-id1,5"
-        exporter.fileName(plan) == FleetExportCsv.csvName("WaterMeterAsset", plan.range(), plan.exportedAt())
-        exporter.contentType(plan) == "text/csv; charset=UTF-8"
-    }
-
-    def "unreadable attribute on one asset leaves its cells empty"() {
-        given:
-        def hidden = water("id2", "B")
-        hidden.getAttributes().remove("currentReading")
-        Map<String, List<Asset<?>>> assets = ["WaterMeterAsset": [water("id1", "A"), hidden]]
-        def plan = planFor(exporter, request(["WaterMeterAsset": ["devEui", "currentReading"]]), assets, false)
-        def out = new ByteArrayOutputStream()
-
-        when:
-        exporter.write(plan, out)
-        def lines = lines(out.toByteArray())
-
-        then:
-        lines[1] == "2026-10-01,id1,A,2026-10-01T01:00:00Z,TEST-EUI-id1,5"
-        lines[3] == "2026-10-01,id2,B,,TEST-EUI-id2,"
-        lines[4] == "2026-10-02,id2,B,,TEST-EUI-id2,"
-    }
-
-    def "several types produce a zip with one csv each"() {
-        given:
-        Map<String, List<Asset<?>>> assets = [
-                "WaterMeterAsset"   : [water("id1", "W")],
-                "ElectricMeterAsset": [electric("id2", "E")]]
-        def plan = planFor(exporter, request([
-                "WaterMeterAsset"   : ["currentReading"],
-                "ElectricMeterAsset": ["energy_active_total"]]), assets, false)
-        def out = new ByteArrayOutputStream()
-
-        when:
-        exporter.write(plan, out)
-        def entries = [:]
-        new ZipInputStream(new ByteArrayInputStream(out.toByteArray())).withCloseable { zip ->
-            def entry
-            while ((entry = zip.nextEntry) != null) {
-                entries[entry.name] = zip.readAllBytes()
-            }
-        }
-
-        then:
-        exporter.contentType(plan) == "application/zip"
-        exporter.fileName(plan) == FleetExportCsv.zipName(plan.range(), plan.exportedAt())
-        entries.keySet() == [
-                FleetExportCsv.csvName("ElectricMeterAsset", plan.range(), plan.exportedAt()),
-                FleetExportCsv.csvName("WaterMeterAsset", plan.range(), plan.exportedAt())] as Set
-        entries.values().every { lines(it).size() == 3 }
-    }
-
-    def "a failure while writing propagates and leaves the zip unfinished"() {
-        given:
-        def repository = new FakeRepository(failOn: "currentReading")
-        def exporter = new FleetExporter(repository, 1_000_000, 2)
-        Map<String, List<Asset<?>>> assets = [
-                "WaterMeterAsset"   : [water("id1", "W")],
-                "ElectricMeterAsset": [electric("id2", "E")]]
-        def plan = planFor(exporter, request([
-                "WaterMeterAsset"   : ["currentReading"],
-                "ElectricMeterAsset": ["energy_active_total"]]), assets, false)
+        def exporter = new FleetExporter(new FakeRepository(failOn: "currentReading"), 1_000_000, 2)
+        def plan = planFor(exporter, request("WaterMeterAsset"), ["WaterMeterAsset": [water("id1", "W")]])
         def out = new ByteArrayOutputStream()
 
         when:
@@ -347,35 +429,7 @@ class FleetExporterTest extends Specification {
 
         then:
         thrown(IllegalStateException)
-
-        when: "the bytes are read back"
-        def names = []
-        def complete = true
-        try {
-            new ZipInputStream(new ByteArrayInputStream(out.toByteArray())).withCloseable { zip ->
-                def entry
-                while ((entry = zip.nextEntry) != null) {
-                    names << entry.name
-                    zip.readAllBytes()
-                }
-            }
-        } catch (IOException ignored) {
-            complete = false
-        }
-
-        then: "only the first entry reads back, or reading fails; no central directory was written"
-        names.size() <= 1 || !complete
-        !hasCentralDirectory(out.toByteArray())
-    }
-
-    /** The end-of-central-directory signature PK\5\6 is written only by finish(). */
-    static boolean hasCentralDirectory(byte[] bytes) {
-        for (int i = 0; i + 3 < bytes.length; i++) {
-            if (bytes[i] == 0x50 && bytes[i + 1] == 0x4b && bytes[i + 2] == 0x05 && bytes[i + 3] == 0x06) {
-                return true
-            }
-        }
-        return false
+        lines(out.toByteArray()).size() == 1
     }
 
     def "limits concurrent exports"() {
@@ -454,8 +508,7 @@ class FleetExporterTest extends Specification {
         given:
         def exporter = new FleetExporter(new FakeRepository(failOn: "currentReading"), 1_000_000, 1)
         def resource = new AbortRecordingResource(exporter)
-        def plan = planFor(exporter, request(["WaterMeterAsset": ["currentReading"]]),
-                ["WaterMeterAsset": [water("id1", "W")]], false)
+        def plan = planFor(exporter, request("WaterMeterAsset"), ["WaterMeterAsset": [water("id1", "W")]])
         def permit = exporter.tryAcquire()
         assert permit != null
 
@@ -473,8 +526,7 @@ class FleetExporterTest extends Specification {
         given:
         def exporter = new FleetExporter(new FakeRepository(), 1_000_000, 1)
         def resource = new AbortRecordingResource(exporter)
-        def plan = planFor(exporter, request(["WaterMeterAsset": ["currentReading"]]),
-                ["WaterMeterAsset": [water("id1", "W")]], false)
+        def plan = planFor(exporter, request("WaterMeterAsset"), ["WaterMeterAsset": [water("id1", "W")]])
         def permit = exporter.tryAcquire()
         assert permit != null
         def out = new ByteArrayOutputStream()

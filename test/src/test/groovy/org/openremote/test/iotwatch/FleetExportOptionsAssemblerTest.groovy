@@ -35,9 +35,9 @@ class FleetExportOptionsAssemblerTest extends Specification {
         def defaults = (water.identity + water.measurements).findAll { it.defaultSelected }*.name
 
         then:
-        defaults == ["devEui", "meter_id", "external_id", "delivery_point_id", "currentReading"]
-        water.identity*.name.contains("notes")
-        !water.identity.find { it.name == "notes" }.defaultSelected
+        defaults == ["meter_id", "devEui", "external_id", "delivery_point_id", "currentReading"]
+        !water.identity*.name.contains("notes")
+        water.groups*.key == ["volume"]
         (water.identity + water.measurements).every { it.label != null }
     }
 

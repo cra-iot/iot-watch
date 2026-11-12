@@ -1,7 +1,10 @@
 package org.openremote.test.iotwatch
 
 import org.openremote.manager.iotwatch.FleetExportCsv
-import org.openremote.manager.iotwatch.FleetExportRange
+import org.openremote.manager.iotwatch.FleetExportPeriod
+import org.openremote.manager.iotwatch.FleetExportRegisters
+import org.openremote.model.iotwatch.FleetExportReport
+import org.openremote.model.util.ValueUtil
 import spock.lang.Specification
 
 import java.time.Instant
@@ -9,6 +12,10 @@ import java.time.Instant
 class FleetExportCsvTest extends Specification {
 
     static final Instant NOW = Instant.parse("2026-11-12T09:30:00Z")
+
+    def setupSpec() {
+        ValueUtil.initialise(null)
+    }
 
     def "quotes commas, quotes and line breaks"() {
         expect:
@@ -40,16 +47,28 @@ class FleetExportCsvTest extends Specification {
         FleetExportCsv.instant(null) == ""
     }
 
-    def "names files"() {
+    def "header follows period and groups"() {
         given:
-        def utc = FleetExportRange.parse("2026-10-01", "2026-10-31", null, NOW)
-        def prague = FleetExportRange.parse("2026-10-01", "2026-10-31", "Europe/Prague", NOW)
+        def period = FleetExportPeriod.parse(FleetExportReport.DAILY, "2026-10-01", "2026-10-31", NOW)
+        def groups = FleetExportRegisters.groups("ElectricMeterAsset", false)
 
         expect:
-        FleetExportCsv.csvName("WaterMeterAsset", utc, NOW) == "WaterMeterAsset_2026-10-01_2026-10-31_20261112T0930Z.csv"
-        FleetExportCsv.zipName(utc, NOW) == "fleet-export_2026-10-01_2026-10-31_20261112T0930Z.zip"
-        FleetExportCsv.csvName("WaterMeterAsset", prague, NOW).endsWith("_Europe-Prague.csv")
-        FleetExportCsv.zipName(prague, NOW).endsWith("_Europe-Prague.zip")
+        FleetExportCsv.header(period, groups) == ["date", "assetId", "name", "meter_id", "devEui", "external_id",
+                                                  "delivery_point_id", "end_reading_at",
+                                                  "total_start_kWh", "total_end_kWh", "total_consumption_kWh",
+                                                  "t1_start_kWh", "t1_end_kWh", "t1_consumption_kWh",
+                                                  "t2_start_kWh", "t2_end_kWh", "t2_consumption_kWh"]
+        FleetExportCsv.header(period, []).join(",").startsWith("date,assetId")
+    }
+
+    def "names files by type, report and period"() {
+        expect:
+        FleetExportCsv.fileName("WaterMeterAsset",
+                FleetExportPeriod.parse(FleetExportReport.MONTHLY, "2025-11-01", "2026-10-01", NOW), NOW) ==
+                "WaterMeterAsset_monthly_2025-11_2026-10_20261112T0930Z.csv"
+        FleetExportCsv.fileName("GasMeterAsset",
+                FleetExportPeriod.parse(FleetExportReport.DAILY, "2026-10-01", "2026-10-31", NOW), NOW) ==
+                "GasMeterAsset_daily_2026-10-01_2026-10-31_20261112T0930Z.csv"
     }
 
     def "BOM bytes"() {

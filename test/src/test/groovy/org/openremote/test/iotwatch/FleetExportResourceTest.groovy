@@ -8,11 +8,13 @@ import jakarta.ws.rs.core.Response
 import org.openremote.manager.iotwatch.FleetExporter
 import org.openremote.manager.iotwatch.FleetResourceImpl
 import org.openremote.model.asset.Asset
+import org.openremote.model.iotwatch.FleetExportReport
 import org.openremote.model.iotwatch.FleetExportRequest
 import org.openremote.model.iotwatch.FleetQuery
 import org.openremote.model.iotwatch.FleetRow
 import org.openremote.model.query.AssetQuery
 import org.openremote.model.util.ValueUtil
+import org.openremote.model.watermeter.WaterMeterAsset
 import spock.lang.Specification
 
 import java.time.Instant
@@ -81,8 +83,8 @@ class FleetExportResourceTest extends Specification {
     def exporter = new FleetExporter(new FleetExporterTest.FakeRepository(), 1_000_000, 2)
     def resource = new StubResource(exporter)
 
-    static FleetExportRequest request(Map<String, List<String>> attributes, String to = "2026-10-02") {
-        return FleetExporterTest.request(attributes, "2026-10-01", to)
+    static FleetExportRequest request(String assetType, String to = "2026-10-02") {
+        return FleetExporterTest.request(assetType, FleetExportReport.DAILY, "2026-10-01", to)
     }
 
     static void assertTextEntity(WebApplicationException e, int status, String message) {
@@ -105,7 +107,7 @@ class FleetExportResourceTest extends Specification {
         resource.devices = [FleetExporterTest.water("id1", "A")]
 
         when:
-        resource.export(request(["WaterMeterAsset": ["currentReading"]], "2026-11-12"))
+        resource.export(request("WaterMeterAsset", "2026-11-12"))
 
         then:
         def e = thrown(BadRequestException)
@@ -114,7 +116,7 @@ class FleetExportResourceTest extends Specification {
 
     def "a malformed search is a 400 carrying its message"() {
         given:
-        def request = request(["WaterMeterAsset": ["currentReading"]])
+        def request = request("WaterMeterAsset")
         request.query.status = ["sleeping"]
 
         when:
@@ -125,17 +127,21 @@ class FleetExportResourceTest extends Specification {
         assertTextEntity(e, 400, "Unknown status: sleeping")
     }
 
-    def "an attribute a restricted caller cannot read is a 403 carrying its message"() {
+    def "a type without readings a restricted caller can read is a 403 carrying its message"() {
         given:
         resource.devices = [FleetExporterTest.water("id1", "A")]
         resource.restricted = true
+        def restore = FleetExporterTest.hideFromRestricted(WaterMeterAsset.CURRENT_READING_ATTRIBUTE_DESCRIPTOR)
 
         when:
-        resource.export(request(["WaterMeterAsset": ["devEui", "notes"]]))
+        resource.export(request("WaterMeterAsset"))
 
         then:
         def e = thrown(ForbiddenException)
-        assertTextEntity(e, 403, "Attribute notes is not readable for WaterMeterAsset")
+        assertTextEntity(e, 403, "No readable readings for WaterMeterAsset")
+
+        cleanup:
+        restore()
     }
 
     def "the options endpoint reports a malformed search with its message"() {
@@ -157,7 +163,7 @@ class FleetExportResourceTest extends Specification {
         resource.restricted = restricted
 
         when:
-        resource.export(request(attributes))
+        resource.export(request(assetType))
 
         then:
         def e = thrown(BadRequestException)
@@ -165,38 +171,37 @@ class FleetExportResourceTest extends Specification {
         resource.loads.isEmpty()
 
         where:
-        attributes                                     | restricted | message
-        [:]                                            | false      | "Select at least one attribute to export"
-        ["WaterMeterAsset": []]                        | false      | "Select at least one attribute to export"
-        ["ElectricMeterAsset": ["energy_active_total"]] | false      | "No matched devices of type ElectricMeterAsset"
-        ["ElectricMeterAsset": ["notes"]]              | true       | "No matched devices of type ElectricMeterAsset"
-        ["WaterMeterAsset": ["battery_level"]]         | false      | "Attribute battery_level cannot be exported for WaterMeterAsset"
+        assetType            | restricted | message
+        null                 | false      | "Select a meter type"
+        "ElectricMeterAsset" | false      | "No matched devices of type ElectricMeterAsset"
+        "ElectricMeterAsset" | true       | "No matched devices of type ElectricMeterAsset"
     }
 
     def "a search without matches gives a header-only csv"() {
         when:
-        Response response = resource.export(request(["WaterMeterAsset": []]))
+        Response response = resource.export(request("WaterMeterAsset"))
         def out = new ByteArrayOutputStream()
         (response.entity as jakarta.ws.rs.core.StreamingOutput).write(out)
 
         then:
         response.status == 200
         response.getHeaderString("Content-Type") == FleetExporter.CSV_CONTENT_TYPE
-        FleetExporterTest.lines(out.toByteArray()) == ["date,assetId,name,lastReadingAt"]
+        FleetExporterTest.lines(out.toByteArray()) == ["date,assetId,name,meter_id,devEui,external_id,delivery_point_id," +
+                "end_reading_at,volume_start_m3,volume_end_m3,volume_consumption_m3"]
         resource.loads.isEmpty()
     }
 
-    def "only the matched ids of a selected type are loaded, with the selected attributes"() {
+    def "only the matched ids of the requested type are loaded, with identity and register attributes"() {
         given:
         resource.devices = [FleetExporterTest.water("id1", "A"), FleetExporterTest.electric("id2", "E")]
 
         when:
-        resource.export(request(["WaterMeterAsset": ["currentReading"]]))
+        resource.export(request("WaterMeterAsset"))
 
         then:
         resource.loads.size() == 1
         resource.loads[0].ids as List == ["id1"]
-        resource.loads[0].select.attributes as List == ["currentReading"]
+        resource.loads[0].select.attributes as List == ["meter_id", "devEui", "external_id", "delivery_point_id", "currentReading"]
     }
 
     def "a valid export streams with the plan's content type"() {
@@ -204,7 +209,7 @@ class FleetExportResourceTest extends Specification {
         resource.devices = [FleetExporterTest.water("id1", "A")]
 
         when:
-        Response response = resource.export(request(["WaterMeterAsset": ["currentReading"]]))
+        Response response = resource.export(request("WaterMeterAsset"))
         def out = new ByteArrayOutputStream()
         (response.entity as jakarta.ws.rs.core.StreamingOutput).write(out)
 
@@ -223,7 +228,7 @@ class FleetExportResourceTest extends Specification {
         assert busy.tryAcquire() != null
 
         when:
-        busyResource.export(request(["WaterMeterAsset": ["currentReading"]]))
+        busyResource.export(request("WaterMeterAsset"))
 
         then:
         def e = thrown(WebApplicationException)

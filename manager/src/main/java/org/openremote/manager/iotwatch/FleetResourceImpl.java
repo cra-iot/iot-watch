@@ -2,7 +2,6 @@ package org.openremote.manager.iotwatch;
 
 import java.io.IOException;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -96,7 +95,7 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
         matchedRows(fleetQuery, realm).forEach(row -> deviceCounts.merge(row.type, 1, Integer::sum));
         Instant now = now();
         return FleetExportOptionsAssembler.assemble(deviceCounts, isRestrictedUser(), columnResolver,
-                FleetExportRange.maxTo(ZoneOffset.UTC, now));
+                FleetExportPeriod.lastDay(now));
     }
 
     @Override
@@ -127,9 +126,9 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
         matchedRows(fleetQuery, realm).forEach(row ->
                 idsByType.computeIfAbsent(row.type, type -> new LinkedHashSet<>()).add(row.id));
 
-        // plan() validates the whole selection first, then reloads each selected type through the
-        // caller's authorization with only the selected attributes, so a restricted caller's asset
-        // lacks every attribute it cannot read.
+        // plan() validates the request first, then reloads the requested type through the caller's
+        // authorization with only the identity and register attributes, so a restricted caller's
+        // asset lacks every attribute it cannot read.
         FleetExporter.ExportPlan plan;
         try {
             plan = exporter.plan(request, idsByType, (type, ids, attributes) -> authorizedFindAll(
@@ -198,11 +197,11 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
                                     long rows, long started, boolean ok) {
         LOG.info("Fleet export user=" + username
                 + " realm=" + realm
-                + " types=" + String.join(",", plan.types().stream().map(FleetExporter.TypeExport::assetType).toList())
+                + " type=" + plan.assetType()
+                + " report=" + plan.period().report()
                 + " devices=" + plan.devices()
-                + " from=" + plan.range().from()
-                + " to=" + plan.range().to()
-                + " zone=" + plan.range().zone().getId()
+                + " from=" + plan.period().from()
+                + " to=" + plan.period().to()
                 + " rows=" + rows
                 + " durationMs=" + (System.currentTimeMillis() - started)
                 + " outcome=" + (ok ? "ok" : "failed"));

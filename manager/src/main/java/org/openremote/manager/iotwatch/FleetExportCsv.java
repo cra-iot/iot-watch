@@ -5,10 +5,13 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
+
+import org.openremote.model.iotwatch.FleetColumns;
 
 /**
  * CSV rendering and file names for the fleet export. Stateless helpers: cells are quoted per
@@ -21,7 +24,8 @@ public final class FleetExportCsv {
     /** Written first so Excel opens the file as UTF-8. */
     public static final byte[] UTF8_BOM = {(byte) 0xEF, (byte) 0xBB, (byte) 0xBF};
 
-    public static final List<String> FIXED_COLUMNS = List.of("date", "assetId", "name", "lastReadingAt");
+    /** The columns of every register group, in order. */
+    public static final List<String> GROUP_PARTS = List.of("start", "end", "consumption");
 
     private static final String FORMULA_START = "=+-@\t\r";
 
@@ -65,17 +69,29 @@ public final class FleetExportCsv {
         return at == null ? "" : DateTimeFormatter.ISO_INSTANT.format(at.truncatedTo(ChronoUnit.SECONDS));
     }
 
-    public static String csvName(String assetType, FleetExportRange range, Instant exportedAt) {
-        return stem(assetType, range, exportedAt) + ".csv";
+    /**
+     * The period column, assetId, name, the identity columns (FleetColumns.EXPORT_IDENTITY),
+     * end_reading_at, then start, end and consumption of every group.
+     */
+    public static List<String> header(FleetExportPeriod period, List<FleetExportRegisters.Group> groups) {
+        List<String> header = new ArrayList<>();
+        header.add(period.column());
+        header.add("assetId");
+        header.add("name");
+        header.addAll(FleetColumns.EXPORT_IDENTITY);
+        header.add("end_reading_at");
+        for (FleetExportRegisters.Group group : groups) {
+            for (String part : GROUP_PARTS) {
+                header.add(FleetExportRegisters.header(group, part));
+            }
+        }
+        return header;
     }
 
-    public static String zipName(FleetExportRange range, Instant exportedAt) {
-        return stem("fleet-export", range, exportedAt) + ".zip";
-    }
-
-    private static String stem(String prefix, FleetExportRange range, Instant exportedAt) {
-        String name = prefix + "_" + range.from() + "_" + range.to() + "_" + STAMP.format(exportedAt);
-        return range.utc() ? name : name + "_" + range.zone().getId().replace('/', '-');
+    /** assetType_report_from_to_stamp.csv; from and to as yyyy-MM (monthly) or yyyy-MM-dd (daily). */
+    public static String fileName(String assetType, FleetExportPeriod period, Instant exportedAt) {
+        return assetType + "_" + period.fileKey() + "_" + period.label(period.from()) + "_"
+                + period.label(period.to()) + "_" + STAMP.format(exportedAt) + ".csv";
     }
 
     private static String join(Collection<?> items) {

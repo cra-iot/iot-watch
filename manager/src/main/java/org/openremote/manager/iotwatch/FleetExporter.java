@@ -11,32 +11,29 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.LongSupplier;
 import java.util.logging.Logger;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 
 import org.openremote.model.asset.Asset;
 import org.openremote.model.attribute.Attribute;
+import org.openremote.model.iotwatch.FleetColumns;
 import org.openremote.model.iotwatch.FleetExportRequest;
-import org.openremote.model.value.AttributeDescriptor;
 
 /**
- * Plans and streams the fleet CSV export: one CSV for a single asset type, a ZIP of CSVs for
- * several. Validation happens in plan, before anything is read or written; write streams in
- * batches so memory stays bounded by BATCH_SIZE assets, not by the export size.
+ * Plans and streams the fleet CSV export: one CSV for one meter type, a row per meter and period
+ * (month or day) with the start, end and consumption of each register group. Validation happens
+ * in plan, before anything is read or written; write streams in batches so memory stays bounded
+ * by BATCH_SIZE assets, not by the export size.
  *
- * A failure while writing propagates and leaves the output unfinished (no ZIP central directory,
- * a truncated CSV), so a broken export never looks complete.
+ * A failure while writing propagates and leaves the CSV truncated, so a broken export never looks
+ * complete.
  */
 public class FleetExporter {
 
@@ -47,21 +44,20 @@ public class FleetExporter {
     public static final int BATCH_SIZE = 50;
 
     public static final String CSV_CONTENT_TYPE = "text/csv; charset=UTF-8";
-    public static final String ZIP_CONTENT_TYPE = "application/zip";
+
+    /** File name stem of a header-only export whose requested type has no register groups. */
+    static final String NO_TYPE_STEM = "fleet-export";
 
     /**
-     * One asset type's file: its assets sorted by name then id; identity columns in
-     * FleetExportAttributes.IDENTITY order, measurements in the declaration order of the asset
-     * class's attribute descriptors (FleetExportAttributes.measurements).
+     * A validated export. assets: sorted by name then id, empty when the search matched nothing;
+     * groups: the type's register groups the caller may read, in column order. assetType is null
+     * for a header-only plan whose requested type has no register groups.
      */
-    public record TypeExport(String assetType, List<Asset<?>> assets, List<String> identity, List<String> measurements) {
-    }
-
-    /** A validated export; types sorted by asset type, empty when no device matched. */
-    public record ExportPlan(FleetExportRange range, List<TypeExport> types, Instant exportedAt) {
+    public record ExportPlan(FleetExportPeriod period, String assetType, List<Asset<?>> assets,
+                             List<FleetExportRegisters.Group> groups, Instant exportedAt) {
 
         public int devices() {
-            return types.stream().mapToInt(type -> type.assets().size()).sum();
+            return assets.size();
         }
     }
 
@@ -71,18 +67,18 @@ public class FleetExporter {
             .comparing((Asset<?> asset) -> asset.getName(), Comparator.nullsLast(Comparator.naturalOrder()))
             .thenComparing(Asset::getId, Comparator.nullsLast(Comparator.naturalOrder()));
 
-    private final DailyValueRepository repository;
+    private final PeriodValueRepository repository;
     private final int maxRows;
     private final int maxConcurrent;
     private final long permitTimeoutNanos;
     private final LongSupplier nanoClock;
     private final Set<Permit> permits = ConcurrentHashMap.newKeySet();
 
-    public FleetExporter(DailyValueRepository repository, int maxRows, int maxConcurrent) {
+    public FleetExporter(PeriodValueRepository repository, int maxRows, int maxConcurrent) {
         this(repository, maxRows, maxConcurrent, Duration.ofMinutes(DEFAULT_PERMIT_TIMEOUT_MINUTES), System::nanoTime);
     }
 
-    public FleetExporter(DailyValueRepository repository, int maxRows, int maxConcurrent,
+    public FleetExporter(PeriodValueRepository repository, int maxRows, int maxConcurrent,
                          Duration permitTimeout, LongSupplier nanoClock) {
         this.repository = repository;
         this.maxRows = maxRows;
@@ -127,75 +123,49 @@ public class FleetExporter {
     /**
      * Validates, then loads and orders. matchedIds: the ids of every device the search matched,
      * per asset type. Only a search without matches yields the header-only plan; otherwise the
-     * whole selection is validated before anything is loaded: no selection, a type the search
-     * did not match or an attribute that cannot be exported throw IllegalArgumentException
-     * (→400), an attribute a restricted caller cannot read throws SecurityException (→403).
-     * Each selected type is then loaded once through loader with its matched ids. The fleet app
+     * request is validated before anything is loaded: no type, a type the search did not match or
+     * a type without register groups throw IllegalArgumentException (→400), a type whose groups a
+     * restricted caller cannot read throws SecurityException (→403). The type is then loaded once
+     * through loader with its matched ids, the identity and the group attributes. The fleet app
      * translates these messages by their wording (fleet-export.ts, serverProblem).
      */
     public ExportPlan plan(FleetExportRequest request, Map<String, Set<String>> matchedIds, AssetLoader loader,
                            boolean restricted, Instant now) {
-        FleetExportRange range = FleetExportRange.parse(request.from, request.to, request.timeZone, now);
+        FleetExportPeriod period = FleetExportPeriod.parse(request.report, request.from, request.to, now);
+        String type = request.assetType == null || request.assetType.isBlank() ? null : request.assetType;
         boolean noDevices = matchedIds == null
                 || matchedIds.values().stream().allMatch(ids -> ids == null || ids.isEmpty());
         if (noDevices) {
-            return new ExportPlan(range, List.of(), now);
+            // Only a known meter type names the file: the request's type is unchecked input here.
+            boolean exportable = type != null && FleetExportRegisters.exportable(type);
+            return new ExportPlan(period, exportable ? type : null, List.of(),
+                    exportable ? FleetExportRegisters.groups(type, restricted) : List.of(), now);
         }
 
-        // Types with an empty selection are dropped; sorted so the ZIP entry order is stable.
-        Map<String, List<String>> selection = new TreeMap<>();
-        if (request.attributes != null) {
-            request.attributes.forEach((type, names) -> {
-                if (type != null && names != null && !names.isEmpty()) {
-                    selection.put(type, names);
-                }
-            });
+        if (type == null) {
+            throw new IllegalArgumentException("Select a meter type");
         }
-        if (selection.isEmpty()) {
-            throw new IllegalArgumentException("Select at least one attribute to export");
+        Set<String> ids = matchedIds.get(type);
+        if (ids == null || ids.isEmpty()) {
+            throw new IllegalArgumentException("No matched devices of type " + type);
         }
-
-        List<TypeSelection> validated = new ArrayList<>();
-        for (Map.Entry<String, List<String>> entry : selection.entrySet()) {
-            String type = entry.getKey();
-            Set<String> ids = matchedIds.get(type);
-            if (ids == null || ids.isEmpty()) {
-                throw new IllegalArgumentException("No matched devices of type " + type);
-            }
-            Set<String> requested = new HashSet<>(entry.getValue());
-            List<String> identity = names(FleetExportAttributes.identity(type, false));
-            List<String> measurements = names(FleetExportAttributes.measurements(type, false));
-            Set<String> readable = new HashSet<>(names(FleetExportAttributes.identity(type, true)));
-            readable.addAll(names(FleetExportAttributes.measurements(type, true)));
-            for (String name : requested) {
-                if (name == null || (!identity.contains(name) && !measurements.contains(name))) {
-                    throw new IllegalArgumentException("Attribute " + name + " cannot be exported for " + type);
-                }
-                if (restricted && !readable.contains(name)) {
-                    throw new SecurityException("Attribute " + name + " is not readable for " + type);
-                }
-            }
-            if ((long) ids.size() * range.days() > maxRows) {
-                throw new IllegalArgumentException("Export too large: narrow the search or the date range");
-            }
-            validated.add(new TypeSelection(type, ids, entry.getValue().stream().distinct().toList(),
-                    identity.stream().filter(requested::contains).toList(),
-                    measurements.stream().filter(requested::contains).toList()));
+        if (!FleetExportRegisters.exportable(type)) {
+            throw new IllegalArgumentException("Meter type " + type + " has no readings to export");
+        }
+        List<FleetExportRegisters.Group> groups = FleetExportRegisters.groups(type, restricted);
+        if (groups.isEmpty()) {
+            throw new SecurityException("No readable readings for " + type);
+        }
+        if ((long) ids.size() * period.count() > maxRows) {
+            throw new IllegalArgumentException("Export too large: narrow the search or the period");
         }
 
-        List<TypeExport> types = new ArrayList<>();
-        for (TypeSelection type : validated) {
-            List<Asset<?>> assets = loader.load(type.assetType(), type.ids(), type.attributes());
-            List<Asset<?>> sorted = assets == null ? List.of()
-                    : assets.stream().filter(Objects::nonNull).sorted(BY_NAME_THEN_ID).toList();
-            types.add(new TypeExport(type.assetType(), sorted, type.identity(), type.measurements()));
-        }
-        return new ExportPlan(range, List.copyOf(types), now);
-    }
-
-    /** A validated type of the selection, before its assets are loaded. */
-    private record TypeSelection(String assetType, Set<String> ids, List<String> attributes,
-                                 List<String> identity, List<String> measurements) {
+        List<String> attributes = new ArrayList<>(FleetColumns.EXPORT_IDENTITY);
+        groups.forEach(group -> attributes.add(group.attribute()));
+        List<Asset<?>> assets = loader.load(type, ids, attributes);
+        List<Asset<?>> sorted = assets == null ? List.of()
+                : assets.stream().filter(Objects::nonNull).sorted(BY_NAME_THEN_ID).toList();
+        return new ExportPlan(period, type, sorted, groups, now);
     }
 
     /**
@@ -223,97 +193,65 @@ public class FleetExporter {
         return permit;
     }
 
-    /** csvName for one type, zipName for several, the ZIP stem + ".csv" for none. */
     public String fileName(ExportPlan plan) {
-        if (plan.types().size() == 1) {
-            return FleetExportCsv.csvName(plan.types().get(0).assetType(), plan.range(), plan.exportedAt());
-        }
-        String zipName = FleetExportCsv.zipName(plan.range(), plan.exportedAt());
-        if (plan.types().isEmpty()) {
-            return zipName.substring(0, zipName.length() - ".zip".length()) + ".csv";
-        }
-        return zipName;
+        return FleetExportCsv.fileName(plan.assetType() == null ? NO_TYPE_STEM : plan.assetType(),
+                plan.period(), plan.exportedAt());
     }
 
     public String contentType(ExportPlan plan) {
-        return plan.types().size() > 1 ? ZIP_CONTENT_TYPE : CSV_CONTENT_TYPE;
+        return CSV_CONTENT_TYPE;
     }
 
-    /** Streams the file; returns the number of data rows written, for the log line. */
+    /**
+     * Streams the CSV; returns the number of data rows written, for the log line. The header is
+     * flushed to out before the first query, so bytes leave before the database is read.
+     */
     public long write(ExportPlan plan, OutputStream out) throws IOException {
-        if (plan.types().isEmpty()) {
-            out.write(FleetExportCsv.UTF8_BOM);
-            Writer writer = writer(out);
-            writer.write(FleetExportCsv.line(FleetExportCsv.FIXED_COLUMNS));
-            writer.flush();
-            return 0;
-        }
-        if (plan.types().size() == 1) {
-            out.write(FleetExportCsv.UTF8_BOM);
-            return writeType(plan.range(), plan.types().get(0), writer(out), out);
-        }
-        // Not closed on purpose: finish() runs only after every entry succeeded, and the caller owns out.
-        ZipOutputStream zip = new ZipOutputStream(out, StandardCharsets.UTF_8);
-        long rows = 0;
-        for (TypeExport type : plan.types()) {
-            zip.putNextEntry(new ZipEntry(FleetExportCsv.csvName(type.assetType(), plan.range(), plan.exportedAt())));
-            zip.write(FleetExportCsv.UTF8_BOM);
-            rows += writeType(plan.range(), type, writer(zip), out);
-            zip.closeEntry();
-        }
-        zip.finish();
-        out.flush();
-        return rows;
-    }
-
-    /** sink: the response stream, flushed after the header so bytes leave before the first query. */
-    private long writeType(FleetExportRange range, TypeExport type, Writer writer, OutputStream sink)
-            throws IOException {
-        List<String> header = new ArrayList<>(FleetExportCsv.FIXED_COLUMNS);
-        header.addAll(type.identity());
-        header.addAll(type.measurements());
-        writer.write(FleetExportCsv.line(header));
+        out.write(FleetExportCsv.UTF8_BOM);
+        Writer writer = new OutputStreamWriter(out, StandardCharsets.UTF_8);
+        writer.write(FleetExportCsv.line(FleetExportCsv.header(plan.period(), plan.groups())));
         writer.flush();
-        sink.flush();
+        out.flush();
 
-        List<LocalDate> dates = range.dates();
+        List<LocalDate> periods = plan.period().periods();
+        List<Asset<?>> assets = plan.assets();
         long rows = 0;
-        List<Asset<?>> assets = type.assets();
         for (int from = 0; from < assets.size(); from += BATCH_SIZE) {
             List<Asset<?>> batch = assets.subList(from, Math.min(from + BATCH_SIZE, assets.size()));
             List<String> ids = batch.stream().map(Asset::getId).distinct().toList();
-            Map<String, Map<LocalDate, Map<String, DailyRows.Reading>>> daily =
-                    repository.daily(ids, type.measurements(), range);
-            Map<String, Map<String, DailyRows.Reading>> seed = repository.seed(ids, type.measurements(), range);
+            Set<String> batchAttributes = new LinkedHashSet<>();
+            batch.forEach(asset -> batchAttributes.addAll(readable(plan.groups(), asset)));
+            List<String> queried = List.copyOf(batchAttributes);
+            Map<String, Map<LocalDate, Map<String, PeriodRows.Reading>>> lastPerPeriod =
+                    repository.lastPerPeriod(ids, queried, plan.period());
+            Map<String, Map<String, PeriodRows.Reading>> seed = repository.seed(ids, queried, plan.period());
 
             for (Asset<?> asset : batch) {
-                // Per-asset readability: a measurement the caller could not load on this asset is
-                // written empty, and the repository's values for it are dropped here.
-                Set<String> readable = new LinkedHashSet<>();
-                type.measurements().stream()
-                        .filter(name -> asset.getAttributes().has(name))
-                        .forEach(readable::add);
-                List<String> measurements = List.copyOf(readable);
-
-                List<String> identityValues = type.identity().stream()
+                // Per-asset readability: a group the caller could not load on this asset is written
+                // empty, and the repository's values for it are dropped here. The first readable
+                // group gives end_reading_at.
+                List<String> readable = readable(plan.groups(), asset);
+                List<String> identity = FleetColumns.EXPORT_IDENTITY.stream()
                         .map(name -> asset.getAttributes().get(name)
                                 .flatMap(Attribute::getValue)
                                 .map(FleetExportCsv::render)
                                 .orElse(""))
                         .toList();
-
-                List<DailyRows.DailyRow> dailyRows = DailyRows.build(dates, measurements,
+                List<PeriodRows.PeriodRow> periodRows = PeriodRows.build(periods, readable,
                         onlyReadable(seed.getOrDefault(asset.getId(), Map.of()), readable),
-                        onlyReadableDaily(daily.getOrDefault(asset.getId(), Map.of()), readable));
-                for (DailyRows.DailyRow row : dailyRows) {
-                    List<String> cells = new ArrayList<>(header.size());
-                    cells.add(row.date().toString());
+                        onlyReadablePerPeriod(lastPerPeriod.getOrDefault(asset.getId(), Map.of()), readable));
+                for (PeriodRows.PeriodRow row : periodRows) {
+                    List<String> cells = new ArrayList<>();
+                    cells.add(plan.period().label(row.period()));
                     cells.add(asset.getId());
                     cells.add(asset.getName());
-                    cells.add(FleetExportCsv.instant(row.lastReadingAt()));
-                    cells.addAll(identityValues);
-                    for (String measurement : type.measurements()) {
-                        cells.add(row.values().get(measurement));
+                    cells.addAll(identity);
+                    cells.add(FleetExportCsv.instant(row.endReadingAt()));
+                    for (FleetExportRegisters.Group group : plan.groups()) {
+                        PeriodRows.Values values = row.values().get(group.attribute());
+                        cells.add(values == null ? null : values.start());
+                        cells.add(values == null ? null : values.end());
+                        cells.add(values == null ? null : values.consumption());
                     }
                     writer.write(FleetExportCsv.line(cells));
                     rows++;
@@ -325,9 +263,17 @@ public class FleetExporter {
         return rows;
     }
 
-    private static Map<String, DailyRows.Reading> onlyReadable(Map<String, DailyRows.Reading> readings,
-                                                               Set<String> readable) {
-        Map<String, DailyRows.Reading> result = new HashMap<>();
+    /** The group attributes present on the loaded asset, in group order. */
+    private static List<String> readable(List<FleetExportRegisters.Group> groups, Asset<?> asset) {
+        return groups.stream()
+                .map(FleetExportRegisters.Group::attribute)
+                .filter(attribute -> asset.getAttributes().has(attribute))
+                .toList();
+    }
+
+    private static Map<String, PeriodRows.Reading> onlyReadable(Map<String, PeriodRows.Reading> readings,
+                                                                List<String> readable) {
+        Map<String, PeriodRows.Reading> result = new HashMap<>();
         readings.forEach((name, reading) -> {
             if (readable.contains(name)) {
                 result.put(name, reading);
@@ -336,18 +282,10 @@ public class FleetExporter {
         return result;
     }
 
-    private static Map<LocalDate, Map<String, DailyRows.Reading>> onlyReadableDaily(
-            Map<LocalDate, Map<String, DailyRows.Reading>> daily, Set<String> readable) {
-        Map<LocalDate, Map<String, DailyRows.Reading>> result = new HashMap<>();
-        daily.forEach((date, readings) -> result.put(date, onlyReadable(readings, readable)));
+    private static Map<LocalDate, Map<String, PeriodRows.Reading>> onlyReadablePerPeriod(
+            Map<LocalDate, Map<String, PeriodRows.Reading>> perPeriod, List<String> readable) {
+        Map<LocalDate, Map<String, PeriodRows.Reading>> result = new HashMap<>();
+        perPeriod.forEach((period, readings) -> result.put(period, onlyReadable(readings, readable)));
         return result;
-    }
-
-    private static Writer writer(OutputStream out) {
-        return new OutputStreamWriter(out, StandardCharsets.UTF_8);
-    }
-
-    private static List<String> names(List<AttributeDescriptor<?>> descriptors) {
-        return descriptors.stream().map(AttributeDescriptor::getName).toList();
     }
 }

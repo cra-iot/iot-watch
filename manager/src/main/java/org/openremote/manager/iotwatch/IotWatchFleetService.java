@@ -19,7 +19,7 @@ public class IotWatchFleetService implements ContainerService {
     public void init(Container container) throws Exception {
         var config = container.getConfig();
         FleetExporter exporter = new FleetExporter(
-                new DailyValueRepository(container.getService(PersistenceService.class),
+                new PeriodValueRepository(container.getService(PersistenceService.class),
                         MapAccess.getInteger(config, AssetDatapointService.OR_DATA_POINTS_MAX_AGE_WEEKS, -1)),
                 MapAccess.getInteger(config, FleetExporter.MAX_ROWS, 1_000_000),
                 MapAccess.getInteger(config, FleetExporter.MAX_CONCURRENT, 2),
