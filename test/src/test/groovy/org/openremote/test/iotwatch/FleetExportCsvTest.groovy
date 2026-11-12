@@ -29,6 +29,21 @@ class FleetExportCsvTest extends Specification {
         FleetExportCsv.line(["=a,b"]) == '"\'=a,b"\r\n'
     }
 
+    def "identifiers are written as Excel text so long numbers keep every digit"() {
+        expect:
+        FleetExportCsv.text("859182400524640589") == '="859182400524640589"'
+        FleetExportCsv.text("") == ""
+        FleetExportCsv.text(null) == null
+        FleetExportCsv.line([FleetExportCsv.text("859182400524640589"), FleetExportCsv.text('a"b')]) ==
+                '"=""859182400524640589""","=""a""""b"""\r\n'
+    }
+
+    def "only a lone text literal escapes formula neutralisation"() {
+        expect:
+        FleetExportCsv.line(['="x"&HYPERLINK("y")', "=1+2", '="x"']) ==
+                '"\'=""x""&HYPERLINK(""y"")",\'=1+2,"=""x"""\r\n'
+    }
+
     def "renders values"() {
         expect:
         FleetExportCsv.render(12.0d) == "12"

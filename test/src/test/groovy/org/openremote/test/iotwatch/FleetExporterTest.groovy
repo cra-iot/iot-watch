@@ -175,8 +175,8 @@ class FleetExporterTest extends Specification {
         lines[0].split(",").toList() == ["month", "assetId", "name", "meter_id", "devEui", "external_id", "delivery_point_id",
                                          "end_reading_at", "volume_start_m3", "volume_end_m3", "volume_consumption_m3"]
         lines[1].startsWith("2026-09,")
-        lines[1] == "2026-09,id1,A,M-id1,TEST-EUI-id1,,,2026-08-31T23:00:00Z,5,10,5"
-        lines[2] == "2026-10,id1,A,M-id1,TEST-EUI-id1,,,2026-09-30T23:00:00Z,10,20,10"
+        lines[1] == "2026-09,id1,A,\"=\"\"M-id1\"\"\",\"=\"\"TEST-EUI-id1\"\"\",,,2026-08-31T23:00:00Z,5,10,5"
+        lines[2] == "2026-10,id1,A,\"=\"\"M-id1\"\"\",\"=\"\"TEST-EUI-id1\"\"\",,,2026-09-30T23:00:00Z,10,20,10"
         lines.drop(1).collect { it.split(",")[1] } == ["id1", "id1", "id2", "id2"]
         loads == [["WaterMeterAsset", ["id2", "id1"] as LinkedHashSet,
                    ["meter_id", "devEui", "external_id", "delivery_point_id", "currentReading"]]]
@@ -193,7 +193,7 @@ class FleetExporterTest extends Specification {
         then:
         lines[0].endsWith(",end_reading_at,total_start_kWh,total_end_kWh,total_consumption_kWh," +
                 "t1_start_kWh,t1_end_kWh,t1_consumption_kWh,t2_start_kWh,t2_end_kWh,t2_consumption_kWh")
-        lines[1] == "2026-10-01,id1,E,,TEST-EUI-id1,,,2026-09-30T23:00:00Z,5,10,5,5,10,5,5,10,5"
+        lines[1] == "2026-10-01,id1,E,,\"=\"\"TEST-EUI-id1\"\"\",,,2026-09-30T23:00:00Z,5,10,5,5,10,5,5,10,5"
     }
 
     def "a group the asset lacks is written empty"() {
@@ -211,7 +211,7 @@ class FleetExporterTest extends Specification {
 
         then:
         lines[0].split(",").size() == 17
-        lines[1] == "2026-10-01,id1,E,,TEST-EUI-id1,,,2026-09-30T23:00:00Z,5,10,5,5,10,5,,,"
+        lines[1] == "2026-10-01,id1,E,,\"=\"\"TEST-EUI-id1\"\"\",,,2026-09-30T23:00:00Z,5,10,5,5,10,5,,,"
         repository.queried.every { !it.contains("energy_active_t2") }
     }
 
@@ -226,8 +226,8 @@ class FleetExporterTest extends Specification {
         def lines = lines(export(plan))
 
         then:
-        lines[1] == "2026-10-01,id1,A,,TEST-EUI-id1,,,2026-09-30T23:00:00Z,5,10,5,5,10,5,5,10,5"
-        lines[3] == "2026-10-01,id2,B,,TEST-EUI-id2,,,2026-09-30T23:00:00Z,5,10,5,5,10,5,,,"
+        lines[1] == "2026-10-01,id1,A,,\"=\"\"TEST-EUI-id1\"\"\",,,2026-09-30T23:00:00Z,5,10,5,5,10,5,5,10,5"
+        lines[3] == "2026-10-01,id2,B,,\"=\"\"TEST-EUI-id2\"\"\",,,2026-09-30T23:00:00Z,5,10,5,5,10,5,,,"
     }
 
     def "end_reading_at follows the first group the asset has"() {
@@ -240,7 +240,7 @@ class FleetExporterTest extends Specification {
         def lines = lines(export(plan))
 
         then:
-        lines[1] == "2026-10-01,id1,E,,TEST-EUI-id1,,,2026-09-30T23:01:00Z,,,,5,10,5,5,10,5"
+        lines[1] == "2026-10-01,id1,E,,\"=\"\"TEST-EUI-id1\"\"\",,,2026-09-30T23:01:00Z,,,,5,10,5,5,10,5"
     }
 
     def "a meter without readings still gets every row"() {
@@ -257,9 +257,9 @@ class FleetExporterTest extends Specification {
         then:
         rows == 3
         lines.drop(1) == [
-                "2026-10-01,id1,A,M-id1,TEST-EUI-id1,,,,,,",
-                "2026-10-02,id1,A,M-id1,TEST-EUI-id1,,,,,,",
-                "2026-10-03,id1,A,M-id1,TEST-EUI-id1,,,,,,"]
+                "2026-10-01,id1,A,\"=\"\"M-id1\"\"\",\"=\"\"TEST-EUI-id1\"\"\",,,,,,",
+                "2026-10-02,id1,A,\"=\"\"M-id1\"\"\",\"=\"\"TEST-EUI-id1\"\"\",,,,,,",
+                "2026-10-03,id1,A,\"=\"\"M-id1\"\"\",\"=\"\"TEST-EUI-id1\"\"\",,,,,,"]
     }
 
     def "a type no longer matched is a 400"() {

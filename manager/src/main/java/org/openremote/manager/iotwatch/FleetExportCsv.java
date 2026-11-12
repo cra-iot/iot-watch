@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.openremote.model.iotwatch.FleetColumns;
@@ -29,6 +30,9 @@ public final class FleetExportCsv {
 
     private static final String FORMULA_START = "=+-@\t\r";
 
+    /** A cell that is exactly one Excel string literal, as text() writes it; it evaluates to plain text. */
+    private static final Pattern TEXT_LITERAL = Pattern.compile("=\"(?:[^\"]|\"\")*\"");
+
     private static final DateTimeFormatter STAMP =
         DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmm'Z'").withZone(ZoneOffset.UTC);
 
@@ -45,6 +49,14 @@ public final class FleetExportCsv {
             sb.append(quote(cells.get(i)));
         }
         return sb.append("\r\n").toString();
+    }
+
+    /**
+     * An identifier as an Excel text formula, ="value": opened in Excel, an 18-digit EAN would
+     * otherwise become 8.59182E+17 and lose digits, and a leading zero would vanish. Empty stays empty.
+     */
+    public static String text(String value) {
+        return value == null || value.isEmpty() ? value : "=\"" + value.replace("\"", "\"\"") + "\"";
     }
 
     /** Plain-text form of an attribute value; numbers never use scientific notation. */
@@ -109,9 +121,13 @@ public final class FleetExportCsv {
         return '"' + cell.replace("\"", "\"\"") + '"';
     }
 
-    /** Prefixes a cell starting with a formula character; a number such as -5 is no formula. */
+    /**
+     * Prefixes a cell starting with a formula character; a number such as -5 is no formula, and
+     * neither is a lone string literal such as text() writes.
+     */
     private static String neutralize(String cell) {
-        if (cell.isEmpty() || FORMULA_START.indexOf(cell.charAt(0)) < 0 || isNumber(cell)) {
+        if (cell.isEmpty() || FORMULA_START.indexOf(cell.charAt(0)) < 0 || isNumber(cell)
+                || TEXT_LITERAL.matcher(cell).matches()) {
             return cell;
         }
         return "'" + cell;

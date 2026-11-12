@@ -236,6 +236,7 @@ public class FleetExporter {
                         .map(name -> asset.getAttributes().get(name)
                                 .flatMap(Attribute::getValue)
                                 .map(FleetExportCsv::render)
+                                .map(FleetExportCsv::text)
                                 .orElse(""))
                         .toList();
                 List<PeriodRows.PeriodRow> periodRows = PeriodRows.build(periods, readable,
