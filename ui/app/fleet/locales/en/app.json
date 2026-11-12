@@ -171,6 +171,8 @@
       "none": "None",
       "cancel": "Cancel",
       "export": "Export",
+      "exporting": "Exporting…",
+      "noTypes": "None of the matched devices has attributes that can be exported.",
       "error": {
         "missing": "Select both dates.",
         "order": "The start date is after the end date.",

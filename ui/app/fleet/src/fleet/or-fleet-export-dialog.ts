@@ -6,7 +6,7 @@ import type { FleetExportOptions, FleetExportOptionsAttribute, FleetExportOption
 // The project's generated client, as in page-fleet.
 import rest from "rest";
 import {
-    defaultRange, fileNameFrom, initialSelection, rangeError, SELECTION_KEY, toExportRequest, type Selection,
+    defaultRange, fallbackFileName, fileNameFrom, initialSelection, rangeError, SELECTION_KEY, toExportRequest, type Selection,
 } from "./fleet-export";
 
 export class OrFleetExportCloseEvent extends CustomEvent<undefined> {
@@ -64,6 +64,8 @@ export class OrFleetExportDialog extends translateMixin(i18next)(OrElement) {
             .attributes { display: flex; flex-wrap: wrap; gap: 2px 16px; }
             .attributes label { display: flex; align-items: center; gap: 4px; font-size: 13px; }
             .error { color: var(--or-app-color4, #e3000a); padding: 6px 0; min-height: 1em; }
+            .status { padding: 6px 0; font-size: 13px; }
+            .note { font-size: 13px; margin: 8px 0; }
             .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
             button { font: inherit; cursor: pointer; }
             button:disabled { cursor: default; opacity: 0.5; }
@@ -180,7 +182,8 @@ export class OrFleetExportDialog extends translateMixin(i18next)(OrElement) {
             const url = URL.createObjectURL(response.data as Blob);
             const link = document.createElement("a");
             link.href = url;
-            link.download = fileNameFrom(response.headers?.["content-disposition"], `fleet-${this._from}_${this._to}.csv`);
+            link.download = fileNameFrom(response.headers?.["content-disposition"],
+                fallbackFileName(this._from, this._to, String(response.headers?.["content-type"] ?? "")));
             document.body.appendChild(link);
             link.click();
             link.remove();
@@ -244,7 +247,12 @@ export class OrFleetExportDialog extends translateMixin(i18next)(OrElement) {
                                @input=${(e: Event) => { this._to = (e.target as HTMLInputElement).value; }}></label>
                 </div>
                 <p class="help"><or-translate value="app:fleet.export.help"></or-translate></p>
-                ${types.map((type) => this._renderType(type))}
+                ${this._options && types.length === 0
+                    ? html`<p class="note"><or-translate value="app:fleet.export.noTypes"></or-translate></p>`
+                    : types.map((type) => this._renderType(type))}
+                <div class="status" role="status">
+                    ${this._busy ? html`<or-translate value="app:fleet.export.exporting"></or-translate>` : nothing}
+                </div>
                 <div class="error" role="alert">
                     ${problem ? ("key" in problem ? html`<or-translate value=${problem.key}></or-translate>` : problem.text) : nothing}
                 </div>

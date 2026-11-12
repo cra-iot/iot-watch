@@ -127,6 +127,8 @@
       "none": "Geen",
       "cancel": "Annuleren",
       "export": "Exporteren",
+      "exporting": "Bezig met exporteren…",
+      "noTypes": "Geen van de gevonden apparaten heeft attributen die geëxporteerd kunnen worden.",
       "error": {
         "missing": "Selecteer beide datums.",
         "order": "De begindatum ligt na de einddatum.",

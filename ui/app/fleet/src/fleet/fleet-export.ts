@@ -36,8 +36,12 @@ export function initialSelection(options: FleetExportOptions, remembered?: Selec
     for (const type of options.types ?? []) {
         const attributes = [...(type.identity ?? []), ...(type.measurements ?? [])];
         const rememberedNames = remembered?.[type.type];
-        selection[type.type] = rememberedNames
+        const kept = rememberedNames
             ? attributes.filter((a) => rememberedNames.includes(a.name)).map((a) => a.name)
+            : [];
+        // A remembered choice whose every name is gone (renamed or no longer offered) means nothing.
+        selection[type.type] = rememberedNames && (kept.length > 0 || rememberedNames.length === 0)
+            ? kept
             : attributes.filter((a) => a.defaultSelected).map((a) => a.name);
     }
     return selection;
@@ -63,6 +67,12 @@ export function toExportRequest(query: FleetQuery, from: string, to: string, sel
 export function fileNameFrom(contentDisposition: string | undefined, fallback: string): string {
     const match = contentDisposition?.match(/filename\*?=(?:"([^"]+)"|([^;\s]+))/i);
     return match?.[1] ?? match?.[2] ?? fallback;
+}
+
+/** File name when the response names none; the extension follows the content type. */
+export function fallbackFileName(from: string, to: string, contentType: string | undefined): string {
+    const extension = contentType?.toLowerCase().startsWith("application/zip") ? "zip" : "csv";
+    return `fleet-${from}_${to}.${extension}`;
 }
 
 /** First..last day of maxTo's month, capped at maxTo. */

@@ -141,4 +141,37 @@ describe("or-fleet-export-dialog", () => {
         expect(closes).toHaveLength(0);
         release({ data: new Blob(["a"]), headers: {} });
     });
+
+    it("names a zip download .zip when the server sends no file name", async () => {
+        const element = await mount();
+        api.export.mockResolvedValue({ data: new Blob(["a"]), headers: { "content-type": "application/zip" } });
+        URL.createObjectURL = vi.fn(() => "blob:x");
+        URL.revokeObjectURL = vi.fn();
+        const downloads: string[] = [];
+        vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { downloads.push(this.download); });
+        exportButton(element).click();
+        await settle(element);
+        expect(downloads).toHaveLength(1);
+        expect(downloads[0]).toMatch(/^fleet-.*\.zip$/);
+    });
+
+    it("shows a status while an export runs", async () => {
+        const element = await mount();
+        expect($(element, "[role=status] or-translate")).toBeNull();
+        let release: (v: unknown) => void = () => {};
+        api.export.mockReturnValue(new Promise((resolve) => { release = resolve; }));
+        exportButton(element).click();
+        await settle(element);
+        const status = $(element, "[role=status] or-translate") as unknown as { value?: string } | null;
+        expect(status?.value).toBe("app:fleet.export.exporting");
+        release({ data: new Blob(["a"]), headers: {} });
+    });
+
+    it("shows a note and keeps Export disabled when no type can be exported", async () => {
+        api.exportOptions.mockResolvedValue({ data: { ...OPTIONS, types: [] } });
+        const element = await mount();
+        expect($$(element, "section.type")).toHaveLength(0);
+        expect(($(element, ".note or-translate") as unknown as { value?: string } | null)?.value).toBe("app:fleet.export.noTypes");
+        expect(exportButton(element).disabled).toBe(true);
+    });
 });

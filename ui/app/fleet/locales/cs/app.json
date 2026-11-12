@@ -175,6 +175,8 @@
       "none": "Nic",
       "cancel": "Zrušit",
       "export": "Exportovat",
+      "exporting": "Probíhá export…",
+      "noTypes": "Žádné z nalezených zařízení nemá atributy, které lze exportovat.",
       "error": {
         "missing": "Zadejte obě data.",
         "order": "Počáteční datum je po koncovém datu.",

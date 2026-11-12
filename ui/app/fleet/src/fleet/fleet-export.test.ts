@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FleetExportOptions, FleetQuery } from "model";
-import { defaultRange, fileNameFrom, initialSelection, rangeError, toExportRequest } from "./fleet-export";
+import { defaultRange, fallbackFileName, fileNameFrom, initialSelection, rangeError, toExportRequest } from "./fleet-export";
 
 const MAX = "2026-11-11";
 
@@ -51,6 +51,14 @@ describe("initialSelection", () => {
     it("keeps remembered names and drops those no longer offered", () => {
         expect(initialSelection(options, { WaterMeterAsset: ["devEui", "gone"] })).toEqual({ WaterMeterAsset: ["devEui"] });
     });
+
+    it("falls back to the defaults when every remembered name is gone", () => {
+        expect(initialSelection(options, { WaterMeterAsset: ["gone", "alsoGone"] })).toEqual({ WaterMeterAsset: ["devEui", "volume"] });
+    });
+
+    it("keeps a remembered empty choice", () => {
+        expect(initialSelection(options, { WaterMeterAsset: [] })).toEqual({ WaterMeterAsset: [] });
+    });
 });
 
 describe("toExportRequest", () => {
@@ -87,6 +95,14 @@ describe("fileNameFrom", () => {
     it("falls back", () => {
         expect(fileNameFrom(undefined, "x")).toBe("x");
         expect(fileNameFrom("attachment", "x")).toBe("x");
+    });
+});
+
+describe("fallbackFileName", () => {
+    it("uses the extension of the content type", () => {
+        expect(fallbackFileName("2026-10-01", "2026-10-31", "application/zip")).toBe("fleet-2026-10-01_2026-10-31.zip");
+        expect(fallbackFileName("2026-10-01", "2026-10-31", "text/csv; charset=UTF-8")).toBe("fleet-2026-10-01_2026-10-31.csv");
+        expect(fallbackFileName("2026-10-01", "2026-10-31", undefined)).toBe("fleet-2026-10-01_2026-10-31.csv");
     });
 });
 
