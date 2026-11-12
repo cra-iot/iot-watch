@@ -1,71 +1,101 @@
 import { describe, expect, it } from "vitest";
-import type { FleetExportOptions, FleetQuery } from "model";
+import { FleetExportReport, type FleetExportOptions, type FleetQuery } from "model";
 import {
-    defaultRange, fallbackFileName, fileNameFrom, initialSelection, rangeError, serverProblem, toExportQuery, toExportRequest,
+    defaultType, fallbackFileName, fileNameFrom, periodChoices, rangeProblem, serverProblem, toExportQuery, toExportRequest,
+    type PeriodChoice, type PeriodKey,
 } from "./fleet-export";
 import type { Token } from "./fleet-tokens";
 
-const MAX = "2026-11-11";
+const LAST_DAY = "2026-11-11";
+const LAST_MONTH = "2026-10";
+const MONTHLY = FleetExportReport.MONTHLY;
+const DAILY = FleetExportReport.DAILY;
 
-describe("rangeError", () => {
-    it("reports a missing date", () => {
-        expect(rangeError("", "2026-10-31", MAX)).toBe("app:fleet.export.error.missing");
-        expect(rangeError("2026-10-01", "", MAX)).toBe("app:fleet.export.error.missing");
+function range(choices: PeriodChoice[], key: PeriodKey): string {
+    const choice = choices.find((c) => c.key === key)!;
+    return `${choice.from}..${choice.to}`;
+}
+
+describe("periodChoices", () => {
+    it("lists the choices in order, custom last and empty", () => {
+        const choices = periodChoices(MONTHLY, LAST_DAY, LAST_MONTH);
+        expect(choices.map((c) => c.key)).toEqual(["lastMonth", "last3", "last12", "thisYear", "previousYear", "custom"]);
+        expect(choices[5]).toEqual({ key: "custom", from: "", to: "", disabled: false });
     });
 
-    it("reports reversed dates", () => {
-        expect(rangeError("2026-10-31", "2026-10-01", MAX)).toBe("app:fleet.export.error.order");
+    it("uses first days of months for the monthly report", () => {
+        const choices = periodChoices(MONTHLY, LAST_DAY, LAST_MONTH);
+        expect(range(choices, "lastMonth")).toBe("2026-10-01..2026-10-01");
+        expect(range(choices, "last3")).toBe("2026-08-01..2026-10-01");
+        expect(range(choices, "last12")).toBe("2025-11-01..2026-10-01");
+        expect(range(choices, "thisYear")).toBe("2026-01-01..2026-10-01");
+        expect(range(choices, "previousYear")).toBe("2025-01-01..2025-12-01");
     });
 
-    it("reports a to date after maxTo", () => {
-        expect(rangeError("2026-10-01", "2026-11-12", MAX)).toBe("app:fleet.export.error.future");
+    it("uses whole days for the daily report", () => {
+        const choices = periodChoices(DAILY, LAST_DAY, LAST_MONTH);
+        expect(range(choices, "lastMonth")).toBe("2026-10-01..2026-10-31");
+        expect(range(choices, "last3")).toBe("2026-08-01..2026-10-31");
+        expect(range(choices, "last12")).toBe("2025-11-01..2026-10-31");
+        expect(range(choices, "thisYear")).toBe("2026-01-01..2026-11-11");
+        expect(range(choices, "previousYear")).toBe("2025-01-01..2025-12-31");
     });
 
-    it("limits the range to 366 days inclusive", () => {
-        expect(rangeError("2025-11-09", "2026-11-10", MAX)).toBe("app:fleet.export.error.tooLong");
-        expect(rangeError("2025-11-11", "2026-11-11", MAX)).toBeUndefined();
-    });
-
-    it("accepts a valid range", () => {
-        expect(rangeError("2026-10-01", "2026-10-31", MAX)).toBeUndefined();
+    it("disables this year in January, when nothing of it is complete", () => {
+        expect(periodChoices(MONTHLY, "2027-01-14", "2026-12").find((c) => c.key === "thisYear")!.disabled).toBe(true);
+        expect(periodChoices(DAILY, "2026-12-31", "2026-12").find((c) => c.key === "thisYear")!.disabled).toBe(true);
+        expect(periodChoices(DAILY, LAST_DAY, LAST_MONTH).some((c) => c.disabled)).toBe(false);
     });
 });
 
-describe("initialSelection", () => {
-    const options: FleetExportOptions = {
-        maxTo: MAX,
-        maxDays: 366,
-        types: [
-            {
-                type: "WaterMeterAsset",
-                identity: [
-                    { name: "devEui", label: "DevEUI", defaultSelected: true },
-                    { name: "serial", label: "Serial", defaultSelected: false },
-                ],
-                measurements: [{ name: "volume", label: "Volume", defaultSelected: true }],
-            },
-        ],
-    };
+describe("rangeProblem", () => {
+    const options: FleetExportOptions = { maxDays: 366, lastDay: LAST_DAY, lastMonth: LAST_MONTH, maxMonths: 24, types: [] };
 
-    it("uses the defaults without a remembered selection", () => {
-        expect(initialSelection(options)).toEqual({ WaterMeterAsset: ["devEui", "volume"] });
+    it("reports a missing date", () => {
+        expect(rangeProblem(DAILY, "", "2026-10-31", options)).toBe("app:fleet.export.error.missing");
+        expect(rangeProblem(MONTHLY, "2026-10-01", "", options)).toBe("app:fleet.export.error.missing");
     });
 
-    it("keeps remembered names and drops those no longer offered", () => {
-        expect(initialSelection(options, { WaterMeterAsset: ["devEui", "gone"] })).toEqual({ WaterMeterAsset: ["devEui"] });
+    it("reports reversed dates", () => {
+        expect(rangeProblem(DAILY, "2026-10-31", "2026-10-01", options)).toBe("app:fleet.export.error.order");
     });
 
-    it("falls back to the defaults when every remembered name is gone", () => {
-        expect(initialSelection(options, { WaterMeterAsset: ["gone", "alsoGone"] })).toEqual({ WaterMeterAsset: ["devEui", "volume"] });
+    it("reports a last period that is not complete yet", () => {
+        expect(rangeProblem(DAILY, "2026-10-01", "2026-11-12", options)).toBe("app:fleet.export.error.future");
+        expect(rangeProblem(MONTHLY, "2026-10-01", "2026-11-01", options)).toBe("app:fleet.export.error.future");
     });
 
-    it("keeps a remembered empty choice", () => {
-        expect(initialSelection(options, { WaterMeterAsset: [] })).toEqual({ WaterMeterAsset: [] });
+    it("limits the daily range to maxDays inclusive", () => {
+        expect(rangeProblem(DAILY, "2025-11-09", "2026-11-10", options)).toBe("app:fleet.export.error.tooLong");
+        expect(rangeProblem(DAILY, "2025-11-11", "2026-11-11", options)).toBeUndefined();
+    });
+
+    it("limits the monthly range to maxMonths inclusive", () => {
+        expect(rangeProblem(MONTHLY, "2024-10-01", "2026-10-01", options)).toBe("app:fleet.export.error.tooLong");
+        expect(rangeProblem(MONTHLY, "2024-11-01", "2026-10-01", options)).toBeUndefined();
+    });
+
+    it("accepts a valid range", () => {
+        expect(rangeProblem(DAILY, "2026-10-01", "2026-10-31", options)).toBeUndefined();
+    });
+});
+
+describe("defaultType", () => {
+    const options = (counts: Record<string, number>): FleetExportOptions => ({
+        types: Object.entries(counts).map(([type, deviceCount]) => ({ type, deviceCount, groups: [] })),
+    });
+
+    it("picks the type with the most devices, ties by name", () => {
+        expect(defaultType(options({ WaterMeterAsset: 3, GasMeterAsset: 5, ElectricMeterAsset: 5 }))).toBe("ElectricMeterAsset");
+    });
+
+    it("is undefined without types", () => {
+        expect(defaultType({ types: [] })).toBeUndefined();
     });
 });
 
 describe("toExportRequest", () => {
-    it("copies only the filter fields and drops empty types", () => {
+    it("copies only the filter fields", () => {
         const query: FleetQuery = {
             text: ["a"],
             types: ["WaterMeterAsset"],
@@ -79,12 +109,13 @@ describe("toExportRequest", () => {
             columns: ["c"],
             collapsed: ["k"],
         };
-        const request = toExportRequest(query, "2026-10-01", "2026-10-31", { WaterMeterAsset: ["devEui"], GasMeterAsset: [] });
+        const request = toExportRequest(query, "WaterMeterAsset", MONTHLY, "2026-08-01", "2026-10-01");
         expect(request).toEqual({
             query: { text: ["a"], types: ["WaterMeterAsset"], recursive: true, status: ["ok"], realm: "r1" },
-            from: "2026-10-01",
-            to: "2026-10-31",
-            attributes: { WaterMeterAsset: ["devEui"] },
+            assetType: "WaterMeterAsset",
+            report: MONTHLY,
+            from: "2026-08-01",
+            to: "2026-10-01",
         });
     });
 });
@@ -102,16 +133,8 @@ describe("fileNameFrom", () => {
 });
 
 describe("fallbackFileName", () => {
-    it("uses the extension of the content type", () => {
-        expect(fallbackFileName("2026-10-01", "2026-10-31", "application/zip")).toBe("fleet-2026-10-01_2026-10-31.zip");
-        expect(fallbackFileName("2026-10-01", "2026-10-31", "text/csv; charset=UTF-8")).toBe("fleet-2026-10-01_2026-10-31.csv");
-        expect(fallbackFileName("2026-10-01", "2026-10-31", undefined)).toBe("fleet-2026-10-01_2026-10-31.csv");
-    });
-});
-
-describe("defaultRange", () => {
-    it("spans the month of maxTo up to maxTo", () => {
-        expect(defaultRange("2026-11-11")).toEqual({ from: "2026-11-01", to: "2026-11-11" });
+    it("is always a csv", () => {
+        expect(fallbackFileName("2026-10-01", "2026-10-31")).toBe("fleet-2026-10-01_2026-10-31.csv");
     });
 });
 
@@ -141,13 +164,20 @@ describe("toExportQuery", () => {
 
 describe("serverProblem", () => {
     it("translates the export's known messages, with their names", () => {
-        expect(serverProblem("Export too large: narrow the search or the date range"))
+        expect(serverProblem("Select a meter type")).toEqual({ key: "app:fleet.export.error.selectType" });
+        expect(serverProblem("Export too large: narrow the search or the period"))
             .toEqual({ key: "app:fleet.export.error.tooLarge" });
-        expect(serverProblem("Attribute devEui is not readable for WaterMeterAsset"))
-            .toEqual({ key: "app:fleet.export.error.notReadable", options: { attribute: "devEui", type: "WaterMeterAsset" } });
+        expect(serverProblem("No readable readings for WaterMeterAsset"))
+            .toEqual({ key: "app:fleet.export.error.notReadable", options: { type: "WaterMeterAsset" } });
+        expect(serverProblem("Meter type HeatMeterAsset has no readings to export"))
+            .toEqual({ key: "app:fleet.export.error.notExportable", options: { type: "HeatMeterAsset" } });
         expect(serverProblem("No matched devices of type GasMeterAsset"))
             .toEqual({ key: "app:fleet.export.error.noDevices", options: { type: "GasMeterAsset" } });
+        expect(serverProblem("The first period must not be after the last")).toEqual({ key: "app:fleet.export.error.order" });
+        expect(serverProblem("The last month must be last month or earlier")).toEqual({ key: "app:fleet.export.error.future" });
+        expect(serverProblem("The last day must be yesterday or earlier")).toEqual({ key: "app:fleet.export.error.future" });
         expect(serverProblem("The range must not exceed 366 days")).toEqual({ key: "app:fleet.export.error.tooLong" });
+        expect(serverProblem("The range must not exceed 24 months")).toEqual({ key: "app:fleet.export.error.tooLong" });
     });
 
     it("leaves other messages to be shown as sent", () => {

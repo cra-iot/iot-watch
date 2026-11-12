@@ -1,13 +1,30 @@
-import type { FleetExportOptions, FleetExportRequest, FleetQuery } from "model";
+import { FleetExportReport, type FleetExportOptions, type FleetExportRequest, type FleetQuery } from "model";
 import { singlePrimaryRegister, toFleetQuery, type Token } from "./fleet-tokens";
 
-export const MAX_DAYS = 366;
-export const SELECTION_KEY = "fleet.export.selection";
+export const CHOICE_KEY = "fleet.export.choice";
 
-/** Selected attribute names per asset type. */
-export type Selection = Record<string, string[]>;
+/** What the dialog remembers between visits. */
+export interface RememberedChoice {
+    assetType?: string;
+    report?: FleetExportReport;
+    period?: PeriodKey;
+}
 
+export type PeriodKey = "lastMonth" | "last3" | "last12" | "thisYear" | "previousYear" | "custom";
+
+/** A period to pick: from/to as yyyy-MM-dd, first days of months for the monthly report. */
+export interface PeriodChoice {
+    key: PeriodKey;
+    from: string;
+    to: string;
+    disabled: boolean;
+}
+
+const DEFAULT_MAX_DAYS = 366;
+const DEFAULT_MAX_MONTHS = 24;
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+const pad = (n: number) => String(n).padStart(2, "0");
 
 /** Parses a plain YYYY-MM-DD string as UTC midnight. */
 function utcDay(date: string): number {
@@ -15,37 +32,79 @@ function utcDay(date: string): number {
     return Date.UTC(y, m - 1, d);
 }
 
-/** Translation key of the first problem, or undefined. maxTo comes from the options response. */
-export function rangeError(from: string, to: string, maxTo: string): string | undefined {
+/** Month number since year 0 of a YYYY-MM or YYYY-MM-DD string. */
+function monthIndex(date: string): number {
+    const [y, m] = date.split("-").map(Number);
+    return y * 12 + (m - 1);
+}
+
+/** First day (yyyy-MM-dd) of the month with this index. */
+function firstOfMonth(index: number): string {
+    return `${Math.floor(index / 12)}-${pad((index % 12) + 1)}-01`;
+}
+
+/** Last day (yyyy-MM-dd) of the month with this index. */
+function lastOfMonth(index: number): string {
+    const end = new Date(Date.UTC(Math.floor(index / 12), (index % 12) + 1, 0));
+    return `${end.getUTCFullYear()}-${pad(end.getUTCMonth() + 1)}-${pad(end.getUTCDate())}`;
+}
+
+/**
+ * The period choices for a report, in PeriodKey order. lastDay and lastMonth come from the options
+ * response: the last complete day and month. This year is disabled while none of it is complete.
+ */
+export function periodChoices(report: FleetExportReport, lastDay: string, lastMonth: string): PeriodChoice[] {
+    const monthly = report === FleetExportReport.MONTHLY;
+    const last = monthIndex(lastMonth);
+    const lastTo = monthly ? firstOfMonth(last) : lastDay;
+    // Today is the day after lastDay, so on 1 January this year is already the new one.
+    const year = new Date(utcDay(lastDay) + DAY_MS).getUTCFullYear();
+    const choice = (key: PeriodKey, fromIndex: number, toIndex: number, to?: string): PeriodChoice => {
+        const from = firstOfMonth(fromIndex);
+        const end = to ?? (monthly ? firstOfMonth(toIndex) : lastOfMonth(toIndex));
+        return { key, from, to: end, disabled: from > end || end > lastTo };
+    };
+    return [
+        choice("lastMonth", last, last),
+        choice("last3", last - 2, last),
+        choice("last12", last - 11, last),
+        choice("thisYear", year * 12, last, lastTo),
+        choice("previousYear", (year - 1) * 12, year * 12 - 1),
+        { key: "custom", from: "", to: "", disabled: false },
+    ];
+}
+
+/** Translation key of the first problem, or undefined. The limits come from the options response. */
+export function rangeProblem(report: FleetExportReport, from: string, to: string, options: FleetExportOptions): string | undefined {
     if (!from || !to) {
         return "app:fleet.export.error.missing";
     }
     if (from > to) {
         return "app:fleet.export.error.order";
     }
-    if (to > maxTo) {
+    if (report === FleetExportReport.MONTHLY) {
+        if (monthIndex(to) > monthIndex(String(options.lastMonth))) {
+            return "app:fleet.export.error.future";
+        }
+        if (monthIndex(to) - monthIndex(from) + 1 > (options.maxMonths ?? DEFAULT_MAX_MONTHS)) {
+            return "app:fleet.export.error.tooLong";
+        }
+        return undefined;
+    }
+    if (to > String(options.lastDay)) {
         return "app:fleet.export.error.future";
     }
-    if ((utcDay(to) - utcDay(from)) / DAY_MS + 1 > MAX_DAYS) {
+    if ((utcDay(to) - utcDay(from)) / DAY_MS + 1 > (options.maxDays ?? DEFAULT_MAX_DAYS)) {
         return "app:fleet.export.error.tooLong";
     }
     return undefined;
 }
 
-export function initialSelection(options: FleetExportOptions, remembered?: Selection): Selection {
-    const selection: Selection = {};
-    for (const type of options.types ?? []) {
-        const attributes = [...(type.identity ?? []), ...(type.measurements ?? [])];
-        const rememberedNames = remembered?.[type.type];
-        const kept = rememberedNames
-            ? attributes.filter((a) => rememberedNames.includes(a.name)).map((a) => a.name)
-            : [];
-        // A remembered choice whose every name is gone (renamed or no longer offered) means nothing.
-        selection[type.type] = rememberedNames && (kept.length > 0 || rememberedNames.length === 0)
-            ? kept
-            : attributes.filter((a) => a.defaultSelected).map((a) => a.name);
-    }
-    return selection;
+/** The meter type with the most devices, ties by name. */
+export function defaultType(options: FleetExportOptions): string | undefined {
+    const types = [...(options.types ?? [])];
+    types.sort((a, b) => (b.deviceCount ?? 0) - (a.deviceCount ?? 0) || String(a.type).localeCompare(String(b.type)));
+    return types[0]?.type;
 }
 
 /**
@@ -60,7 +119,8 @@ export function toExportQuery(tokens: Token[], columns: { name?: string; primary
     return query;
 }
 
-export function toExportRequest(query: FleetQuery, from: string, to: string, selection: Selection): FleetExportRequest {
+export function toExportRequest(query: FleetQuery, assetType: string, report: FleetExportReport,
+                                from: string, to: string): FleetExportRequest {
     const { text, types, parentIds, recursive, attributes, seen, status, realm } = query;
     const filter: FleetQuery = { text, types, parentIds, recursive, attributes, seen, status, realm };
     for (const key of Object.keys(filter) as (keyof FleetQuery)[]) {
@@ -68,13 +128,7 @@ export function toExportRequest(query: FleetQuery, from: string, to: string, sel
             delete filter[key];
         }
     }
-    const chosen: Record<string, string[]> = {};
-    for (const [type, names] of Object.entries(selection)) {
-        if (names.length > 0) {
-            chosen[type] = names;
-        }
-    }
-    return { query: filter, from, to, attributes: chosen };
+    return { query: filter, assetType, report, from, to };
 }
 
 export function fileNameFrom(contentDisposition: string | undefined, fallback: string): string {
@@ -82,15 +136,9 @@ export function fileNameFrom(contentDisposition: string | undefined, fallback: s
     return match?.[1] ?? match?.[2] ?? fallback;
 }
 
-/** File name when the response names none; the extension follows the content type. */
-export function fallbackFileName(from: string, to: string, contentType: string | undefined): string {
-    const extension = contentType?.toLowerCase().startsWith("application/zip") ? "zip" : "csv";
-    return `fleet-${from}_${to}.${extension}`;
-}
-
-/** First..last day of maxTo's month, capped at maxTo. */
-export function defaultRange(maxTo: string): { from: string; to: string } {
-    return { from: `${maxTo.slice(0, 7)}-01`, to: maxTo };
+/** File name when the response names none. */
+export function fallbackFileName(from: string, to: string): string {
+    return `fleet-${from}_${to}.csv`;
 }
 
 /** A server message in the user's language: a translation key and its options. */
@@ -98,17 +146,17 @@ export type ServerProblem = { key: string; options?: Record<string, string> };
 
 /**
  * The export's 400/403 messages the dialog translates. The wording comes from FleetExporter.plan
- * and FleetExportRange.parse; keep both sides in step. Anything else is shown as sent.
+ * and FleetExportPeriod.parse; keep both sides in step. Anything else is shown as sent.
  */
 const SERVER_PROBLEMS: { pattern: RegExp; key: string; names: string[] }[] = [
-    { pattern: /^Select at least one attribute to export$/, key: "nothingSelected", names: [] },
+    { pattern: /^Select a meter type$/, key: "selectType", names: [] },
     { pattern: /^No matched devices of type (.+)$/, key: "noDevices", names: ["type"] },
-    { pattern: /^Attribute (.+?) cannot be exported for (.+)$/, key: "notExportable", names: ["attribute", "type"] },
-    { pattern: /^Attribute (.+?) is not readable for (.+)$/, key: "notReadable", names: ["attribute", "type"] },
-    { pattern: /^Export too large: narrow the search or the date range$/, key: "tooLarge", names: [] },
-    { pattern: /^The first day must not be after the last day$/, key: "order", names: [] },
-    { pattern: /^The last day must be yesterday or earlier$/, key: "future", names: [] },
-    { pattern: /^The range must not exceed \d+ days$/, key: "tooLong", names: [] },
+    { pattern: /^Meter type (.+) has no readings to export$/, key: "notExportable", names: ["type"] },
+    { pattern: /^No readable readings for (.+)$/, key: "notReadable", names: ["type"] },
+    { pattern: /^Export too large: narrow the search or the period$/, key: "tooLarge", names: [] },
+    { pattern: /^The first period must not be after the last$/, key: "order", names: [] },
+    { pattern: /^The last (?:day|month) must be .*$/, key: "future", names: [] },
+    { pattern: /^The range must not exceed .*$/, key: "tooLong", names: [] },
 ];
 
 export function serverProblem(text: string): ServerProblem | undefined {
