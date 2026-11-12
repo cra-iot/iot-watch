@@ -91,6 +91,13 @@ describe("or-fleet-export-dialog", () => {
         expect(exportButton(element).hasAttribute("disabled")).toBe(false);
     });
 
+    it("keeps the footer buttons' own box, which the Vaadin dialog dissolves", async () => {
+        // jsdom does not cascade into the overlay; the rule itself is the guard, checked in the browser.
+        const element = await mount();
+        const styles = (element.constructor as unknown as { styles: { cssText: string } }).styles.cssText;
+        expect(styles).toMatch(/or-vaadin-button\[slot="footer"\]\s*\{\s*display:\s*inline-flex;/);
+    });
+
     it("exports with the form's choice and remembers it", async () => {
         const element = await mount();
         const downloads = stubDownload();

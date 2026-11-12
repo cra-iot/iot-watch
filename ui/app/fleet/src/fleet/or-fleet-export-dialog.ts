@@ -52,6 +52,8 @@ export class OrFleetExportDialog extends translateMixin(i18next)(OrElement) {
 
     static get styles() {
         return css`
+            /* The dialog styles slotted footer content display: contents, which dissolves a button's own box. */
+            or-vaadin-button[slot="footer"] { display: inline-flex; }
             or-vaadin-dialog::part(overlay) { width: min(560px, calc(100vw - 2 * var(--lumo-space-m))); }
             .status { padding-top: var(--lumo-space-s); font-size: var(--lumo-font-size-s); }
             .error { color: var(--lumo-error-text-color); padding: var(--lumo-space-s) 0; min-height: 1em; }
