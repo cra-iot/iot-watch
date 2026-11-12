@@ -72,12 +72,16 @@ public final class PeriodRows {
         return new Values(number(startValue), number(endValue), consumption);
     }
 
+    private static final int MAX_SCALE = 1000;
+
     private static BigDecimal parse(String raw) {
         if (raw == null) {
             return null;
         }
         try {
-            return new BigDecimal(raw.trim());
+            BigDecimal parsed = new BigDecimal(raw.trim());
+            // a huge exponent would make toPlainString allocate gigabytes
+            return Math.abs((long) parsed.scale()) > MAX_SCALE ? null : parsed;
         } catch (NumberFormatException e) {
             return null;
         }

@@ -114,4 +114,18 @@ class PeriodRowsTest extends Specification {
         PeriodRows.number("abc") == "abc"
         PeriodRows.number(null) == null
     }
+
+    def "a huge exponent is treated as text"() {
+        expect:
+        PeriodRows.number("1E+999999999") == "1E+999999999"
+        PeriodRows.number("1E-999999999") == "1E-999999999"
+
+        when:
+        def rows = PeriodRows.build(PERIODS, ATTRIBUTES, [a: reading("1E+999999999", T0)],
+                [(P1): [a: reading("10", T1)]])
+
+        then:
+        rows[0].values().a.start() == "1E+999999999"
+        rows[0].values().a.consumption() == null
+    }
 }
