@@ -219,9 +219,12 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
                 + " outcome=rejected");
     }
 
-    /** Replaces control characters, so request input cannot split a log line. */
+    private static final int MAX_LOGGED_INPUT = 100;
+
+    /** Replaces control characters and cuts to 100 characters, so request input cannot split or flood a log line. */
     private static String singleLine(String text) {
-        return text.replaceAll("\\p{Cntrl}", "?");
+        String clean = text.replaceAll("\\p{Cntrl}", "?");
+        return clean.length() > MAX_LOGGED_INPUT ? clean.substring(0, MAX_LOGGED_INPUT) + "…" : clean;
     }
 
     /** The manager clock's current instant. */

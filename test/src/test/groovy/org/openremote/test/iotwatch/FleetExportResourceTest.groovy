@@ -265,6 +265,7 @@ class FleetExportResourceTest extends Specification {
         "  "           | "-"
         "A\nB"         | "A?B"
         " WaterMeterAsset " | "WaterMeterAsset"
+        "T" * 150      | "T" * 100 + "…"
     }
 
     def "a busy exporter is a 429 carrying its message as text"() {
