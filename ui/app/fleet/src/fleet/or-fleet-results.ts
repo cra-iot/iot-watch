@@ -580,6 +580,7 @@ export class OrFleetResults extends translateMixin(i18next)(OrElement) {
                     </span>
                 </span>
                 ${this._renderColumnsMenu(result)}
+                <slot name="actions"></slot>
             </div>`;
     }
 

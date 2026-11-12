@@ -48,6 +48,15 @@ describe("or-fleet-results", () => {
         expect($(element, ".progress")).not.toBeNull();
     });
 
+    it("offers an actions slot at the end of the result bar, after the columns menu", async () => {
+        const element = await mount({ result: result([row("a")]) });
+        const bar = $$(element, ".bar")[0];
+        const slot = bar.querySelector("slot[name=actions]");
+        expect(slot).not.toBeNull();
+        expect(bar.lastElementChild).toBe(slot);
+        expect(slot!.previousElementSibling!.classList.contains("picker")).toBe(true);
+    });
+
     it("renders one row per meter with its status class and an open link", async () => {
         const element = await mount({ result: result([row("a", { alarms: ["leakage"] }), row("b", { lastSeen: undefined }), row("c")]) });
         const rows = $$(element, "tbody tr.row");
