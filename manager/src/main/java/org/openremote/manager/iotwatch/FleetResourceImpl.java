@@ -20,6 +20,7 @@ import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.StreamingOutput;
 
@@ -78,7 +79,7 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
         try {
             result = FleetResultAssembler.assemble(rows, fleetQuery, timerService.getCurrentTimeMillis());
         } catch (IllegalArgumentException e) {
-            throw new BadRequestException(e.getMessage());
+            throw badRequest(e.getMessage());
         }
         result.facets.parents.forEach(facet -> facet.label = parentNames.get(facet.key));
         result.columns = resolved.columns();
@@ -93,7 +94,7 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
 
         Map<String, Integer> deviceCounts = new HashMap<>();
         matchedRows(fleetQuery, realm).forEach(row -> deviceCounts.merge(row.type, 1, Integer::sum));
-        Instant now = Instant.ofEpochMilli(timerService.getCurrentTimeMillis());
+        Instant now = now();
         return FleetExportOptionsAssembler.assemble(deviceCounts, isRestrictedUser(), columnResolver,
                 FleetExportRange.maxTo(ZoneOffset.UTC, now));
     }
@@ -102,7 +103,7 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
     public Response export(FleetExportRequest request) {
         long started = System.currentTimeMillis();
         if (request == null) {
-            throw new BadRequestException("Export request required");
+            throw badRequest("Export request required");
         }
         FleetQuery fleetQuery = request.query == null ? new FleetQuery() : request.query;
         String realm = realmOf(fleetQuery);
@@ -133,11 +134,11 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
         FleetExporter.ExportPlan plan;
         try {
             plan = exporter.plan(request, assetsByType, isRestrictedUser(),
-                    Instant.ofEpochMilli(timerService.getCurrentTimeMillis()));
+                    now());
         } catch (IllegalArgumentException e) {
-            throw new BadRequestException(e.getMessage());
+            throw badRequest(e.getMessage());
         } catch (SecurityException e) {
-            throw new ForbiddenException(e.getMessage());
+            throw forbidden(e.getMessage());
         }
 
         if (!exporter.tryAcquire()) {
@@ -202,6 +203,28 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
                 + " outcome=" + (ok ? "ok" : "failed"));
     }
 
+    /** The manager clock's current instant. */
+    protected Instant now() {
+        return Instant.ofEpochMilli(timerService.getCurrentTimeMillis());
+    }
+
+    /**
+     * A 400 whose body is the message as text/plain. Thrown without an entity, OpenRemote's
+     * exception mapper would replace the message with a generic text (a stack trace in dev mode).
+     */
+    public static BadRequestException badRequest(String message) {
+        return new BadRequestException(message, textResponse(Response.Status.BAD_REQUEST, message));
+    }
+
+    /** A 403 whose body is the message as text/plain; see badRequest. */
+    public static ForbiddenException forbidden(String message) {
+        return new ForbiddenException(message, textResponse(Response.Status.FORBIDDEN, message));
+    }
+
+    private static Response textResponse(Response.Status status, String message) {
+        return Response.status(status).type(MediaType.TEXT_PLAIN_TYPE).entity(message == null ? "" : message).build();
+    }
+
     /** The query's realm, else the request's. */
     protected String realmOf(FleetQuery fleetQuery) {
         return fleetQuery.realm == null || fleetQuery.realm.isBlank()
@@ -224,7 +247,7 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
         try {
             return FleetResultAssembler.match(rows, fleetQuery, timerService.getCurrentTimeMillis());
         } catch (IllegalArgumentException e) {
-            throw new BadRequestException(e.getMessage());
+            throw badRequest(e.getMessage());
         }
     }
 
@@ -281,7 +304,7 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
     protected List<Asset<?>> authorizedFindAll(AssetQuery assetQuery, String realm) {
         // The single most important line here: core's own authorization gate, never bypassed.
         if (!assetStorageService.authorizeAssetQuery(assetQuery, getAuthContext(), realm)) {
-            throw new ForbiddenException("User not authorized to execute specified query");
+            throw forbidden("User not authorized to execute specified query");
         }
         return assetStorageService.findAll(assetQuery);
     }
@@ -295,7 +318,7 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
         if (fleetQuery.status != null) {
             for (String status : fleetQuery.status) {
                 if (status == null || !FleetResultAssembler.STATUSES.contains(status)) {
-                    throw new BadRequestException("Unknown status: " + status);
+                    throw badRequest("Unknown status: " + status);
                 }
             }
         }
@@ -304,10 +327,10 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
         }
         for (FleetQuery.AttributeFilter filter : fleetQuery.attributes) {
             if (filter == null) {
-                throw new BadRequestException("Attribute filter must not be null");
+                throw badRequest("Attribute filter must not be null");
             }
             if (filter.name == null || filter.name.isBlank()) {
-                throw new BadRequestException("Attribute filter requires a name");
+                throw badRequest("Attribute filter requires a name");
             }
         }
     }
@@ -328,19 +351,19 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
             switch (filter.operator) {
                 case CONTAINS, STARTS_WITH -> {
                     if (filter.value instanceof Number || filter.value instanceof Boolean) {
-                        throw new BadRequestException(
+                        throw badRequest(
                                 filter.operator + " requires a text value on " + filter.name);
                     }
                 }
                 // A null value is no number either: it would become an exact match on "".
                 case LESS_THAN, LESS_EQUALS, GREATER_THAN, GREATER_EQUALS, BETWEEN -> {
                     if (!(filter.value instanceof Number)) {
-                        throw new BadRequestException(
+                        throw badRequest(
                                 filter.operator + " requires a numeric value on " + filter.name);
                     }
                     if (filter.operator == FleetQuery.Operator.BETWEEN
                             && !(filter.rangeValue instanceof Number)) {
-                        throw new BadRequestException("BETWEEN requires a numeric rangeValue on " + filter.name);
+                        throw badRequest("BETWEEN requires a numeric rangeValue on " + filter.name);
                     }
                 }
                 default -> {
@@ -359,7 +382,7 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
         if (fleetQuery.attributes != null && fleetQuery.attributes.stream()
                 .anyMatch(filter -> filter != null && filter.name != null
                         && FleetColumns.RAW_VALUE.equalsIgnoreCase(filter.name.trim()))) {
-            throw new BadRequestException("Filtering on " + FleetColumns.RAW_VALUE + " is not supported");
+            throw badRequest("Filtering on " + FleetColumns.RAW_VALUE + " is not supported");
         }
     }
 

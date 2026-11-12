@@ -168,6 +168,7 @@ class FleetExportEndpointTest extends Specification implements ManagerContainerT
 
         then:
         response.status == 403
+        response.readEntity(String) == "Attribute notes is not readable for WaterMeterAsset"
 
         cleanup:
         response?.close()
@@ -179,6 +180,7 @@ class FleetExportEndpointTest extends Specification implements ManagerContainerT
 
         then:
         response.status == 400
+        response.readEntity(String) == "The last day must be yesterday or earlier"
 
         cleanup:
         response?.close()
