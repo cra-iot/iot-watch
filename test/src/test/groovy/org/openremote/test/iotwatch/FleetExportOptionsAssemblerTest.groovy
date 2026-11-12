@@ -1,25 +1,24 @@
 package org.openremote.test.iotwatch
 
-import org.openremote.manager.iotwatch.FleetColumnResolver
 import org.openremote.manager.iotwatch.FleetExportOptionsAssembler
 import org.openremote.model.util.ValueUtil
 import spock.lang.Specification
 
-import java.time.LocalDate
+import java.time.Instant
 
 class FleetExportOptionsAssemblerTest extends Specification {
 
-    static final LocalDate MAX_TO = LocalDate.of(2026, 11, 11)
+    static final Instant NOW = Instant.parse("2026-11-12T09:30:00Z")
 
     def setupSpec() {
         ValueUtil.initialise(null)
     }
 
     static def assemble(Map<String, Integer> counts, boolean restricted = false) {
-        return FleetExportOptionsAssembler.assemble(counts, restricted, new FleetColumnResolver([:]), MAX_TO)
+        return FleetExportOptionsAssembler.assemble(counts, restricted, NOW)
     }
 
-    def "lists only exportable types, sorted"() {
+    def "offers only types with readings, with their groups"() {
         when:
         def options = assemble([WaterMeterAsset: 3, TrackerAsset: 2, ElectricMeterAsset: 1])
 
@@ -27,36 +26,42 @@ class FleetExportOptionsAssemblerTest extends Specification {
         options.types*.type == ["ElectricMeterAsset", "WaterMeterAsset"]
         options.types.find { it.type == "WaterMeterAsset" }.deviceCount == 3
         options.types.find { it.type == "ElectricMeterAsset" }.deviceCount == 1
+        options.types.find { it.type == "ElectricMeterAsset" }.groups*.key == ["total", "t1", "t2"]
+        options.types.find { it.type == "ElectricMeterAsset" }.groups*.attribute ==
+                ["energy_active_total", "energy_active_t1", "energy_active_t2"]
+        options.lastDay == "2026-11-11"
+        options.lastMonth == "2026-10"
+        options.maxDays == 366
+        options.maxMonths == 24
     }
 
-    def "defaults to identifiers and the primary register"() {
+    def "a group carries its label and unit"() {
         when:
         def water = assemble([WaterMeterAsset: 3]).types[0]
-        def defaults = (water.identity + water.measurements).findAll { it.defaultSelected }*.name
 
         then:
-        defaults == ["meter_id", "devEui", "external_id", "delivery_point_id", "currentReading"]
-        !water.identity*.name.contains("notes")
         water.groups*.key == ["volume"]
-        (water.identity + water.measurements).every { it.label != null }
+        water.groups*.attribute == ["currentReading"]
+        water.groups.every { it.label != null && !it.label.isEmpty() }
+        water.groups[0].unit == "m3"
     }
 
-    def "restricted callers see no generic attributes"() {
+    def "restricted callers are offered the readable groups"() {
         when:
-        def water = assemble([WaterMeterAsset: 3], true).types[0]
+        def options = assemble([WaterMeterAsset: 3], true)
 
         then:
-        water.identity*.name.contains("devEui")
-        !water.identity*.name.contains("notes")
+        options.types*.type == ["WaterMeterAsset"]
+        options.types[0].groups*.key == ["volume"]
     }
 
-    def "carries maxTo"() {
+    def "without matched devices no type is offered"() {
         when:
         def options = assemble([:])
 
         then:
-        options.maxTo == "2026-11-11"
-        options.maxDays == 366
         options.types.isEmpty()
+        options.lastDay == "2026-11-11"
+        options.lastMonth == "2026-10"
     }
 }

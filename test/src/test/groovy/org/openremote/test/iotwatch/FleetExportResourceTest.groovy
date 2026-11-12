@@ -219,6 +219,54 @@ class FleetExportResourceTest extends Specification {
         FleetExporterTest.lines(out.toByteArray()).size() == 3
     }
 
+    def "a valid monthly export streams a CSV named for the type"() {
+        given:
+        resource.devices = [FleetExporterTest.water("id1", "A")]
+
+        when:
+        Response response = resource.export(
+                FleetExporterTest.request("WaterMeterAsset", FleetExportReport.MONTHLY, "2026-08-01", "2026-10-01"))
+        def out = new ByteArrayOutputStream()
+        (response.entity as jakarta.ws.rs.core.StreamingOutput).write(out)
+
+        then:
+        response.status == 200
+        response.getHeaderString("Content-Type") == "text/csv; charset=UTF-8"
+        response.getHeaderString("Content-Disposition").contains("WaterMeterAsset_monthly_")
+        response.getHeaderString("Content-Disposition").contains("_2026-08_2026-10_")
+        FleetExporterTest.lines(out.toByteArray()).size() == 4
+    }
+
+    def "a header-only export is logged with its sanitised requested type"() {
+        given:
+        def records = []
+        def handler = new java.util.logging.Handler() {
+            void publish(java.util.logging.LogRecord record) { records << record.message }
+            void flush() {}
+            void close() {}
+        }
+        def logger = java.util.logging.Logger.getLogger(FleetResourceImpl.name)
+        logger.addHandler(handler)
+
+        when:
+        def response = resource.export(request(type))
+        def out = new ByteArrayOutputStream()
+        (response.entity as jakarta.ws.rs.core.StreamingOutput).write(out)
+
+        then:
+        records.any { it.contains("Fleet export ") && it.contains(" type=" + logged + " ") && it.contains("outcome=ok") }
+
+        cleanup:
+        logger.removeHandler(handler)
+
+        where:
+        type           | logged
+        "TrackerAsset" | "TrackerAsset"
+        "  "           | "-"
+        "A\nB"         | "A?B"
+        " WaterMeterAsset " | "WaterMeterAsset"
+    }
+
     def "a busy exporter is a 429 carrying its message as text"() {
         given:
         resource.devices = [FleetExporterTest.water("id1", "A")]

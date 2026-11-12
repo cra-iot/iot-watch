@@ -51,10 +51,11 @@ public class FleetExporter {
     /**
      * A validated export. assets: sorted by name then id, empty when the search matched nothing;
      * groups: the type's register groups the caller may read, in column order. assetType is null
-     * for a header-only plan whose requested type has no register groups.
+     * for a header-only plan whose requested type has no register groups; requestedType is the
+     * request's trimmed type as given (null when blank), unchecked, for the log line only.
      */
-    public record ExportPlan(FleetExportPeriod period, String assetType, List<Asset<?>> assets,
-                             List<FleetExportRegisters.Group> groups, Instant exportedAt) {
+    public record ExportPlan(FleetExportPeriod period, String assetType, String requestedType,
+                             List<Asset<?>> assets, List<FleetExportRegisters.Group> groups, Instant exportedAt) {
 
         public int devices() {
             return assets.size();
@@ -132,13 +133,13 @@ public class FleetExporter {
     public ExportPlan plan(FleetExportRequest request, Map<String, Set<String>> matchedIds, AssetLoader loader,
                            boolean restricted, Instant now) {
         FleetExportPeriod period = FleetExportPeriod.parse(request.report, request.from, request.to, now);
-        String type = request.assetType == null || request.assetType.isBlank() ? null : request.assetType;
+        String type = request.assetType == null || request.assetType.isBlank() ? null : request.assetType.trim();
         boolean noDevices = matchedIds == null
                 || matchedIds.values().stream().allMatch(ids -> ids == null || ids.isEmpty());
         if (noDevices) {
             // Only a known meter type names the file: the request's type is unchecked input here.
             boolean exportable = type != null && FleetExportRegisters.exportable(type);
-            return new ExportPlan(period, exportable ? type : null, List.of(),
+            return new ExportPlan(period, exportable ? type : null, type, List.of(),
                     exportable ? FleetExportRegisters.groups(type, restricted) : List.of(), now);
         }
 
@@ -165,7 +166,7 @@ public class FleetExporter {
         List<Asset<?>> assets = loader.load(type, ids, attributes);
         List<Asset<?>> sorted = assets == null ? List.of()
                 : assets.stream().filter(Objects::nonNull).sorted(BY_NAME_THEN_ID).toList();
-        return new ExportPlan(period, type, sorted, groups, now);
+        return new ExportPlan(period, type, type, sorted, groups, now);
     }
 
     /**

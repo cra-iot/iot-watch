@@ -93,9 +93,7 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
 
         Map<String, Integer> deviceCounts = new HashMap<>();
         matchedRows(fleetQuery, realm).forEach(row -> deviceCounts.merge(row.type, 1, Integer::sum));
-        Instant now = now();
-        return FleetExportOptionsAssembler.assemble(deviceCounts, isRestrictedUser(), columnResolver,
-                FleetExportPeriod.lastDay(now));
+        return FleetExportOptionsAssembler.assemble(deviceCounts, isRestrictedUser(), now());
     }
 
     @Override
@@ -197,7 +195,7 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
                                     long rows, long started, boolean ok) {
         LOG.info("Fleet export user=" + username
                 + " realm=" + realm
-                + " type=" + plan.assetType()
+                + " type=" + (plan.requestedType() == null ? "-" : singleLine(plan.requestedType()))
                 + " report=" + plan.period().report()
                 + " devices=" + plan.devices()
                 + " from=" + plan.period().from()
@@ -216,9 +214,14 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
         LOG.info("Fleet export user=" + username
                 + " realm=" + realm
                 + " status=" + response.getStatus()
-                + " reason=" + (reason instanceof String text ? text.replaceAll("\\p{Cntrl}", "?") : "")
+                + " reason=" + (reason instanceof String text ? singleLine(text) : "")
                 + " durationMs=" + (System.currentTimeMillis() - started)
                 + " outcome=rejected");
+    }
+
+    /** Replaces control characters, so request input cannot split a log line. */
+    private static String singleLine(String text) {
+        return text.replaceAll("\\p{Cntrl}", "?");
     }
 
     /** The manager clock's current instant. */

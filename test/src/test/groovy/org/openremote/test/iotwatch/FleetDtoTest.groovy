@@ -140,7 +140,14 @@ class FleetDtoTest extends Specification {
 
     def "export registers keep the declared order"() {
         expect:
-        FleetColumns.EXPORT_REGISTERS.ElectricMeterAsset.keySet() as List == ["total", "t1", "t2"]
+        FleetColumns.EXPORT_REGISTERS.keySet() as List ==
+                ["WaterMeterAsset", "GasMeterAsset", "ElectricMeterAsset", "HeatMeterAsset", "PassageCounterAsset"]
+        FleetColumns.EXPORT_REGISTERS.WaterMeterAsset == [volume: "currentReading"]
         FleetColumns.EXPORT_REGISTERS.GasMeterAsset == [volume: "volume", volume_standard: "volume_standard"]
+        FleetColumns.EXPORT_REGISTERS.ElectricMeterAsset ==
+                [total: "energy_active_total", t1: "energy_active_t1", t2: "energy_active_t2"]
+        FleetColumns.EXPORT_REGISTERS.HeatMeterAsset ==
+                [energy: "energy_heating", t1: "energy_tariff_1", t2: "energy_tariff_2"]
+        FleetColumns.EXPORT_REGISTERS.PassageCounterAsset == [in: "total_in", out: "total_out"]
     }
 }

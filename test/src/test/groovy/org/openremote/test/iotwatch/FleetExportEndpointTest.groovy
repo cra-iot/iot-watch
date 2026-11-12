@@ -8,6 +8,8 @@ import org.openremote.manager.datapoint.AssetDatapointService
 import org.openremote.manager.security.ManagerIdentityService
 import org.openremote.model.Constants
 import org.openremote.model.asset.UserAssetLink
+import org.openremote.manager.iotwatch.FleetExportPeriod
+import org.openremote.model.iotwatch.FleetExportReport
 import org.openremote.model.iotwatch.FleetExportRequest
 import org.openremote.model.iotwatch.FleetQuery
 import org.openremote.model.security.Realm
@@ -21,7 +23,6 @@ import spock.lang.Specification
 import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneOffset
 
 // Boots the OpenRemote container (ManagerContainerTrait), which needs a running PostgreSQL and Keycloak.
 // Runs only when OR_CONTAINER_TESTS=true (i.e. the dev stack is up); otherwise the spec is skipped.
@@ -40,7 +41,7 @@ class FleetExportEndpointTest extends Specification implements ManagerContainerT
     @Shared String restrictedToken
     @Shared String linkedAssetId
     @Shared String otherAssetId
-    /** The export's last day: yesterday on the container clock, in UTC. */
+    /** The last finished day on the container clock, in Europe/Prague. */
     @Shared LocalDate yesterday
     @Shared LocalDate today
 
@@ -54,15 +55,15 @@ class FleetExportEndpointTest extends Specification implements ManagerContainerT
         FleetEndpointTest.removeFixtureRealm(identityProvider, assetStorageService, REALM)
         identityProvider.createRealm(new Realm().setName(REALM).setDisplayName(REALM).setEnabled(true))
 
-        today = LocalDate.ofInstant(Instant.ofEpochMilli(getClockTimeOf(container)), ZoneOffset.UTC)
+        today = LocalDate.ofInstant(Instant.ofEpochMilli(getClockTimeOf(container)), FleetExportPeriod.ZONE)
         yesterday = today.minusDays(1)
 
         linkedAssetId = createMeter(assetStorageService, "Export meter A", "00112233AABBEE01")
         otherAssetId = createMeter(assetStorageService, "Export meter B", "00112233AABBEE02")
         datapointService.upsertValue(linkedAssetId, "currentReading", 12.5d,
-                yesterday.minusDays(1).atTime(12, 0).toInstant(ZoneOffset.UTC).toEpochMilli())
+                yesterday.minusDays(1).atTime(12, 0).atZone(FleetExportPeriod.ZONE).toInstant().toEpochMilli())
         datapointService.upsertValue(otherAssetId, "currentReading", 7.25d,
-                yesterday.atTime(8, 0).toInstant(ZoneOffset.UTC).toEpochMilli())
+                yesterday.atTime(8, 0).atZone(FleetExportPeriod.ZONE).toInstant().toEpochMilli())
 
         def restricted = FleetEndpointTest.fixtureUser(identityProvider, REALM, "export-restricted")
         identityProvider.updateUserRealmRoles(REALM, restricted.getId(), Constants.RESTRICTED_USER_REALM_ROLE)
@@ -93,23 +94,28 @@ class FleetExportEndpointTest extends Specification implements ManagerContainerT
         return assetStorageService.merge(meter).getId()
     }
 
-    FleetExportRequest exportRequest(List<String> attributes, LocalDate from, LocalDate to) {
+    FleetExportRequest exportRequest(String assetType, FleetExportReport report, LocalDate from, LocalDate to) {
         def query = new FleetQuery()
         query.realm = REALM
         query.types = ["WaterMeterAsset"]
         def request = new FleetExportRequest()
         request.query = query
+        request.assetType = assetType
+        request.report = report
         request.from = from.toString()
         request.to = to.toString()
-        request.attributes = ["WaterMeterAsset": attributes]
         return request
+    }
+
+    FleetExportRequest dailyRequest(LocalDate from, LocalDate to) {
+        return exportRequest("WaterMeterAsset", FleetExportReport.DAILY, from, to)
     }
 
     /** POSTs the export as the given caller on the given realm path; the caller closes the response. */
     Response post(String accessToken, String realmPath, FleetExportRequest request) {
         return getClientApiTarget(serverUri(port), realmPath, accessToken)
                 .path("fleet").path("export")
-                .request("text/csv", "application/zip")
+                .request("text/csv")
                 .post(Entity.json(request))
     }
 
@@ -119,41 +125,57 @@ class FleetExportEndpointTest extends Specification implements ManagerContainerT
         return text.substring(BOM.length()).split("\r\n").toList()
     }
 
-    def "an admin gets one row per meter and day with carried-forward values"() {
+    def "an admin gets one CSV row per meter and day"() {
         when:
-        def response = post(adminToken, Constants.MASTER_REALM,
-                exportRequest(["devEui", "notes", "currentReading"], yesterday.minusDays(1), yesterday))
+        def response = post(adminToken, Constants.MASTER_REALM, dailyRequest(yesterday.minusDays(1), yesterday))
 
         then:
         response.status == 200
-        response.getHeaderString("Content-Type").startsWith("text/csv")
-        response.getHeaderString("Content-Disposition") =~ /^attachment; filename="WaterMeterAsset_.*\.csv"$/
+        response.getHeaderString("Content-Type") == "text/csv; charset=UTF-8"
+        response.getHeaderString("Content-Disposition") =~ /^attachment; filename="WaterMeterAsset_daily_.*\.csv"$/
 
         when:
         def lines = csvLines(response)
 
         then:
-        lines[0] == "date,assetId,name,lastReadingAt,devEui,notes,currentReading"
+        lines[0] == "date,assetId,name,meter_id,devEui,external_id,delivery_point_id,end_reading_at," +
+                "volume_start_m3,volume_end_m3,volume_consumption_m3"
         lines.size() == 5
         lines[1].startsWith(yesterday.minusDays(1).toString() + "," + linkedAssetId + ",Export meter A,")
-        lines[1].endsWith(",00112233AABBEE01,TEST-NOTE,12.5")
-        lines[2].startsWith(yesterday.toString() + "," + linkedAssetId)
-        lines[2].endsWith(",12.5")
-        lines[3].startsWith(yesterday.minusDays(1).toString() + "," + otherAssetId + ",Export meter B,,")
-        lines[4].endsWith(",7.25")
+        lines.any { it.contains(",00112233AABBEE01,") }
+        !lines.any { it.contains("TEST-NOTE") }
 
         cleanup:
         response?.close()
     }
 
-    def "a restricted user exports only the linked meter and no generic attributes"() {
+    def "a monthly export is one CSV named for the type"() {
+        given:
+        def lastMonth = FleetExportPeriod.lastMonth(Instant.ofEpochMilli(getClockTimeOf(container))).atDay(1)
+
         when:
-        def response = post(restrictedToken, REALM, exportRequest(["devEui", "currentReading"], yesterday, yesterday))
+        def response = post(adminToken, Constants.MASTER_REALM,
+                exportRequest("WaterMeterAsset", FleetExportReport.MONTHLY, lastMonth, lastMonth))
         def lines = csvLines(response)
 
         then:
         response.status == 200
-        lines[0] == "date,assetId,name,lastReadingAt,devEui,currentReading"
+        response.getHeaderString("Content-Type") == "text/csv; charset=UTF-8"
+        response.getHeaderString("Content-Disposition").contains("WaterMeterAsset_monthly_")
+        lines[0].startsWith("month,assetId,name,meter_id,devEui,external_id,delivery_point_id,end_reading_at,")
+        lines.size() == 3
+
+        cleanup:
+        response?.close()
+    }
+
+    def "a restricted user exports only the linked meter"() {
+        when:
+        def response = post(restrictedToken, REALM, dailyRequest(yesterday, yesterday))
+        def lines = csvLines(response)
+
+        then:
+        response.status == 200
         lines.size() == 2
         lines[1].contains(linkedAssetId)
         !lines.any { it.contains(otherAssetId) || it.contains("TEST-NOTE") }
@@ -162,21 +184,9 @@ class FleetExportEndpointTest extends Specification implements ManagerContainerT
         response?.close()
     }
 
-    def "a restricted user requesting notes is forbidden"() {
-        when:
-        def response = post(restrictedToken, REALM, exportRequest(["devEui", "notes"], yesterday, yesterday))
-
-        then:
-        response.status == 403
-        response.readEntity(String) == "Attribute notes is not readable for WaterMeterAsset"
-
-        cleanup:
-        response?.close()
-    }
-
     def "an export ending today is rejected"() {
         when:
-        def response = post(adminToken, Constants.MASTER_REALM, exportRequest(["currentReading"], yesterday, today))
+        def response = post(adminToken, Constants.MASTER_REALM, dailyRequest(yesterday, today))
 
         then:
         response.status == 400
@@ -186,13 +196,14 @@ class FleetExportEndpointTest extends Specification implements ManagerContainerT
         response?.close()
     }
 
-    def "an empty selection on a search with matches is rejected"() {
+    def "a search with matches but no meter type is rejected"() {
         when:
-        def response = post(adminToken, Constants.MASTER_REALM, exportRequest([], yesterday, yesterday))
+        def response = post(adminToken, Constants.MASTER_REALM,
+                exportRequest(null, FleetExportReport.DAILY, yesterday, yesterday))
 
         then:
         response.status == 400
-        response.readEntity(String) == "Select at least one attribute to export"
+        response.readEntity(String) == "Select a meter type"
 
         cleanup:
         response?.close()
