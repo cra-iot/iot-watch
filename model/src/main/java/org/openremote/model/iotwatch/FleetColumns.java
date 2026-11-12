@@ -1,6 +1,7 @@
 package org.openremote.model.iotwatch;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -26,6 +27,30 @@ public final class FleetColumns {
         registers.put("HeatMeterAsset", "energy_heating");
         registers.put("PassageCounterAsset", "period_in");
         PRIMARY_REGISTERS = Collections.unmodifiableMap(registers);
+    }
+
+    /** Export register groups per type: group key to the attribute it reads, in column order. */
+    public static final Map<String, Map<String, String>> EXPORT_REGISTERS;
+
+    /** Identity attributes exported with their current value, in column order. */
+    public static final List<String> EXPORT_IDENTITY = List.of("meter_id", "devEui", "external_id", "delivery_point_id");
+
+    static {
+        Map<String, Map<String, String>> exports = new LinkedHashMap<>();
+        exports.put("WaterMeterAsset", groups("volume", "currentReading"));
+        exports.put("GasMeterAsset", groups("volume", "volume", "volume_standard", "volume_standard"));
+        exports.put("ElectricMeterAsset", groups("total", "energy_active_total", "t1", "energy_active_t1", "t2", "energy_active_t2"));
+        exports.put("HeatMeterAsset", groups("energy", "energy_heating", "t1", "energy_tariff_1", "t2", "energy_tariff_2"));
+        exports.put("PassageCounterAsset", groups("in", "total_in", "out", "total_out"));
+        EXPORT_REGISTERS = Collections.unmodifiableMap(exports);
+    }
+
+    private static Map<String, String> groups(String... keyAndAttribute) {
+        Map<String, String> groups = new LinkedHashMap<>();
+        for (int i = 0; i < keyAndAttribute.length; i += 2) {
+            groups.put(keyAndAttribute[i], keyAndAttribute[i + 1]);
+        }
+        return Collections.unmodifiableMap(groups);
     }
 
     /**

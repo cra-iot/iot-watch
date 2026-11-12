@@ -31,11 +31,11 @@ public interface FleetResource {
     @RolesAllowed({"read:assets"})
     FleetExportOptions exportOptions(FleetQuery query);
 
-    /** Daily values of the matched devices: one CSV for a single type, a ZIP of CSVs for several. */
+    /** Monthly or daily readings of one meter type among the matched devices, as one CSV. */
     @POST
     @Path("export")
     @Consumes(MediaType.APPLICATION_JSON)
-    @Produces({"text/csv", "application/zip"})
+    @Produces("text/csv")
     @RolesAllowed({"read:assets"})
     Response export(FleetExportRequest request);
 }

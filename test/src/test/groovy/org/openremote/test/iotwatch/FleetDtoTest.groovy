@@ -1,5 +1,7 @@
 package org.openremote.test.iotwatch
 
+import org.openremote.model.iotwatch.FleetColumns
+import org.openremote.model.iotwatch.FleetExportReport
 import org.openremote.model.iotwatch.FleetExportRequest
 import org.openremote.model.iotwatch.FleetQuery
 import org.openremote.model.iotwatch.FleetQueryResult
@@ -115,14 +117,14 @@ class FleetDtoTest extends Specification {
         node.get("columns").get(0).get("primary").asBoolean()
     }
 
-    def "FleetExportRequest round-trips through JSON"() {
+    def "FleetExportRequest round-trips report and asset type"() {
         given:
         def json = '''{
-          "query": {"types": ["WaterMeterAsset"]},
-          "from": "2026-10-01",
-          "to": "2026-10-31",
-          "attributes": {"WaterMeterAsset": ["devEui", "currentReading"]},
-          "timeZone": "Europe/Prague"
+          "query": {"realm": "r"},
+          "assetType": "WaterMeterAsset",
+          "report": "MONTHLY",
+          "from": "2025-11-01",
+          "to": "2026-10-01"
         }'''
 
         when:
@@ -130,10 +132,15 @@ class FleetDtoTest extends Specification {
         def back = ValueUtil.JSON.readValue(ValueUtil.JSON.writeValueAsString(request), FleetExportRequest.class)
 
         then:
-        back.query.types == ["WaterMeterAsset"]
-        back.from == "2026-10-01"
-        back.to == "2026-10-31"
-        back.attributes == [WaterMeterAsset: ["devEui", "currentReading"]]
-        back.timeZone == "Europe/Prague"
+        back.report == FleetExportReport.MONTHLY
+        back.assetType == "WaterMeterAsset"
+        back.from == "2025-11-01"
+        back.to == "2026-10-01"
+    }
+
+    def "export registers keep the declared order"() {
+        expect:
+        FleetColumns.EXPORT_REGISTERS.ElectricMeterAsset.keySet() as List == ["total", "t1", "t2"]
+        FleetColumns.EXPORT_REGISTERS.GasMeterAsset == [volume: "volume", volume_standard: "volume_standard"]
     }
 }

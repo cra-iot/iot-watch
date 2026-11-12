@@ -16,6 +16,15 @@ public class FleetExportOptions {
         public boolean defaultSelected;
     }
 
+    public static class Group {
+        /** The register group key, the column prefix, e.g. t1. */
+        public String key;
+        public String attribute;
+        public String label;
+        /** Header suffix such as kWh, empty when none. */
+        public String unit = "";
+    }
+
     public static class Type {
         public String type;
         /** Matched devices of this type. */
@@ -24,10 +33,17 @@ public class FleetExportOptions {
         public List<Attribute> identity = new ArrayList<>();
         /** Attributes with stored history, exported as the value at the end of each day. */
         public List<Attribute> measurements = new ArrayList<>();
+        /** The register groups reported for this type, in column order. */
+        public List<Group> groups = new ArrayList<>();
     }
 
     /** The latest day an export may end on: yesterday in UTC, yyyy-MM-dd. */
     public String maxTo;
     public int maxDays = 366;
+    /** The latest day a daily report may end on: yesterday in Europe/Prague, yyyy-MM-dd. */
+    public String lastDay;
+    /** The latest month a monthly report may end on: the previous month in Europe/Prague, yyyy-MM. */
+    public String lastMonth;
+    public int maxMonths = 24;
     public List<Type> types = new ArrayList<>();
 }
