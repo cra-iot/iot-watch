@@ -18,6 +18,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.Semaphore;
+import java.util.logging.Logger;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -59,6 +60,8 @@ public class FleetExporter {
         }
     }
 
+    private static final Logger LOG = Logger.getLogger(FleetExporter.class.getName());
+
     private static final Comparator<Asset<?>> BY_NAME_THEN_ID = Comparator
             .comparing((Asset<?> asset) -> asset.getName(), Comparator.nullsLast(Comparator.naturalOrder()))
             .thenComparing(Asset::getId, Comparator.nullsLast(Comparator.naturalOrder()));
@@ -70,7 +73,10 @@ public class FleetExporter {
     public FleetExporter(DailyValueRepository repository, int maxRows, int maxConcurrent) {
         this.repository = repository;
         this.maxRows = maxRows;
-        this.permits = new Semaphore(maxConcurrent);
+        if (maxConcurrent < 1) {
+            LOG.warning(MAX_CONCURRENT + "=" + maxConcurrent + " is below 1, using 1");
+        }
+        this.permits = new Semaphore(Math.max(1, maxConcurrent));
     }
 
     /** Loads the caller-authorized assets among ids, with only the given attributes. */
@@ -187,7 +193,7 @@ public class FleetExporter {
         }
         if (plan.types().size() == 1) {
             out.write(FleetExportCsv.UTF8_BOM);
-            return writeType(plan.range(), plan.types().get(0), writer(out));
+            return writeType(plan.range(), plan.types().get(0), writer(out), out);
         }
         // Not closed on purpose: finish() runs only after every entry succeeded, and the caller owns out.
         ZipOutputStream zip = new ZipOutputStream(out, StandardCharsets.UTF_8);
@@ -195,7 +201,7 @@ public class FleetExporter {
         for (TypeExport type : plan.types()) {
             zip.putNextEntry(new ZipEntry(FleetExportCsv.csvName(type.assetType(), plan.range(), plan.exportedAt())));
             zip.write(FleetExportCsv.UTF8_BOM);
-            rows += writeType(plan.range(), type, writer(zip));
+            rows += writeType(plan.range(), type, writer(zip), out);
             zip.closeEntry();
         }
         zip.finish();
@@ -203,11 +209,15 @@ public class FleetExporter {
         return rows;
     }
 
-    private long writeType(FleetExportRange range, TypeExport type, Writer writer) throws IOException {
+    /** sink: the response stream, flushed after the header so bytes leave before the first query. */
+    private long writeType(FleetExportRange range, TypeExport type, Writer writer, OutputStream sink)
+            throws IOException {
         List<String> header = new ArrayList<>(FleetExportCsv.FIXED_COLUMNS);
         header.addAll(type.identity());
         header.addAll(type.measurements());
         writer.write(FleetExportCsv.line(header));
+        writer.flush();
+        sink.flush();
 
         List<LocalDate> dates = range.dates();
         long rows = 0;

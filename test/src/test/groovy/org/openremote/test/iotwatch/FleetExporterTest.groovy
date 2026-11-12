@@ -200,6 +200,51 @@ class FleetExporterTest extends Specification {
         plan.types()[0].assets()*.id == ["id3", "id1"]
     }
 
+    def "max concurrent exports is at least one"() {
+        given:
+        def exporter = new FleetExporter(new FakeRepository(), 1_000_000, configured)
+
+        expect:
+        exporter.tryAcquire()
+        !exporter.tryAcquire()
+
+        where:
+        configured << [0, -3]
+    }
+
+    /** Keeps what had been flushed when the repository is first queried. */
+    static class FlushRecordingStream extends ByteArrayOutputStream {
+        byte[] flushed = new byte[0]
+
+        @Override
+        void flush() {
+            flushed = toByteArray()
+        }
+    }
+
+    def "the header is flushed before the first batch is queried"() {
+        given:
+        def out = new FlushRecordingStream()
+        byte[] flushedAtQuery = null
+        def repository = new FakeRepository() {
+            @Override
+            Map<String, Map<LocalDate, Map<String, DailyRows.Reading>>> daily(
+                    List<String> assetIds, List<String> attributes, FleetExportRange range) {
+                flushedAtQuery = out.flushed
+                return super.daily(assetIds, attributes, range)
+            }
+        }
+        def exporter = new FleetExporter(repository, 1_000_000, 2)
+        def plan = planFor(exporter, request(["WaterMeterAsset": ["currentReading"]]),
+                ["WaterMeterAsset": [water("id1", "W")]], false)
+
+        when:
+        exporter.write(plan, out)
+
+        then:
+        new String(flushedAtQuery, StandardCharsets.UTF_8) == BOM + "date,assetId,name,lastReadingAt,currentReading\r\n"
+    }
+
     def "no matched devices gives a header-only csv"() {
         given:
         def plan = planFor(exporter, request(["WaterMeterAsset": ["currentReading"]]), [:], false)
