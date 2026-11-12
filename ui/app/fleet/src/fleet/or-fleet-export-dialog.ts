@@ -32,7 +32,8 @@ function readRemembered(): Selection | undefined {
 
 function remember(selection: Selection): void {
     try {
-        window.localStorage.setItem(SELECTION_KEY, JSON.stringify(selection));
+        // Merge: this search holds only some types, the choices of the others stay.
+        window.localStorage.setItem(SELECTION_KEY, JSON.stringify({ ...readRemembered(), ...selection }));
     } catch {
         // Remembering the choice is best effort.
     }
@@ -170,9 +171,12 @@ export class OrFleetExportDialog extends translateMixin(i18next)(OrElement) {
         if (this._busy || !this._options || this._rangeError() || this._nothingSelected()) { return; }
         this._busy = true;
         this._problem = undefined;
+        // A response that arrives after the dialog was closed or reopened is dropped.
+        const loadId = this._loadId;
         try {
             const request = toExportRequest(this.query!, this._from, this._to, this._selection);
             const response = await rest.api.FleetResource.export(request, { responseType: "blob" });
+            if (loadId !== this._loadId) { return; }
             const url = URL.createObjectURL(response.data as Blob);
             const link = document.createElement("a");
             link.href = url;
@@ -180,7 +184,8 @@ export class OrFleetExportDialog extends translateMixin(i18next)(OrElement) {
             document.body.appendChild(link);
             link.click();
             link.remove();
-            URL.revokeObjectURL(url);
+            // Revoking at once can lose the download in Safari and older Firefox.
+            window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
             remember(this._selection);
             this._busy = false;
             this._close();
@@ -228,7 +233,7 @@ export class OrFleetExportDialog extends translateMixin(i18next)(OrElement) {
         const problem: Problem | undefined = rangeProblem ? { key: rangeProblem } : this._problem;
         const maxTo = this._options?.maxTo;
         return html`
-            <dialog aria-labelledby="title" @cancel=${(e: Event) => { e.preventDefault(); this._close(); }}>
+            <dialog aria-labelledby="title" @cancel=${(e: Event) => { e.preventDefault(); if (!this._busy) { this._close(); } }}>
                 <h2 id="title"><or-translate value="app:fleet.export.title" .options=${{ count: total }}></or-translate></h2>
                 <div class="range">
                     <label class="date"><span><or-translate value="app:fleet.export.from"></or-translate> (<or-translate value="app:fleet.export.utc"></or-translate>)</span>
@@ -244,7 +249,7 @@ export class OrFleetExportDialog extends translateMixin(i18next)(OrElement) {
                     ${problem ? ("key" in problem ? html`<or-translate value=${problem.key}></or-translate>` : problem.text) : nothing}
                 </div>
                 <div class="actions">
-                    <button type="button" class="cancel" @click=${() => this._close()}><or-translate value="app:fleet.export.cancel"></or-translate></button>
+                    <button type="button" class="cancel" ?disabled=${this._busy} @click=${() => this._close()}><or-translate value="app:fleet.export.cancel"></or-translate></button>
                     <button type="button" class="export" ?disabled=${!this._options || !!rangeProblem || this._nothingSelected() || this._busy}
                             @click=${() => this._export()}><or-translate value="app:fleet.export.export"></or-translate></button>
                 </div>

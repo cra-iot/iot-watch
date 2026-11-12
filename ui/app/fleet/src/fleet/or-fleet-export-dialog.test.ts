@@ -113,4 +113,32 @@ describe("or-fleet-export-dialog", () => {
         await settle(element);
         expect(problem(element)).toBe("app:fleet.export.error.busy");
     });
+
+    it("keeps the remembered choices of types that are not in this search", async () => {
+        window.localStorage.setItem("fleet.export.selection", JSON.stringify({ GasMeterAsset: ["devEui"] }));
+        const element = await mount();
+        api.export.mockResolvedValue({ data: new Blob(["a"]), headers: {} });
+        URL.createObjectURL = vi.fn(() => "blob:x");
+        URL.revokeObjectURL = vi.fn();
+        vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+        exportButton(element).click();
+        await settle(element);
+        expect(JSON.parse(window.localStorage.getItem("fleet.export.selection")!)).toEqual({
+            GasMeterAsset: ["devEui"], WaterMeterAsset: ["devEui", "currentReading"],
+        });
+    });
+
+    it("disables Cancel and ignores Esc while an export runs", async () => {
+        const element = await mount();
+        let release: (v: unknown) => void = () => {};
+        api.export.mockReturnValue(new Promise((resolve) => { release = resolve; }));
+        const closes: Event[] = [];
+        element.addEventListener("or-fleet-export-close", (e) => closes.push(e));
+        exportButton(element).click();
+        await settle(element);
+        expect(($(element, "button.cancel") as HTMLButtonElement).disabled).toBe(true);
+        $(element, "dialog")!.dispatchEvent(new Event("cancel", { cancelable: true }));
+        expect(closes).toHaveLength(0);
+        release({ data: new Blob(["a"]), headers: {} });
+    });
 });
