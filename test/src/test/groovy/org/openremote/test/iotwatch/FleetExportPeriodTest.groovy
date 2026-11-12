@@ -48,6 +48,20 @@ class FleetExportPeriodTest extends Specification {
         FleetExportPeriod.parse(DAILY, "2026-03-29", "2026-03-29", NOW).end() == Instant.parse("2026-03-29T22:00:00Z")
     }
 
+    def "DST months and days are one period with local midnight bounds"() {
+        expect:
+        def october = FleetExportPeriod.parse(MONTHLY, "2026-10-01", "2026-10-01", NOW)
+        october.periods().size() == 1
+        def march = FleetExportPeriod.parse(MONTHLY, "2026-03-01", "2026-03-01", NOW)
+        march.start() == Instant.parse("2026-02-28T23:00:00Z")
+        march.end() == Instant.parse("2026-03-31T22:00:00Z")
+        march.periods().size() == 1
+        def fallBack = FleetExportPeriod.parse(DAILY, "2026-10-25", "2026-10-25", NOW)
+        fallBack.start() == Instant.parse("2026-10-24T22:00:00Z")
+        fallBack.end() == Instant.parse("2026-10-25T23:00:00Z")
+        fallBack.periods().size() == 1
+    }
+
     def "rejects #message"() {
         when:
         FleetExportPeriod.parse(report as FleetExportReport, from, to, NOW)
