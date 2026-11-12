@@ -1,5 +1,6 @@
 package org.openremote.test.iotwatch
 
+import org.openremote.model.iotwatch.FleetExportRequest
 import org.openremote.model.iotwatch.FleetQuery
 import org.openremote.model.iotwatch.FleetQueryResult
 import org.openremote.model.iotwatch.FleetRow
@@ -112,5 +113,27 @@ class FleetDtoTest extends Specification {
         node.get("columns").get(0).get("units").get(0).asText() == "metre"
         node.get("columns").get(0).get("units").get(1).asText() == "cubed"
         node.get("columns").get(0).get("primary").asBoolean()
+    }
+
+    def "FleetExportRequest round-trips through JSON"() {
+        given:
+        def json = '''{
+          "query": {"types": ["WaterMeterAsset"]},
+          "from": "2026-10-01",
+          "to": "2026-10-31",
+          "attributes": {"WaterMeterAsset": ["devEui", "currentReading"]},
+          "timeZone": "Europe/Prague"
+        }'''
+
+        when:
+        def request = ValueUtil.JSON.readValue(json, FleetExportRequest.class)
+        def back = ValueUtil.JSON.readValue(ValueUtil.JSON.writeValueAsString(request), FleetExportRequest.class)
+
+        then:
+        back.query.types == ["WaterMeterAsset"]
+        back.from == "2026-10-01"
+        back.to == "2026-10-31"
+        back.attributes == [WaterMeterAsset: ["devEui", "currentReading"]]
+        back.timeZone == "Europe/Prague"
     }
 }

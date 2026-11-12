@@ -1,5 +1,7 @@
 package org.openremote.manager.iotwatch;
 
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -13,6 +15,8 @@ import java.util.Set;
 
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ForbiddenException;
+import jakarta.ws.rs.ServerErrorException;
+import jakarta.ws.rs.core.Response;
 
 import org.openremote.container.timer.TimerService;
 import org.openremote.manager.asset.AssetStorageService;
@@ -21,6 +25,8 @@ import org.openremote.manager.web.ManagerWebResource;
 import org.openremote.model.asset.Asset;
 import org.openremote.model.attribute.Attribute;
 import org.openremote.model.iotwatch.FleetColumns;
+import org.openremote.model.iotwatch.FleetExportOptions;
+import org.openremote.model.iotwatch.FleetExportRequest;
 import org.openremote.model.iotwatch.FleetQuery;
 import org.openremote.model.iotwatch.FleetQueryResult;
 import org.openremote.model.iotwatch.FleetResource;
@@ -41,15 +47,83 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
         this.columnResolver = columnResolver;
     }
 
+    /** The devices a search resolves to, before the status filter, sorting and paging. */
+    protected record Resolved(List<Asset<?>> assets, List<FleetRow> rows,
+                              List<FleetQueryResult.ColumnDescriptor> columns) {
+    }
+
     @Override
     public FleetQueryResult query(FleetQuery query) {
         FleetQuery fleetQuery = query == null ? new FleetQuery() : query;
-        String realm = fleetQuery.realm == null || fleetQuery.realm.isBlank()
+        String realm = realmOf(fleetQuery);
+        validate(fleetQuery);
+
+        Resolved resolved = resolve(fleetQuery, realm);
+        List<FleetRow> rows = resolved.rows();
+        Map<String, String> parentNames = parentNames(realm, rows);
+        rows.forEach(row -> row.parentName = parentNames.get(row.parentId));
+
+        FleetQueryResult result;
+        try {
+            result = FleetResultAssembler.assemble(rows, fleetQuery, timerService.getCurrentTimeMillis());
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException(e.getMessage());
+        }
+        result.facets.parents.forEach(facet -> facet.label = parentNames.get(facet.key));
+        result.columns = resolved.columns();
+        return result;
+    }
+
+    @Override
+    public FleetExportOptions exportOptions(FleetQuery query) {
+        FleetQuery fleetQuery = query == null ? new FleetQuery() : query;
+        String realm = realmOf(fleetQuery);
+        validate(fleetQuery);
+
+        Map<String, Integer> deviceCounts = new HashMap<>();
+        matchedRows(fleetQuery, realm).forEach(row -> deviceCounts.merge(row.type, 1, Integer::sum));
+        Instant now = Instant.ofEpochMilli(timerService.getCurrentTimeMillis());
+        return FleetExportOptionsAssembler.assemble(deviceCounts, isRestrictedUser(), columnResolver,
+                FleetExportRange.maxTo(ZoneOffset.UTC, now));
+    }
+
+    @Override
+    public Response export(FleetExportRequest request) {
+        throw new ServerErrorException(Response.Status.NOT_IMPLEMENTED);
+    }
+
+    /** The query's realm, else the request's. */
+    protected String realmOf(FleetQuery fleetQuery) {
+        return fleetQuery.realm == null || fleetQuery.realm.isBlank()
                 ? getRequestRealmName() : fleetQuery.realm;
+    }
+
+    /** Rejects a malformed or hidden-attribute query before anything is read. */
+    protected static void validate(FleetQuery fleetQuery) {
         validateFilters(fleetQuery);
         validateOperators(fleetQuery);
         rejectHiddenFilters(fleetQuery);
+    }
 
+    /**
+     * Every device the search matches, with no page applied: the overview's result before
+     * paging, including the status filter. The query must have passed validate.
+     */
+    protected List<FleetRow> matchedRows(FleetQuery fleetQuery, String realm) {
+        List<FleetRow> rows = resolve(fleetQuery, realm).rows();
+        try {
+            return FleetResultAssembler.match(rows, fleetQuery, timerService.getCurrentTimeMillis());
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException(e.getMessage());
+        }
+    }
+
+    /**
+     * The authorized assets a validated search matches, mapped to rows with the columns shown
+     * for them. Every read goes through authorizedFindAll; restricted callers lose the matches
+     * they could only have made on a value they cannot read.
+     */
+    protected Resolved resolve(FleetQuery fleetQuery, String realm) {
         // The select covers the query's types (or every device type for an empty filter) and has to
         // reach every branch of the union; the displayed columns are narrowed to the types
         // actually found, below.
@@ -91,18 +165,7 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
         for (Asset<?> asset : assets) {
             rows.add(FleetRowMapper.map(asset, columnResolver, selectedColumns, lastSeen.get(asset.getId())));
         }
-        Map<String, String> parentNames = parentNames(realm, rows);
-        rows.forEach(row -> row.parentName = parentNames.get(row.parentId));
-
-        FleetQueryResult result;
-        try {
-            result = FleetResultAssembler.assemble(rows, fleetQuery, timerService.getCurrentTimeMillis());
-        } catch (IllegalArgumentException e) {
-            throw new BadRequestException(e.getMessage());
-        }
-        result.facets.parents.forEach(facet -> facet.label = parentNames.get(facet.key));
-        result.columns = columns;
-        return result;
+        return new Resolved(assets, rows, columns);
     }
 
     protected List<Asset<?>> authorizedFindAll(AssetQuery assetQuery, String realm) {
