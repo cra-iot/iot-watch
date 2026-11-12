@@ -1,8 +1,14 @@
 package org.openremote.manager.iotwatch;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
+import org.openremote.model.asset.AssetTypeInfo;
 import org.openremote.model.attribute.MetaItem;
 import org.openremote.model.iotwatch.FleetColumns;
 import org.openremote.model.util.ValueUtil;
@@ -41,17 +47,54 @@ public final class FleetExportAttributes {
                 .orElse(List.of());
     }
 
-    /** Declared STORE_DATA_POINTS scalar descriptors except rawValue, in getAttributeDescriptors() order; restricted as above. */
+    /**
+     * Declared STORE_DATA_POINTS scalar descriptors except rawValue, in declaration order (see
+     * declaredOrder); restricted as above.
+     */
     public static List<AttributeDescriptor<?>> measurements(String assetType, boolean restricted) {
         return ValueUtil.getAssetInfo(assetType)
-                .map(info -> info.getAttributeDescriptors().values().stream()
+                .map(info -> declaredOrder(info).stream()
                         .filter(descriptor -> !FleetColumns.RAW_VALUE.equals(descriptor.getName()))
                         .filter(FleetExportAttributes::isScalar)
                         .filter(FleetExportAttributes::storesDataPoints)
                         .filter(descriptor -> !restricted || isRestrictedReadable(descriptor))
-                        .<AttributeDescriptor<?>>map(descriptor -> descriptor)
                         .toList())
                 .orElse(List.of());
+    }
+
+    /**
+     * The type's attribute descriptors in the declaration order of the static AttributeDescriptor
+     * fields, from the concrete asset class up through its superclasses; descriptors without such a
+     * field follow in map order. getAttributeDescriptors() itself is a HashMap with no stable order.
+     */
+    static List<AttributeDescriptor<?>> declaredOrder(AssetTypeInfo info) {
+        Map<String, AttributeDescriptor<?>> descriptors = info.getAttributeDescriptors();
+        Set<String> names = new LinkedHashSet<>();
+        Class<?> type = info.getAssetDescriptor() == null ? null : info.getAssetDescriptor().getType();
+        for (Class<?> current = type; current != null && current != Object.class; current = current.getSuperclass()) {
+            for (Field field : current.getDeclaredFields()) {
+                if (Modifier.isStatic(field.getModifiers())
+                        && AttributeDescriptor.class.isAssignableFrom(field.getType())) {
+                    try {
+                        Object value = field.get(null);
+                        if (value instanceof AttributeDescriptor<?> descriptor) {
+                            names.add(descriptor.getName());
+                        }
+                    } catch (IllegalAccessException | RuntimeException ignored) {
+                        // Unreadable field: its descriptor still follows in map order below.
+                    }
+                }
+            }
+        }
+        names.addAll(descriptors.keySet());
+        List<AttributeDescriptor<?>> ordered = new ArrayList<>();
+        for (String name : names) {
+            AttributeDescriptor<?> descriptor = descriptors.get(name);
+            if (descriptor != null) {
+                ordered.add(descriptor);
+            }
+        }
+        return ordered;
     }
 
     /** True when measurements(assetType, false) is not empty. */

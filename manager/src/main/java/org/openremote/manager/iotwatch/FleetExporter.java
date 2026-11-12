@@ -43,7 +43,11 @@ public class FleetExporter {
     public static final String CSV_CONTENT_TYPE = "text/csv; charset=UTF-8";
     public static final String ZIP_CONTENT_TYPE = "application/zip";
 
-    /** One asset type's file: its assets sorted by name then id, and the columns in model order. */
+    /**
+     * One asset type's file: its assets sorted by name then id; identity columns in
+     * FleetExportAttributes.IDENTITY order, measurements in the declaration order of the asset
+     * class's attribute descriptors (FleetExportAttributes.measurements).
+     */
     public record TypeExport(String assetType, List<Asset<?>> assets, List<String> identity, List<String> measurements) {
     }
 

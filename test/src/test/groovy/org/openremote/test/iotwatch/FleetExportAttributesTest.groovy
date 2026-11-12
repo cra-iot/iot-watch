@@ -48,6 +48,20 @@ class FleetExportAttributesTest extends Specification {
         names.containsAll(["power_1", "power_2", "energy_active_total"])
     }
 
+    def "measurements follow the declaration order of the asset class"() {
+        when:
+        def names = names(FleetExportAttributes.measurements("ElectricMeterAsset", false))
+
+        then:
+        names.first() == "energy_active_total"
+        names.take(3) == ["energy_active_total", "energy_active_t1", "energy_active_t2"]
+        names.indexOf("power_1") < names.indexOf("power_2")
+        names.indexOf("power_2") < names.indexOf("power_3")
+        names.indexOf("power_total") < names.indexOf("power_1")
+        names.indexOf("voltage_3") < names.indexOf("current_1")
+        names.last() == "tariff"
+    }
+
     def "types without history are not exportable"() {
         expect:
         FleetExportAttributes.exportable(type) == expected
