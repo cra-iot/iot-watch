@@ -4,24 +4,35 @@ import { i18next } from "@openremote/or-translate";
 
 const api = vi.hoisted(() => ({ exportOptions: vi.fn(), export: vi.fn() }));
 vi.mock("rest", () => ({ default: { api: { FleetResource: api } } }));
+// Vaadin needs browser APIs jsdom lacks (constructable style sheets, popover, matchMedia). The tags
+// stay plain elements here, so the dialog's content is reachable without the overlay.
+vi.mock("@openremote/or-vaadin-components/or-vaadin-dialog", () => ({}));
+vi.mock("@openremote/or-vaadin-components/or-vaadin-button", () => ({}));
+vi.mock("@openremote/or-vaadin-components/or-vaadin-select", () => ({}));
+vi.mock("@openremote/or-vaadin-components/or-vaadin-radio-group", () => ({}));
+vi.mock("@openremote/or-vaadin-components/or-vaadin-date-picker", () => ({}));
+vi.mock("@openremote/or-vaadin-components/or-vaadin-badge", () => ({}));
 
 import "./or-fleet-export-dialog";
 import type { OrFleetExportDialog } from "./or-fleet-export-dialog";
+import type { OrFleetExportForm } from "./or-fleet-export-form";
 import { toExportRequest } from "./fleet-export";
 
 const OPTIONS = {
-    maxTo: "2026-11-11",
-    maxDays: 366,
-    types: [{
-        type: "WaterMeterAsset", deviceCount: 3,
-        identity: [{ name: "devEui", label: "DevEUI", defaultSelected: true }, { name: "notes", label: "Notes", defaultSelected: false }],
-        measurements: [{ name: "currentReading", label: "Reading", defaultSelected: true }, { name: "flow_rate", label: "Flow", defaultSelected: false }],
-    }],
+    lastDay: "2026-11-11", lastMonth: "2026-10", maxDays: 366, maxMonths: 24,
+    types: [
+        { type: "WaterMeterAsset", deviceCount: 3, groups: [{ key: "volume", attribute: "currentReading" }] },
+        { type: "GasMeterAsset", deviceCount: 2, groups: [{ key: "volume", attribute: "volume" }] },
+    ],
 };
 const QUERY = { realm: "demo", text: ["x"] } as never;
 
 async function settle(element: OrFleetExportDialog) {
-    for (let i = 0; i < 4; i++) { await Promise.resolve(); await element.updateComplete; }
+    for (let i = 0; i < 4; i++) {
+        await Promise.resolve();
+        await element.updateComplete;
+        await form(element)?.updateComplete;
+    }
 }
 async function mount(): Promise<OrFleetExportDialog> {
     const element = document.createElement("or-fleet-export-dialog") as OrFleetExportDialog;
@@ -32,17 +43,27 @@ async function mount(): Promise<OrFleetExportDialog> {
     return element;
 }
 const $ = (e: OrFleetExportDialog, s: string) => e.shadowRoot!.querySelector<HTMLElement>(s);
-const $$ = (e: OrFleetExportDialog, s: string) => Array.from(e.shadowRoot!.querySelectorAll<HTMLElement>(s));
-const checked = (e: OrFleetExportDialog, name: string) => (e.shadowRoot!.querySelector(`input[data-name="${name}"]`) as HTMLInputElement).checked;
+const form = (e: OrFleetExportDialog) => $(e, "or-fleet-export-form") as OrFleetExportForm | null;
+const dialog = (e: OrFleetExportDialog) => $(e, "or-vaadin-dialog") as HTMLElement & { opened?: boolean; noCloseOnEsc?: boolean };
 // or-translate renders into its own shadow root, so the problem is read from its value.
 const problem = (e: OrFleetExportDialog) => ($(e, ".error or-translate") as unknown as { value?: string } | null)?.value;
-const exportButton = (e: OrFleetExportDialog) => $(e, "button.export") as HTMLButtonElement;
+const exportButton = (e: OrFleetExportDialog) => $(e, "or-vaadin-button.export")!;
+const cancelButton = (e: OrFleetExportDialog) => $(e, "or-vaadin-button.cancel")!;
+const closes = (e: OrFleetExportDialog) => {
+    const seen: Event[] = [];
+    e.addEventListener("or-fleet-export-close", (ev) => seen.push(ev));
+    return seen;
+};
+function stubDownload(): string[] {
+    URL.createObjectURL = vi.fn(() => "blob:x");
+    URL.revokeObjectURL = vi.fn();
+    const downloads: string[] = [];
+    // jsdom does not implement navigation, which a download link click would trigger.
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { downloads.push(this.download); });
+    return downloads;
+}
 
-beforeAll(async () => {
-    await i18next.init({ lng: "en", resources: {} });
-    HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
-    HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
-});
+beforeAll(async () => { await i18next.init({ lng: "en", resources: {} }); });
 beforeEach(() => {
     api.exportOptions.mockReset().mockResolvedValue({ data: OPTIONS });
     api.export.mockReset();
@@ -53,57 +74,69 @@ beforeEach(() => {
         value: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); }, clear: () => store.clear() },
     });
 });
-afterEach(() => { document.body.innerHTML = ""; });
+afterEach(() => {
+    document.body.innerHTML = "";
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+});
 
 describe("or-fleet-export-dialog", () => {
-    it("renders one section per type with the default attributes checked", async () => {
+    it("opens the Vaadin dialog and hands the options to the form", async () => {
         const element = await mount();
         expect(api.exportOptions).toHaveBeenCalledWith(QUERY);
-        expect($$(element, "section.type")).toHaveLength(1);
-        expect(checked(element, "devEui")).toBe(true);
-        expect(checked(element, "currentReading")).toBe(true);
-        expect(checked(element, "notes")).toBe(false);
-        expect(checked(element, "flow_rate")).toBe(false);
-        expect(exportButton(element).disabled).toBe(false);
+        expect(dialog(element).opened).toBe(true);
+        expect(form(element)!.options).toEqual(OPTIONS);
+        expect(form(element)!.assetType).toBe("WaterMeterAsset");
+        expect(exportButton(element).getAttribute("theme")).toBe("primary");
+        expect(exportButton(element).hasAttribute("disabled")).toBe(false);
     });
 
-    it("unchecks everything of a type on none and disables Export", async () => {
+    it("exports with the form's choice and remembers it", async () => {
         const element = await mount();
-        $(element, "button.none")!.click();
-        await settle(element);
-        expect(checked(element, "devEui")).toBe(false);
-        expect(checked(element, "currentReading")).toBe(false);
-        expect(exportButton(element).disabled).toBe(true);
-    });
-
-    it("shows the future error and disables Export for a to after maxTo", async () => {
-        const element = await mount();
-        const to = $(element, "input.to") as HTMLInputElement;
-        to.value = "2026-12-01";
-        to.dispatchEvent(new Event("input"));
-        await settle(element);
-        expect(problem(element)).toBe("app:fleet.export.error.future");
-        expect(exportButton(element).disabled).toBe(true);
-    });
-
-    it("exports the request built from the query, the range and the selection", async () => {
-        const element = await mount();
+        const downloads = stubDownload();
         api.export.mockResolvedValue({ data: new Blob(["a"]), headers: { "content-disposition": "attachment; filename=\"x.csv\"" } });
-        URL.createObjectURL = vi.fn(() => "blob:x");
-        URL.revokeObjectURL = vi.fn();
-        // jsdom does not implement navigation, which a download link click would trigger.
-        vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
-        const closes: Event[] = [];
-        element.addEventListener("or-fleet-export-close", (e) => closes.push(e));
-        const from = $(element, "input.from") as HTMLInputElement;
-        const to = $(element, "input.to") as HTMLInputElement;
+        const closed = closes(element);
         exportButton(element).click();
         await settle(element);
         expect(api.export).toHaveBeenCalledWith(
-            toExportRequest(QUERY, from.value, to.value, { WaterMeterAsset: ["devEui", "currentReading"] }),
+            toExportRequest(QUERY, "WaterMeterAsset", "MONTHLY" as never, "2026-10-01", "2026-10-01"),
             { responseType: "blob" });
-        expect(JSON.parse(window.localStorage.getItem("fleet.export.selection")!)).toEqual({ WaterMeterAsset: ["devEui", "currentReading"] });
-        expect(closes).toHaveLength(1);
+        expect(JSON.parse(window.localStorage.getItem("fleet.export.choice")!))
+            .toEqual({ assetType: "WaterMeterAsset", report: "MONTHLY", period: "lastMonth" });
+        expect(downloads).toEqual(["x.csv"]);
+        expect(closed).toHaveLength(1);
+    });
+
+    it("restores the remembered choice", async () => {
+        window.localStorage.setItem("fleet.export.choice", JSON.stringify({ assetType: "GasMeterAsset", report: "DAILY", period: "last3" }));
+        const element = await mount();
+        expect(form(element)!.assetType).toBe("GasMeterAsset");
+        expect(form(element)!.report).toBe("DAILY");
+        expect(form(element)!.period).toBe("last3");
+    });
+
+    it("falls back to the defaults when browser storage fails", async () => {
+        Object.defineProperty(window, "localStorage", { configurable: true, get: () => { throw new Error("blocked"); } });
+        const element = await mount();
+        expect(form(element)!.report).toBe("MONTHLY");
+        stubDownload();
+        api.export.mockResolvedValue({ data: new Blob(["a"]), headers: {} });
+        const closed = closes(element);
+        exportButton(element).click();
+        await settle(element);
+        expect(closed).toHaveLength(1);
+    });
+
+    it("shows a range problem from the form and disables Export", async () => {
+        const element = await mount();
+        const f = form(element)!;
+        f.period = "custom";
+        await settle(element);
+        f.customFrom = "2026-10-01";
+        f.customTo = "2026-01-01";
+        await settle(element);
+        expect(problem(element)).toBe("app:fleet.export.error.order");
+        expect(exportButton(element).hasAttribute("disabled")).toBe(true);
     });
 
     it("shows the busy message for a 429", async () => {
@@ -116,10 +149,17 @@ describe("or-fleet-export-dialog", () => {
 
     it("translates a known server message and shows an unknown one as sent", async () => {
         const element = await mount();
-        api.export.mockRejectedValue({ response: { status: 400, data: "Export too large: narrow the search or the date range" } });
+        api.export.mockRejectedValue({ response: { status: 400, data: "Export too large: narrow the search or the period" } });
         exportButton(element).click();
         await settle(element);
         expect(problem(element)).toBe("app:fleet.export.error.tooLarge");
+
+        api.export.mockRejectedValue({ response: { status: 403, data: "No readable readings for WaterMeterAsset" } });
+        exportButton(element).click();
+        await settle(element);
+        const translated = $(element, ".error or-translate") as unknown as { value?: string; options?: Record<string, string> };
+        expect(translated.value).toBe("app:fleet.export.error.notReadable");
+        expect(translated.options).toEqual({ type: "WaterMeterAsset" });
 
         api.export.mockRejectedValue({ response: { status: 400, data: "Unknown status: sleeping" } });
         exportButton(element).click();
@@ -127,50 +167,51 @@ describe("or-fleet-export-dialog", () => {
         expect($(element, ".error")!.textContent!.trim()).toBe("Unknown status: sleeping");
     });
 
-    it("keeps the remembered choices of types that are not in this search", async () => {
-        window.localStorage.setItem("fleet.export.selection", JSON.stringify({ GasMeterAsset: ["devEui"] }));
-        const element = await mount();
-        api.export.mockResolvedValue({ data: new Blob(["a"]), headers: {} });
-        URL.createObjectURL = vi.fn(() => "blob:x");
-        URL.revokeObjectURL = vi.fn();
-        vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
-        exportButton(element).click();
-        await settle(element);
-        expect(JSON.parse(window.localStorage.getItem("fleet.export.selection")!)).toEqual({
-            GasMeterAsset: ["devEui"], WaterMeterAsset: ["devEui", "currentReading"],
-        });
-    });
-
     it("disables Cancel and ignores Esc while an export runs", async () => {
         const element = await mount();
+        stubDownload();
         let release: (v: unknown) => void = () => {};
         api.export.mockReturnValue(new Promise((resolve) => { release = resolve; }));
-        const closes: Event[] = [];
-        element.addEventListener("or-fleet-export-close", (e) => closes.push(e));
+        const closed = closes(element);
+        expect(dialog(element).noCloseOnEsc).toBe(false);
         exportButton(element).click();
         await settle(element);
-        expect(($(element, "button.cancel") as HTMLButtonElement).disabled).toBe(true);
-        $(element, "dialog")!.dispatchEvent(new Event("cancel", { cancelable: true }));
-        expect(closes).toHaveLength(0);
+        expect(cancelButton(element).hasAttribute("disabled")).toBe(true);
+        expect(dialog(element).noCloseOnEsc).toBe(true);
+        expect(form(element)!.busy).toBe(true);
+        dialog(element).dispatchEvent(new CustomEvent("opened-changed", { detail: { value: false } }));
+        cancelButton(element).click();
+        expect(closed).toHaveLength(0);
         release({ data: new Blob(["a"]), headers: {} });
+        await settle(element);
     });
 
-    it("names a zip download .zip when the server sends no file name", async () => {
+    it("closes on Cancel and on Esc when idle", async () => {
         const element = await mount();
-        api.export.mockResolvedValue({ data: new Blob(["a"]), headers: { "content-type": "application/zip" } });
-        URL.createObjectURL = vi.fn(() => "blob:x");
-        URL.revokeObjectURL = vi.fn();
-        const downloads: string[] = [];
-        vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { downloads.push(this.download); });
+        const closed = closes(element);
+        cancelButton(element).click();
+        expect(closed).toHaveLength(1);
+        dialog(element).dispatchEvent(new CustomEvent("opened-changed", { detail: { value: false } }));
+        expect(closed).toHaveLength(2);
+    });
+
+    it("names the download from the period and revokes the object URL later", async () => {
+        vi.useFakeTimers({ toFake: ["setTimeout"] });
+        const element = await mount();
+        const downloads = stubDownload();
+        api.export.mockResolvedValue({ data: new Blob(["a"]), headers: {} });
         exportButton(element).click();
         await settle(element);
-        expect(downloads).toHaveLength(1);
-        expect(downloads[0]).toMatch(/^fleet-.*\.zip$/);
+        expect(downloads).toEqual(["fleet-2026-10-01_2026-10-01.csv"]);
+        expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(10_000);
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:x");
     });
 
     it("shows a status while an export runs", async () => {
         const element = await mount();
         expect($(element, "[role=status] or-translate")).toBeNull();
+        stubDownload();
         let release: (v: unknown) => void = () => {};
         api.export.mockReturnValue(new Promise((resolve) => { release = resolve; }));
         exportButton(element).click();
@@ -178,13 +219,25 @@ describe("or-fleet-export-dialog", () => {
         const status = $(element, "[role=status] or-translate") as unknown as { value?: string } | null;
         expect(status?.value).toBe("app:fleet.export.exporting");
         release({ data: new Blob(["a"]), headers: {} });
+        await settle(element);
     });
 
-    it("shows a note and keeps Export disabled when no type can be exported", async () => {
+    it("keeps Export disabled when no type can be exported", async () => {
         api.exportOptions.mockResolvedValue({ data: { ...OPTIONS, types: [] } });
         const element = await mount();
-        expect($$(element, "section.type")).toHaveLength(0);
-        expect(($(element, ".note or-translate") as unknown as { value?: string } | null)?.value).toBe("app:fleet.export.noTypes");
-        expect(exportButton(element).disabled).toBe(true);
+        expect(form(element)!.options!.types).toEqual([]);
+        expect(problem(element)).toBeUndefined();
+        expect(exportButton(element).hasAttribute("disabled")).toBe(true);
+    });
+
+    it("drops an options answer that arrives after the dialog was closed", async () => {
+        let answer: (v: unknown) => void = () => {};
+        api.exportOptions.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+        const element = await mount();
+        element.open = false;
+        await settle(element);
+        answer({ data: OPTIONS });
+        await settle(element);
+        expect(form(element)!.options).toBeUndefined();
     });
 });
