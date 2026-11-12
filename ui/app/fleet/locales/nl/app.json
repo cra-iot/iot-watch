@@ -114,6 +114,28 @@
       "clear": "Zoekopdracht wissen"
     },
     "loading": "Meters laden…",
+    "export": {
+      "button": "CSV exporteren…",
+      "title": "{{count}} apparaten exporteren",
+      "help": "Waarden zijn de laatste meting van elke UTC-dag. Metingen die te laat binnenkomen kunnen een latere export van dezelfde dagen wijzigen.",
+      "from": "Van",
+      "to": "Tot",
+      "utc": "UTC",
+      "identity": "Identificatie",
+      "measurements": "Metingen",
+      "all": "Alles",
+      "none": "Geen",
+      "cancel": "Annuleren",
+      "export": "Exporteren",
+      "error": {
+        "missing": "Selecteer beide datums.",
+        "order": "De begindatum ligt na de einddatum.",
+        "future": "De einddatum mag niet na de laatste volledige UTC-dag liggen.",
+        "tooLong": "Het bereik is te lang (maximaal 366 dagen).",
+        "busy": "Er loopt al een export. Probeer het zo opnieuw.",
+        "failed": "De export is mislukt. Probeer het opnieuw."
+      }
+    },
     "updated": {
       "justNow": "Zojuist bijgewerkt",
       "ago": "Bijgewerkt {{age}}",

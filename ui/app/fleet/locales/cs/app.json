@@ -162,6 +162,28 @@
       "clear": "Vymazat hledání"
     },
     "loading": "Načítání měřidel…",
+    "export": {
+      "button": "Exportovat CSV…",
+      "title": "Export {{count}} zařízení",
+      "help": "Hodnoty jsou poslední odečet každého dne UTC. Odečty, které dorazí pozdě, mohou změnit pozdější export stejných dnů.",
+      "from": "Od",
+      "to": "Do",
+      "utc": "UTC",
+      "identity": "Identifikace",
+      "measurements": "Měření",
+      "all": "Vše",
+      "none": "Nic",
+      "cancel": "Zrušit",
+      "export": "Exportovat",
+      "error": {
+        "missing": "Zadejte obě data.",
+        "order": "Počáteční datum je po koncovém datu.",
+        "future": "Koncové datum nesmí být po posledním dokončeném dni UTC.",
+        "tooLong": "Rozsah je příliš dlouhý (nejvýše 366 dnů).",
+        "busy": "Probíhá jiný export. Zkuste to za chvíli znovu.",
+        "failed": "Export se nezdařil. Zkuste to znovu."
+      }
+    },
     "updated": {
       "justNow": "Aktualizováno právě teď",
       "ago": "Aktualizováno {{age}}",

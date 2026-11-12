@@ -158,6 +158,28 @@
       "clear": "Clear search"
     },
     "loading": "Loading meters…",
+    "export": {
+      "button": "Export CSV…",
+      "title": "Export {{count}} devices",
+      "help": "Values are the last reading of each UTC day. Readings that arrive late can change a later export of the same days.",
+      "from": "From",
+      "to": "To",
+      "utc": "UTC",
+      "identity": "Identity",
+      "measurements": "Measurements",
+      "all": "All",
+      "none": "None",
+      "cancel": "Cancel",
+      "export": "Export",
+      "error": {
+        "missing": "Select both dates.",
+        "order": "The start date is after the end date.",
+        "future": "The end date must not be after the last complete UTC day.",
+        "tooLong": "The range is too long (at most 366 days).",
+        "busy": "Another export is running. Try again in a moment.",
+        "failed": "The export failed. Try again."
+      }
+    },
     "updated": {
       "justNow": "Updated just now",
       "ago": "Updated {{age}}",

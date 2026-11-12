@@ -3,7 +3,7 @@ import { customElement, state } from "lit/decorators.js";
 import { AppStateKeyed, Page, PageProvider, router } from "@openremote/or-app";
 import { getAssetsRoute } from "@openremote/manager/routes";
 import { EnhancedStore } from "@reduxjs/toolkit";
-import type { FleetQueryResult } from "model";
+import type { FleetQuery, FleetQueryResult } from "model";
 // The project's generated client: manager.rest from @openremote/core is the stock OpenRemote
 // client and has no FleetResource.
 import rest from "rest";
@@ -15,6 +15,7 @@ import {
 } from "../fleet/fleet-tokens";
 import "../fleet/or-fleet-search";
 import "../fleet/or-fleet-results";
+import "../fleet/or-fleet-export-dialog";
 
 export function pageFleetProvider(store: EnhancedStore<AppStateKeyed>): PageProvider<AppStateKeyed> {
     return {
@@ -43,6 +44,10 @@ export class PageFleet extends Page<AppStateKeyed> {
                 margin: 0 auto; padding: 8px 12px; box-sizing: border-box;
                 background-color: var(--or-app-color1, #fff); border: 1px solid #e5e5e5; border-radius: 5px; }
             .error { color: var(--or-app-color4, #e3000a); padding: 8px 0; }
+            .tools { display: flex; justify-content: flex-end; padding: 4px 0; }
+            .tools button { font: inherit; cursor: pointer; background: none; border: 1px solid #ccc; border-radius: 4px;
+                padding: 4px 12px; color: var(--or-app-color3, #222); }
+            .tools button:disabled { cursor: default; opacity: 0.5; }
             .note { color: var(--or-app-color3, #4c4c4c); padding: 8px 0; }
             @media screen and (max-width: 768px) {
                 :host { padding: 0 0 12px; }
@@ -71,6 +76,9 @@ export class PageFleet extends Page<AppStateKeyed> {
     @state() protected _updatedAt?: number;
     /** The shown result reloaded the one before it (refresh); a superseded refresh never sets it. */
     @state() protected _refreshed = false;
+    @state() protected _exportOpen = false;
+    /** The search the export dialog is open for; fixed while it is open. */
+    protected _exportQuery?: FleetQuery;
 
     /** The status: token values, kept per tokens array so the results table gets a stable array. */
     protected _statusCache?: { tokens: Token[]; status: string[] };
@@ -257,6 +265,14 @@ export class PageFleet extends Page<AppStateKeyed> {
         this._runQuery();
     }
 
+    protected _openExport(): void {
+        // The filter only: paging, sorting and grouping do not shape an export.
+        const query = toFleetQuery(this._tokens, {});
+        if (this._realm) { query.realm = this._realm; }
+        this._exportQuery = query;
+        this._exportOpen = true;
+    }
+
     protected render(): TemplateResult {
         return html`
             <div class="panel">
@@ -270,6 +286,11 @@ export class PageFleet extends Page<AppStateKeyed> {
                 ${this._error ? html`<div class="error"><or-translate value=${this._error}></or-translate></div>` : nothing}
                 ${this._renderNotFound()}
                 ${this._readingNote ? html`<div class="note" role="status"><or-translate value="app:fleet.reading.needsOneType"></or-translate></div>` : nothing}
+                <div class="tools">
+                    <button type="button" ?disabled=${this._loading || !this._result?.total} @click=${() => this._openExport()}>
+                        <or-translate value="app:fleet.export.button"></or-translate>
+                    </button>
+                </div>
                 <or-fleet-results .result=${this._result} .groupBy=${this._groupBy} .collapsed=${this._collapsed} .loading=${this._loading}
                                   .sort=${this._sort} .hiddenColumns=${this._hidden} .updatedAt=${this._updatedAt} .refreshed=${this._refreshed}
                                   .status=${this._status()}
@@ -333,6 +354,8 @@ export class PageFleet extends Page<AppStateKeyed> {
                                       this._pushUrl();
                                       this._runQuery();
                                   }}></or-fleet-results>
+                <or-fleet-export-dialog .query=${this._exportQuery} .open=${this._exportOpen}
+                                        @or-fleet-export-close=${() => { this._exportOpen = false; }}></or-fleet-export-dialog>
             </div>
         `;
     }
