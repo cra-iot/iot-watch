@@ -58,6 +58,14 @@ export class OrFleetExportDialog extends translateMixin(i18next)(OrElement) {
             .status { padding-top: var(--lumo-space-s); font-size: var(--lumo-font-size-s); }
             .error { color: var(--lumo-error-text-color); padding: var(--lumo-space-s) 0; min-height: 1em; }
             .status:empty, .error:empty { display: none; }
+            .loading { padding: var(--lumo-space-m) 0; color: var(--lumo-secondary-text-color); font-size: var(--lumo-font-size-s); }
+            .status { display: flex; flex-direction: column; gap: var(--lumo-space-xs); }
+            /* Indeterminate bar, as on the fleet results while a query runs. */
+            .progress { position: relative; height: 3px; overflow: hidden; border-radius: 2px;
+                background: var(--lumo-contrast-10pct); margin-bottom: var(--lumo-space-xs); }
+            .progress::after { content: ""; position: absolute; top: 0; bottom: 0; left: -40%; width: 40%;
+                background: var(--lumo-primary-color); animation: export-progress 1.2s ease-in-out infinite; }
+            @keyframes export-progress { to { left: 100%; } }
         `;
     }
 
@@ -65,6 +73,8 @@ export class OrFleetExportDialog extends translateMixin(i18next)(OrElement) {
     @property({ type: Boolean }) public open = false;
 
     @state() protected _options?: FleetExportOptions;
+    /** True while the options request for the current open runs. */
+    @state() protected _loading = false;
     /** The starting choice handed to the form; the form keeps the user's changes. */
     @state() protected _assetType?: string;
     @state() protected _report?: FleetExportReport;
@@ -85,6 +95,7 @@ export class OrFleetExportDialog extends translateMixin(i18next)(OrElement) {
             this._load();
         } else {
             this._loadId++;
+            this._loading = false;
         }
     }
 
@@ -94,6 +105,7 @@ export class OrFleetExportDialog extends translateMixin(i18next)(OrElement) {
         this._choice = undefined;
         this._problem = undefined;
         this._busy = false;
+        this._loading = true;
         try {
             const response = await rest.api.FleetResource.exportOptions(this.query!);
             if (loadId !== this._loadId) { return; }
@@ -105,6 +117,8 @@ export class OrFleetExportDialog extends translateMixin(i18next)(OrElement) {
             this._options = response.data;
         } catch {
             if (loadId === this._loadId) { this._problem = { key: "app:fleet.export.error.failed" }; }
+        } finally {
+            if (loadId === this._loadId) { this._loading = false; }
         }
     }
 
@@ -180,12 +194,16 @@ export class OrFleetExportDialog extends translateMixin(i18next)(OrElement) {
             <or-vaadin-dialog .opened=${this.open} .headerTitle=${i18next.t("app:fleet.export.title")}
                               .noCloseOnEsc=${this._busy} no-close-on-outside-click
                               @opened-changed=${(e: CustomEvent) => this._onOpenedChanged(e)}>
-                ${keyed(this._loadId, html`
+                ${this._loading ? html`
+                    <div class="loading" role="status">
+                        <div class="progress"></div>
+                        <or-translate value="app:fleet.export.loading"></or-translate>
+                    </div>` : keyed(this._loadId, html`
                     <or-fleet-export-form .options=${this._options} .assetType=${this._assetType} .report=${this._report}
                                           .period=${this._period} .busy=${this._busy}
                                           @or-fleet-export-form-change=${(e: CustomEvent<FleetExportChoice>) => this._onChoice(e)}></or-fleet-export-form>`)}
                 <div class="status" role="status">${this._busy
-                    ? html`<or-translate value="app:fleet.export.exporting"></or-translate>` : nothing}</div>
+                    ? html`<div class="progress"></div><or-translate value="app:fleet.export.exporting"></or-translate>` : nothing}</div>
                 <div class="error" role="alert">${problem
                     ? ("key" in problem ? html`<or-translate value=${problem.key} .options=${problem.options}></or-translate>` : problem.text)
                     : nothing}</div>

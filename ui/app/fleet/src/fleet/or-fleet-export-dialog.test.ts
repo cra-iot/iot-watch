@@ -91,6 +91,39 @@ describe("or-fleet-export-dialog", () => {
         expect(exportButton(element).hasAttribute("disabled")).toBe(false);
     });
 
+    it("shows a loading indicator until the options arrive, without the form", async () => {
+        let answer: (v: unknown) => void = () => {};
+        api.exportOptions.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+        const element = await mount();
+        const loading = $(element, ".loading");
+        expect(loading).not.toBeNull();
+        expect(loading!.getAttribute("role")).toBe("status");
+        expect(loading!.querySelector(".progress")).not.toBeNull();
+        expect((loading!.querySelector("or-translate") as unknown as { value?: string }).value).toBe("app:fleet.export.loading");
+        expect(form(element)).toBeNull();
+        expect(exportButton(element).hasAttribute("disabled")).toBe(true);
+
+        answer({ data: OPTIONS });
+        await settle(element);
+        expect($(element, ".loading")).toBeNull();
+        expect(form(element)!.options).toEqual(OPTIONS);
+    });
+
+    it("drops the loading indicator when the options fail to load", async () => {
+        api.exportOptions.mockRejectedValue(new Error("down"));
+        const element = await mount();
+        expect($(element, ".loading")).toBeNull();
+        expect(problem(element)).toBe("app:fleet.export.error.failed");
+    });
+
+    it("shows the progress bar next to the status while exporting", async () => {
+        const element = await mount();
+        api.export.mockReturnValue(new Promise(() => {}));
+        exportButton(element).click();
+        await settle(element);
+        expect($(element, ".status .progress")).not.toBeNull();
+    });
+
     it("keeps the footer buttons' own box, which the Vaadin dialog dissolves", async () => {
         // jsdom does not cascade into the overlay; the rule itself is the guard, checked in the browser.
         const element = await mount();

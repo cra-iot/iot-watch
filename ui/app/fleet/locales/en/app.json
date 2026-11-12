@@ -184,6 +184,7 @@
       "cancel": "Cancel",
       "export": "Export",
       "exporting": "Exporting…",
+      "loading": "Loading export options…",
       "noTypes": "None of the matched devices has readings that can be exported.",
       "error": {
         "missing": "Choose both the start and the end.",

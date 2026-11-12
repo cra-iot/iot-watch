@@ -188,6 +188,7 @@
       "cancel": "Zrušit",
       "export": "Exportovat",
       "exporting": "Probíhá export…",
+      "loading": "Načítání možností exportu…",
       "noTypes": "Žádné z nalezených zařízení nemá odečty, které lze exportovat.",
       "error": {
         "missing": "Zvolte začátek i konec období.",

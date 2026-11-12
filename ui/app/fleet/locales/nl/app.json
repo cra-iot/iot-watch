@@ -140,6 +140,7 @@
       "cancel": "Annuleren",
       "export": "Exporteren",
       "exporting": "Bezig met exporteren…",
+      "loading": "Exportopties laden…",
       "noTypes": "Geen van de gevonden apparaten heeft meterstanden die geëxporteerd kunnen worden.",
       "error": {
         "missing": "Kies zowel het begin als het einde.",

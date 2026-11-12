@@ -21,7 +21,7 @@ describe("locales", () => {
             await t.init({ lng: lang, ns: ["app"], resources: { [lang]: { app } } });
             const keys = ["button", "title", "type", "report.monthly", "report.monthlyHint", "report.daily", "report.dailyHint",
                 "report.custom", "report.customHint", "inPreparation", "period", "period.lastMonth", "period.last3", "period.last12",
-                "period.thisYear", "period.previousYear", "period.custom", "from", "to", "czechTime", "cancel", "export", "exporting",
+                "period.thisYear", "period.previousYear", "period.custom", "from", "to", "czechTime", "cancel", "export", "exporting", "loading",
                 "noTypes", "error.missing", "error.order", "error.future", "error.tooLong", "error.busy", "error.failed",
                 "error.selectType", "error.noDevices", "error.notExportable", "error.notReadable", "error.tooLarge"];
             for (const key of keys) {
