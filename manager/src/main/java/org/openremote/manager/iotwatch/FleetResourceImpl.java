@@ -113,28 +113,17 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
         matchedRows(fleetQuery, realm).forEach(row ->
                 idsByType.computeIfAbsent(row.type, type -> new LinkedHashSet<>()).add(row.id));
 
-        // Each requested type is reloaded through the caller's authorization with only the selected
-        // attributes, so a restricted caller's asset lacks every attribute it cannot read.
-        Map<String, List<Asset<?>>> assetsByType = new HashMap<>();
-        if (request.attributes != null) {
-            request.attributes.forEach((type, names) -> {
-                Set<String> ids = idsByType.get(type);
-                if (ids == null || names == null || names.isEmpty()) {
-                    return;
-                }
-                String[] select = names.stream().filter(Objects::nonNull).distinct().toArray(String[]::new);
-                AssetQuery assetQuery = new AssetQuery()
-                        .realm(new RealmPredicate(realm))
-                        .ids(ids.toArray(new String[0]))
-                        .select(new AssetQuery.Select().attributes(select));
-                assetsByType.put(type, authorizedFindAll(assetQuery, realm));
-            });
-        }
-
+        // plan() validates the whole selection first, then reloads each selected type through the
+        // caller's authorization with only the selected attributes, so a restricted caller's asset
+        // lacks every attribute it cannot read.
         FleetExporter.ExportPlan plan;
         try {
-            plan = exporter.plan(request, assetsByType, isRestrictedUser(),
-                    now());
+            plan = exporter.plan(request, idsByType, (type, ids, attributes) -> authorizedFindAll(
+                    new AssetQuery()
+                            .realm(new RealmPredicate(realm))
+                            .ids(ids.toArray(new String[0]))
+                            .select(new AssetQuery.Select().attributes(attributes.toArray(new String[0]))),
+                    realm), isRestrictedUser(), now());
         } catch (IllegalArgumentException e) {
             throw badRequest(e.getMessage());
         } catch (SecurityException e) {

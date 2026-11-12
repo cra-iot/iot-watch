@@ -185,4 +185,16 @@ class FleetExportEndpointTest extends Specification implements ManagerContainerT
         cleanup:
         response?.close()
     }
+
+    def "an empty selection on a search with matches is rejected"() {
+        when:
+        def response = post(adminToken, Constants.MASTER_REALM, exportRequest([], yesterday, yesterday))
+
+        then:
+        response.status == 400
+        response.readEntity(String) == "Select at least one attribute to export"
+
+        cleanup:
+        response?.close()
+    }
 }

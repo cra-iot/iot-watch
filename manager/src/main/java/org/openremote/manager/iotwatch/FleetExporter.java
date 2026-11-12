@@ -73,15 +73,25 @@ public class FleetExporter {
         this.permits = new Semaphore(maxConcurrent);
     }
 
+    /** Loads the caller-authorized assets among ids, with only the given attributes. */
+    @FunctionalInterface
+    public interface AssetLoader {
+        List<Asset<?>> load(String assetType, Set<String> ids, List<String> attributes);
+    }
+
     /**
-     * Validates and orders. assetsByType: the caller-authorized assets of each matched type, loaded with
-     * the selected attributes. Throws IllegalArgumentException (→400) or SecurityException (→403).
+     * Validates, then loads and orders. matchedIds: the ids of every device the search matched,
+     * per asset type. Only a search without matches yields the header-only plan; otherwise the
+     * whole selection is validated before anything is loaded: no selection, a type the search
+     * did not match or an attribute that cannot be exported throw IllegalArgumentException
+     * (→400), an attribute a restricted caller cannot read throws SecurityException (→403).
+     * Each selected type is then loaded once through loader with its matched ids.
      */
-    public ExportPlan plan(FleetExportRequest request, Map<String, List<Asset<?>>> assetsByType,
+    public ExportPlan plan(FleetExportRequest request, Map<String, Set<String>> matchedIds, AssetLoader loader,
                            boolean restricted, Instant now) {
         FleetExportRange range = FleetExportRange.parse(request.from, request.to, request.timeZone, now);
-        boolean noDevices = assetsByType == null
-                || assetsByType.values().stream().allMatch(assets -> assets == null || assets.isEmpty());
+        boolean noDevices = matchedIds == null
+                || matchedIds.values().stream().allMatch(ids -> ids == null || ids.isEmpty());
         if (noDevices) {
             return new ExportPlan(range, List.of(), now);
         }
@@ -99,11 +109,11 @@ public class FleetExporter {
             throw new IllegalArgumentException("Select at least one attribute to export");
         }
 
-        List<TypeExport> types = new ArrayList<>();
+        List<TypeSelection> validated = new ArrayList<>();
         for (Map.Entry<String, List<String>> entry : selection.entrySet()) {
             String type = entry.getKey();
-            List<Asset<?>> assets = assetsByType.get(type);
-            if (assets == null || assets.isEmpty()) {
+            Set<String> ids = matchedIds.get(type);
+            if (ids == null || ids.isEmpty()) {
                 throw new IllegalArgumentException("No matched devices of type " + type);
             }
             Set<String> requested = new HashSet<>(entry.getValue());
@@ -119,15 +129,27 @@ public class FleetExporter {
                     throw new SecurityException("Attribute " + name + " is not readable for " + type);
                 }
             }
-            if ((long) assets.size() * range.days() > maxRows) {
+            if ((long) ids.size() * range.days() > maxRows) {
                 throw new IllegalArgumentException("Export too large: narrow the search or the date range");
             }
-            List<Asset<?>> sorted = assets.stream().filter(Objects::nonNull).sorted(BY_NAME_THEN_ID).toList();
-            types.add(new TypeExport(type, sorted,
+            validated.add(new TypeSelection(type, ids, entry.getValue().stream().distinct().toList(),
                     identity.stream().filter(requested::contains).toList(),
                     measurements.stream().filter(requested::contains).toList()));
         }
+
+        List<TypeExport> types = new ArrayList<>();
+        for (TypeSelection type : validated) {
+            List<Asset<?>> assets = loader.load(type.assetType(), type.ids(), type.attributes());
+            List<Asset<?>> sorted = assets == null ? List.of()
+                    : assets.stream().filter(Objects::nonNull).sorted(BY_NAME_THEN_ID).toList();
+            types.add(new TypeExport(type.assetType(), sorted, type.identity(), type.measurements()));
+        }
         return new ExportPlan(range, List.copyOf(types), now);
+    }
+
+    /** A validated type of the selection, before its assets are loaded. */
+    private record TypeSelection(String assetType, Set<String> ids, List<String> attributes,
+                                 List<String> identity, List<String> measurements) {
     }
 
     public boolean tryAcquire() {

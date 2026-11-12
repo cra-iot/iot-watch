@@ -90,13 +90,31 @@ class FleetExporterTest extends Specification {
 
     def exporter = new FleetExporter(new FakeRepository(), 1_000_000, 2)
 
+    /** Loads recorded by the loader of planFor(): type, ids, attributes. */
+    List<List> loads = []
+
+    /**
+     * Plans the way the endpoint does: the matched ids per type come from the search, and the
+     * loader answers with the matched assets of a type (here: all of them, as an admin sees them).
+     */
+    FleetExporter.ExportPlan planFor(FleetExporter exporter, FleetExportRequest request,
+                                  Map<String, List<Asset<?>>> devices, boolean restricted) {
+        Map<String, Set<String>> matchedIds = devices.collectEntries { type, assets ->
+            [(type): assets.collect { it.id } as LinkedHashSet<String>]
+        }
+        return exporter.plan(request, matchedIds, { String type, Set<String> ids, List<String> attributes ->
+            loads << [type, ids, attributes]
+            return devices[type].findAll { ids.contains(it.id) }
+        } as FleetExporter.AssetLoader, restricted, NOW)
+    }
+
     def "plan rejects"() {
         given:
         def exporter = new FleetExporter(new FakeRepository(), maxRows, 2)
         Map<String, List<Asset<?>>> assets = ["WaterMeterAsset": (1..3).collect { water("id" + it, "W" + it) }]
 
         when:
-        exporter.plan(request(attributes, from, "2026-10-31"), assets, false, NOW)
+        planFor(exporter, request(attributes, from, "2026-10-31"), assets, false)
 
         then:
         def e = thrown(IllegalArgumentException)
@@ -113,16 +131,78 @@ class FleetExporterTest extends Specification {
 
     def "plan forbids generic attributes to restricted callers"() {
         when:
-        exporter.plan(request(["WaterMeterAsset": ["devEui", "notes"]]),
-                ["WaterMeterAsset": [water("id1", "A")]], true, NOW)
+        planFor(exporter, request(["WaterMeterAsset": ["devEui", "notes"]]),
+                ["WaterMeterAsset": [water("id1", "A")]], true)
 
         then:
         thrown(SecurityException)
     }
 
+    def "the selection is validated whenever the search matched devices"() {
+        given:
+        Map<String, List<Asset<?>>> devices = ["WaterMeterAsset": [water("id1", "W")]]
+
+        when:
+        planFor(exporter, request(attributes), devices, restricted)
+
+        then:
+        def e = thrown(IllegalArgumentException)
+        e.message == message
+        loads.isEmpty()
+
+        where:
+        attributes                                     | restricted | message
+        ["WaterMeterAsset": []]                        | false      | "Select at least one attribute to export"
+        ["WaterMeterAsset": null]                      | false      | "Select at least one attribute to export"
+        ["ElectricMeterAsset": ["energy_active_total"]] | false      | "No matched devices of type ElectricMeterAsset"
+        ["ElectricMeterAsset": ["notes"]]              | true       | "No matched devices of type ElectricMeterAsset"
+        ["WaterMeterAsset"   : ["currentReading"],
+         "ElectricMeterAsset": ["energy_active_total"]] | false      | "No matched devices of type ElectricMeterAsset"
+    }
+
+    def "a forbidden attribute is rejected before anything is loaded"() {
+        when:
+        planFor(exporter, request(["WaterMeterAsset": ["devEui", "notes"]]), ["WaterMeterAsset": [water("id1", "A")]], true)
+
+        then:
+        thrown(SecurityException)
+        loads.isEmpty()
+    }
+
+    def "a search without matches gives a header-only plan whatever the selection"() {
+        when:
+        def plan = planFor(exporter, request(attributes), [:], restricted)
+
+        then:
+        plan.types().isEmpty()
+        loads.isEmpty()
+
+        where:
+        attributes                                     | restricted
+        [:]                                            | false
+        ["WaterMeterAsset": []]                        | false
+        ["WaterMeterAsset": ["notes"]]                 | true
+        ["ElectricMeterAsset": ["energy_active_total"]] | false
+    }
+
+    def "each selected type is loaded once with its matched ids and the selected attributes"() {
+        given:
+        Map<String, List<Asset<?>>> devices = [
+                "WaterMeterAsset"   : [water("id1", "W"), water("id3", "V")],
+                "ElectricMeterAsset": [electric("id2", "E")]]
+
+        when:
+        def plan = planFor(exporter, request(["WaterMeterAsset": ["currentReading", "devEui", "devEui"]]), devices, false)
+
+        then:
+        loads == [["WaterMeterAsset", ["id1", "id3"] as LinkedHashSet, ["currentReading", "devEui"]]]
+        plan.types()*.assetType() == ["WaterMeterAsset"]
+        plan.types()[0].assets()*.id == ["id3", "id1"]
+    }
+
     def "no matched devices gives a header-only csv"() {
         given:
-        def plan = exporter.plan(request(["WaterMeterAsset": ["currentReading"]]), [:], false, NOW)
+        def plan = planFor(exporter, request(["WaterMeterAsset": ["currentReading"]]), [:], false)
         def out = new ByteArrayOutputStream()
 
         when:
@@ -139,7 +219,7 @@ class FleetExporterTest extends Specification {
         given:
         Map<String, List<Asset<?>>> assets = ["WaterMeterAsset": [water("id3", "B"), water("id2", "A"), water("id1", "A")]]
         // Request order deliberately differs from the column order
-        def plan = exporter.plan(request(["WaterMeterAsset": ["currentReading", "devEui"]]), assets, false, NOW)
+        def plan = planFor(exporter, request(["WaterMeterAsset": ["currentReading", "devEui"]]), assets, false)
         def out = new ByteArrayOutputStream()
 
         when:
@@ -161,7 +241,7 @@ class FleetExporterTest extends Specification {
         def hidden = water("id2", "B")
         hidden.getAttributes().remove("currentReading")
         Map<String, List<Asset<?>>> assets = ["WaterMeterAsset": [water("id1", "A"), hidden]]
-        def plan = exporter.plan(request(["WaterMeterAsset": ["devEui", "currentReading"]]), assets, false, NOW)
+        def plan = planFor(exporter, request(["WaterMeterAsset": ["devEui", "currentReading"]]), assets, false)
         def out = new ByteArrayOutputStream()
 
         when:
@@ -179,9 +259,9 @@ class FleetExporterTest extends Specification {
         Map<String, List<Asset<?>>> assets = [
                 "WaterMeterAsset"   : [water("id1", "W")],
                 "ElectricMeterAsset": [electric("id2", "E")]]
-        def plan = exporter.plan(request([
+        def plan = planFor(exporter, request([
                 "WaterMeterAsset"   : ["currentReading"],
-                "ElectricMeterAsset": ["energy_active_total"]]), assets, false, NOW)
+                "ElectricMeterAsset": ["energy_active_total"]]), assets, false)
         def out = new ByteArrayOutputStream()
 
         when:
@@ -210,9 +290,9 @@ class FleetExporterTest extends Specification {
         Map<String, List<Asset<?>>> assets = [
                 "WaterMeterAsset"   : [water("id1", "W")],
                 "ElectricMeterAsset": [electric("id2", "E")]]
-        def plan = exporter.plan(request([
+        def plan = planFor(exporter, request([
                 "WaterMeterAsset"   : ["currentReading"],
-                "ElectricMeterAsset": ["energy_active_total"]]), assets, false, NOW)
+                "ElectricMeterAsset": ["energy_active_total"]]), assets, false)
         def out = new ByteArrayOutputStream()
 
         when:
@@ -284,8 +364,8 @@ class FleetExporterTest extends Specification {
         given:
         def exporter = new FleetExporter(new FakeRepository(failOn: "currentReading"), 1_000_000, 1)
         def resource = new AbortRecordingResource(exporter)
-        def plan = exporter.plan(request(["WaterMeterAsset": ["currentReading"]]),
-                ["WaterMeterAsset": [water("id1", "W")]], false, NOW)
+        def plan = planFor(exporter, request(["WaterMeterAsset": ["currentReading"]]),
+                ["WaterMeterAsset": [water("id1", "W")]], false)
         assert exporter.tryAcquire()
 
         when:
@@ -302,8 +382,8 @@ class FleetExporterTest extends Specification {
         given:
         def exporter = new FleetExporter(new FakeRepository(), 1_000_000, 1)
         def resource = new AbortRecordingResource(exporter)
-        def plan = exporter.plan(request(["WaterMeterAsset": ["currentReading"]]),
-                ["WaterMeterAsset": [water("id1", "W")]], false, NOW)
+        def plan = planFor(exporter, request(["WaterMeterAsset": ["currentReading"]]),
+                ["WaterMeterAsset": [water("id1", "W")]], false)
         assert exporter.tryAcquire()
         def out = new ByteArrayOutputStream()
 

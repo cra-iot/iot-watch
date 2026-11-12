@@ -151,6 +151,54 @@ class FleetExportResourceTest extends Specification {
         assertTextEntity(e, 400, "Unknown status: sleeping")
     }
 
+    def "a search with matches validates the selection"() {
+        given:
+        resource.devices = [FleetExporterTest.water("id1", "A")]
+        resource.restricted = restricted
+
+        when:
+        resource.export(request(attributes))
+
+        then:
+        def e = thrown(BadRequestException)
+        assertTextEntity(e, 400, message)
+        resource.loads.isEmpty()
+
+        where:
+        attributes                                     | restricted | message
+        [:]                                            | false      | "Select at least one attribute to export"
+        ["WaterMeterAsset": []]                        | false      | "Select at least one attribute to export"
+        ["ElectricMeterAsset": ["energy_active_total"]] | false      | "No matched devices of type ElectricMeterAsset"
+        ["ElectricMeterAsset": ["notes"]]              | true       | "No matched devices of type ElectricMeterAsset"
+        ["WaterMeterAsset": ["battery_level"]]         | false      | "Attribute battery_level cannot be exported for WaterMeterAsset"
+    }
+
+    def "a search without matches gives a header-only csv"() {
+        when:
+        Response response = resource.export(request(["WaterMeterAsset": []]))
+        def out = new ByteArrayOutputStream()
+        (response.entity as jakarta.ws.rs.core.StreamingOutput).write(out)
+
+        then:
+        response.status == 200
+        response.getHeaderString("Content-Type") == FleetExporter.CSV_CONTENT_TYPE
+        FleetExporterTest.lines(out.toByteArray()) == ["date,assetId,name,lastReadingAt"]
+        resource.loads.isEmpty()
+    }
+
+    def "only the matched ids of a selected type are loaded, with the selected attributes"() {
+        given:
+        resource.devices = [FleetExporterTest.water("id1", "A"), FleetExporterTest.electric("id2", "E")]
+
+        when:
+        resource.export(request(["WaterMeterAsset": ["currentReading"]]))
+
+        then:
+        resource.loads.size() == 1
+        resource.loads[0].ids as List == ["id1"]
+        resource.loads[0].select.attributes as List == ["currentReading"]
+    }
+
     def "a valid export streams with the plan's content type"() {
         given:
         resource.devices = [FleetExporterTest.water("id1", "A")]
