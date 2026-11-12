@@ -1,0 +1,260 @@
+package org.openremote.manager.iotwatch;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.concurrent.Semaphore;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+
+import org.openremote.model.asset.Asset;
+import org.openremote.model.attribute.Attribute;
+import org.openremote.model.iotwatch.FleetExportRequest;
+import org.openremote.model.value.AttributeDescriptor;
+
+/**
+ * Plans and streams the fleet CSV export: one CSV for a single asset type, a ZIP of CSVs for
+ * several. Validation happens in plan, before anything is read or written; write streams in
+ * batches so memory stays bounded by BATCH_SIZE assets, not by the export size.
+ *
+ * A failure while writing propagates and leaves the output unfinished (no ZIP central directory,
+ * a truncated CSV), so a broken export never looks complete.
+ */
+public class FleetExporter {
+
+    public static final String MAX_ROWS = "OR_IOTWATCH_EXPORT_MAX_ROWS";
+    public static final String MAX_CONCURRENT = "OR_IOTWATCH_EXPORT_MAX_CONCURRENT";
+    public static final int BATCH_SIZE = 50;
+
+    public static final String CSV_CONTENT_TYPE = "text/csv; charset=UTF-8";
+    public static final String ZIP_CONTENT_TYPE = "application/zip";
+
+    /** One asset type's file: its assets sorted by name then id, and the columns in model order. */
+    public record TypeExport(String assetType, List<Asset<?>> assets, List<String> identity, List<String> measurements) {
+    }
+
+    /** A validated export; types sorted by asset type, empty when no device matched. */
+    public record ExportPlan(FleetExportRange range, List<TypeExport> types, Instant exportedAt) {
+
+        public int devices() {
+            return types.stream().mapToInt(type -> type.assets().size()).sum();
+        }
+    }
+
+    private static final Comparator<Asset<?>> BY_NAME_THEN_ID = Comparator
+            .comparing((Asset<?> asset) -> asset.getName(), Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(Asset::getId, Comparator.nullsLast(Comparator.naturalOrder()));
+
+    private final DailyValueRepository repository;
+    private final int maxRows;
+    private final Semaphore permits;
+
+    public FleetExporter(DailyValueRepository repository, int maxRows, int maxConcurrent) {
+        this.repository = repository;
+        this.maxRows = maxRows;
+        this.permits = new Semaphore(maxConcurrent);
+    }
+
+    /**
+     * Validates and orders. assetsByType: the caller-authorized assets of each matched type, loaded with
+     * the selected attributes. Throws IllegalArgumentException (→400) or SecurityException (→403).
+     */
+    public ExportPlan plan(FleetExportRequest request, Map<String, List<Asset<?>>> assetsByType,
+                           boolean restricted, Instant now) {
+        FleetExportRange range = FleetExportRange.parse(request.from, request.to, request.timeZone, now);
+        boolean noDevices = assetsByType == null
+                || assetsByType.values().stream().allMatch(assets -> assets == null || assets.isEmpty());
+        if (noDevices) {
+            return new ExportPlan(range, List.of(), now);
+        }
+
+        // Types with an empty selection are dropped; sorted so the ZIP entry order is stable.
+        Map<String, List<String>> selection = new TreeMap<>();
+        if (request.attributes != null) {
+            request.attributes.forEach((type, names) -> {
+                if (type != null && names != null && !names.isEmpty()) {
+                    selection.put(type, names);
+                }
+            });
+        }
+        if (selection.isEmpty()) {
+            throw new IllegalArgumentException("Select at least one attribute to export");
+        }
+
+        List<TypeExport> types = new ArrayList<>();
+        for (Map.Entry<String, List<String>> entry : selection.entrySet()) {
+            String type = entry.getKey();
+            List<Asset<?>> assets = assetsByType.get(type);
+            if (assets == null || assets.isEmpty()) {
+                throw new IllegalArgumentException("No matched devices of type " + type);
+            }
+            Set<String> requested = new HashSet<>(entry.getValue());
+            List<String> identity = names(FleetExportAttributes.identity(type, false));
+            List<String> measurements = names(FleetExportAttributes.measurements(type, false));
+            Set<String> readable = new HashSet<>(names(FleetExportAttributes.identity(type, true)));
+            readable.addAll(names(FleetExportAttributes.measurements(type, true)));
+            for (String name : requested) {
+                if (name == null || (!identity.contains(name) && !measurements.contains(name))) {
+                    throw new IllegalArgumentException("Attribute " + name + " cannot be exported for " + type);
+                }
+                if (restricted && !readable.contains(name)) {
+                    throw new SecurityException("Attribute " + name + " is not readable for " + type);
+                }
+            }
+            if ((long) assets.size() * range.days() > maxRows) {
+                throw new IllegalArgumentException("Export too large: narrow the search or the date range");
+            }
+            List<Asset<?>> sorted = assets.stream().filter(Objects::nonNull).sorted(BY_NAME_THEN_ID).toList();
+            types.add(new TypeExport(type, sorted,
+                    identity.stream().filter(requested::contains).toList(),
+                    measurements.stream().filter(requested::contains).toList()));
+        }
+        return new ExportPlan(range, List.copyOf(types), now);
+    }
+
+    public boolean tryAcquire() {
+        return permits.tryAcquire();
+    }
+
+    public void release() {
+        permits.release();
+    }
+
+    /** csvName for one type, zipName for several, the ZIP stem + ".csv" for none. */
+    public String fileName(ExportPlan plan) {
+        if (plan.types().size() == 1) {
+            return FleetExportCsv.csvName(plan.types().get(0).assetType(), plan.range(), plan.exportedAt());
+        }
+        String zipName = FleetExportCsv.zipName(plan.range(), plan.exportedAt());
+        if (plan.types().isEmpty()) {
+            return zipName.substring(0, zipName.length() - ".zip".length()) + ".csv";
+        }
+        return zipName;
+    }
+
+    public String contentType(ExportPlan plan) {
+        return plan.types().size() > 1 ? ZIP_CONTENT_TYPE : CSV_CONTENT_TYPE;
+    }
+
+    /** Streams the file; returns the number of data rows written, for the log line. */
+    public long write(ExportPlan plan, OutputStream out) throws IOException {
+        if (plan.types().isEmpty()) {
+            out.write(FleetExportCsv.UTF8_BOM);
+            Writer writer = writer(out);
+            writer.write(FleetExportCsv.line(FleetExportCsv.FIXED_COLUMNS));
+            writer.flush();
+            return 0;
+        }
+        if (plan.types().size() == 1) {
+            out.write(FleetExportCsv.UTF8_BOM);
+            return writeType(plan.range(), plan.types().get(0), writer(out));
+        }
+        // Not closed on purpose: finish() runs only after every entry succeeded, and the caller owns out.
+        ZipOutputStream zip = new ZipOutputStream(out, StandardCharsets.UTF_8);
+        long rows = 0;
+        for (TypeExport type : plan.types()) {
+            zip.putNextEntry(new ZipEntry(FleetExportCsv.csvName(type.assetType(), plan.range(), plan.exportedAt())));
+            zip.write(FleetExportCsv.UTF8_BOM);
+            rows += writeType(plan.range(), type, writer(zip));
+            zip.closeEntry();
+        }
+        zip.finish();
+        out.flush();
+        return rows;
+    }
+
+    private long writeType(FleetExportRange range, TypeExport type, Writer writer) throws IOException {
+        List<String> header = new ArrayList<>(FleetExportCsv.FIXED_COLUMNS);
+        header.addAll(type.identity());
+        header.addAll(type.measurements());
+        writer.write(FleetExportCsv.line(header));
+
+        List<LocalDate> dates = range.dates();
+        long rows = 0;
+        List<Asset<?>> assets = type.assets();
+        for (int from = 0; from < assets.size(); from += BATCH_SIZE) {
+            List<Asset<?>> batch = assets.subList(from, Math.min(from + BATCH_SIZE, assets.size()));
+            List<String> ids = batch.stream().map(Asset::getId).distinct().toList();
+            Map<String, Map<LocalDate, Map<String, DailyRows.Reading>>> daily =
+                    repository.daily(ids, type.measurements(), range);
+            Map<String, Map<String, DailyRows.Reading>> seed = repository.seed(ids, type.measurements(), range);
+
+            for (Asset<?> asset : batch) {
+                // Per-asset readability: a measurement the caller could not load on this asset is
+                // written empty, and the repository's values for it are dropped here.
+                Set<String> readable = new LinkedHashSet<>();
+                type.measurements().stream()
+                        .filter(name -> asset.getAttributes().has(name))
+                        .forEach(readable::add);
+                List<String> measurements = List.copyOf(readable);
+
+                List<String> identityValues = type.identity().stream()
+                        .map(name -> asset.getAttributes().get(name)
+                                .flatMap(Attribute::getValue)
+                                .map(FleetExportCsv::render)
+                                .orElse(""))
+                        .toList();
+
+                List<DailyRows.DailyRow> dailyRows = DailyRows.build(dates, measurements,
+                        onlyReadable(seed.getOrDefault(asset.getId(), Map.of()), readable),
+                        onlyReadableDaily(daily.getOrDefault(asset.getId(), Map.of()), readable));
+                for (DailyRows.DailyRow row : dailyRows) {
+                    List<String> cells = new ArrayList<>(header.size());
+                    cells.add(row.date().toString());
+                    cells.add(asset.getId());
+                    cells.add(asset.getName());
+                    cells.add(FleetExportCsv.instant(row.lastReadingAt()));
+                    cells.addAll(identityValues);
+                    for (String measurement : type.measurements()) {
+                        cells.add(row.values().get(measurement));
+                    }
+                    writer.write(FleetExportCsv.line(cells));
+                    rows++;
+                }
+            }
+            writer.flush();
+        }
+        writer.flush();
+        return rows;
+    }
+
+    private static Map<String, DailyRows.Reading> onlyReadable(Map<String, DailyRows.Reading> readings,
+                                                               Set<String> readable) {
+        Map<String, DailyRows.Reading> result = new HashMap<>();
+        readings.forEach((name, reading) -> {
+            if (readable.contains(name)) {
+                result.put(name, reading);
+            }
+        });
+        return result;
+    }
+
+    private static Map<LocalDate, Map<String, DailyRows.Reading>> onlyReadableDaily(
+            Map<LocalDate, Map<String, DailyRows.Reading>> daily, Set<String> readable) {
+        Map<LocalDate, Map<String, DailyRows.Reading>> result = new HashMap<>();
+        daily.forEach((date, readings) -> result.put(date, onlyReadable(readings, readable)));
+        return result;
+    }
+
+    private static Writer writer(OutputStream out) {
+        return new OutputStreamWriter(out, StandardCharsets.UTF_8);
+    }
+
+    private static List<String> names(List<AttributeDescriptor<?>> descriptors) {
+        return descriptors.stream().map(AttributeDescriptor::getName).toList();
+    }
+}

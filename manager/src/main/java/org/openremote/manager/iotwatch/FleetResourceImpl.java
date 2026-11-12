@@ -12,11 +12,14 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.logging.Logger;
 
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ForbiddenException;
-import jakarta.ws.rs.ServerErrorException;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.StreamingOutput;
 
 import org.openremote.container.timer.TimerService;
 import org.openremote.manager.asset.AssetStorageService;
@@ -36,15 +39,20 @@ import org.openremote.model.query.filter.RealmPredicate;
 
 public class FleetResourceImpl extends ManagerWebResource implements FleetResource {
 
+    private static final Logger LOG = Logger.getLogger(FleetResourceImpl.class.getName());
+
     protected final AssetStorageService assetStorageService;
     protected final FleetColumnResolver columnResolver;
+    protected final FleetExporter exporter;
 
     public FleetResourceImpl(TimerService timerService, ManagerIdentityService identityService,
                              AssetStorageService assetStorageService,
-                             FleetColumnResolver columnResolver) {
+                             FleetColumnResolver columnResolver,
+                             FleetExporter exporter) {
         super(timerService, identityService);
         this.assetStorageService = assetStorageService;
         this.columnResolver = columnResolver;
+        this.exporter = exporter;
     }
 
     /** The devices a search resolves to, before the status filter, sorting and paging. */
@@ -89,7 +97,86 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
 
     @Override
     public Response export(FleetExportRequest request) {
-        throw new ServerErrorException(Response.Status.NOT_IMPLEMENTED);
+        long started = System.currentTimeMillis();
+        if (request == null) {
+            throw new BadRequestException("Export request required");
+        }
+        FleetQuery fleetQuery = request.query == null ? new FleetQuery() : request.query;
+        String realm = realmOf(fleetQuery);
+        validate(fleetQuery);
+
+        Map<String, Set<String>> idsByType = new HashMap<>();
+        matchedRows(fleetQuery, realm).forEach(row ->
+                idsByType.computeIfAbsent(row.type, type -> new LinkedHashSet<>()).add(row.id));
+
+        // Each requested type is reloaded through the caller's authorization with only the selected
+        // attributes, so a restricted caller's asset lacks every attribute it cannot read.
+        Map<String, List<Asset<?>>> assetsByType = new HashMap<>();
+        if (request.attributes != null) {
+            request.attributes.forEach((type, names) -> {
+                Set<String> ids = idsByType.get(type);
+                if (ids == null || names == null || names.isEmpty()) {
+                    return;
+                }
+                String[] select = names.stream().filter(Objects::nonNull).distinct().toArray(String[]::new);
+                AssetQuery assetQuery = new AssetQuery()
+                        .realm(new RealmPredicate(realm))
+                        .ids(ids.toArray(new String[0]))
+                        .select(new AssetQuery.Select().attributes(select));
+                assetsByType.put(type, authorizedFindAll(assetQuery, realm));
+            });
+        }
+
+        FleetExporter.ExportPlan plan;
+        try {
+            plan = exporter.plan(request, assetsByType, isRestrictedUser(),
+                    Instant.ofEpochMilli(timerService.getCurrentTimeMillis()));
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException(e.getMessage());
+        } catch (SecurityException e) {
+            throw new ForbiddenException(e.getMessage());
+        }
+
+        if (!exporter.tryAcquire()) {
+            throw new WebApplicationException(Response.status(429)
+                    .entity("Another export is running, try again in a moment").build());
+        }
+        try {
+            String username = getUsername();
+            StreamingOutput body = out -> {
+                long rows = -1;
+                boolean ok = false;
+                try {
+                    rows = exporter.write(plan, out);
+                    ok = true;
+                } finally {
+                    exporter.release();
+                    logExport(username, realm, plan, rows, started, ok);
+                }
+            };
+            return Response.ok(body)
+                    .header(HttpHeaders.CONTENT_TYPE, exporter.contentType(plan))
+                    .header("Content-Disposition", "attachment; filename=\"" + exporter.fileName(plan) + "\"")
+                    .build();
+        } catch (RuntimeException e) {
+            exporter.release();
+            throw e;
+        }
+    }
+
+    /** One line per export; never values. */
+    protected static void logExport(String username, String realm, FleetExporter.ExportPlan plan,
+                                    long rows, long started, boolean ok) {
+        LOG.info("Fleet export user=" + username
+                + " realm=" + realm
+                + " types=" + String.join(",", plan.types().stream().map(FleetExporter.TypeExport::assetType).toList())
+                + " devices=" + plan.devices()
+                + " from=" + plan.range().from()
+                + " to=" + plan.range().to()
+                + " zone=" + plan.range().zone().getId()
+                + " rows=" + rows
+                + " durationMs=" + (System.currentTimeMillis() - started)
+                + " outcome=" + (ok ? "ok" : "failed"));
     }
 
     /** The query's realm, else the request's. */
