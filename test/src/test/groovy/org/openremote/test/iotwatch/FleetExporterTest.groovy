@@ -5,6 +5,7 @@ import org.openremote.manager.iotwatch.DailyValueRepository
 import org.openremote.manager.iotwatch.FleetExportCsv
 import org.openremote.manager.iotwatch.FleetExportRange
 import org.openremote.manager.iotwatch.FleetExporter
+import org.openremote.manager.iotwatch.FleetResourceImpl
 import org.openremote.model.asset.Asset
 import org.openremote.model.electricmeter.ElectricMeterAsset
 import org.openremote.model.iotwatch.FleetExportRequest
@@ -262,6 +263,56 @@ class FleetExporterTest extends Specification {
         exporter.release()
 
         then:
+        exporter.tryAcquire()
+    }
+
+    /** Records connection aborts instead of touching a real Undertow exchange. */
+    static class AbortRecordingResource extends FleetResourceImpl {
+        int aborts
+
+        AbortRecordingResource(FleetExporter exporter) {
+            super(null, null, null, null, exporter)
+        }
+
+        @Override
+        protected void abortConnection() {
+            aborts++
+        }
+    }
+
+    def "a failed export body aborts the connection, releases the permit and rethrows"() {
+        given:
+        def exporter = new FleetExporter(new FakeRepository(failOn: "currentReading"), 1_000_000, 1)
+        def resource = new AbortRecordingResource(exporter)
+        def plan = exporter.plan(request(["WaterMeterAsset": ["currentReading"]]),
+                ["WaterMeterAsset": [water("id1", "W")]], false, NOW)
+        assert exporter.tryAcquire()
+
+        when:
+        resource.exportBody(plan, "test-user", "test-realm", System.currentTimeMillis())
+                .write(new ByteArrayOutputStream())
+
+        then:
+        thrown(IllegalStateException)
+        resource.aborts == 1
+        exporter.tryAcquire()
+    }
+
+    def "a successful export body leaves the connection alone and releases the permit"() {
+        given:
+        def exporter = new FleetExporter(new FakeRepository(), 1_000_000, 1)
+        def resource = new AbortRecordingResource(exporter)
+        def plan = exporter.plan(request(["WaterMeterAsset": ["currentReading"]]),
+                ["WaterMeterAsset": [water("id1", "W")]], false, NOW)
+        assert exporter.tryAcquire()
+        def out = new ByteArrayOutputStream()
+
+        when:
+        resource.exportBody(plan, "test-user", "test-realm", System.currentTimeMillis()).write(out)
+
+        then:
+        resource.aborts == 0
+        lines(out.toByteArray()).size() == 3
         exporter.tryAcquire()
     }
 }

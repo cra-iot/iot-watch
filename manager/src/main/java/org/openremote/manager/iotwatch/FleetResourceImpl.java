@@ -1,5 +1,6 @@
 package org.openremote.manager.iotwatch;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -14,6 +15,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.logging.Logger;
 
+import io.undertow.servlet.handlers.ServletRequestContext;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.WebApplicationException;
@@ -36,6 +38,7 @@ import org.openremote.model.iotwatch.FleetResource;
 import org.openremote.model.iotwatch.FleetRow;
 import org.openremote.model.query.AssetQuery;
 import org.openremote.model.query.filter.RealmPredicate;
+import org.xnio.IoUtils;
 
 public class FleetResourceImpl extends ManagerWebResource implements FleetResource {
 
@@ -142,18 +145,7 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
                     .entity("Another export is running, try again in a moment").build());
         }
         try {
-            String username = getUsername();
-            StreamingOutput body = out -> {
-                long rows = -1;
-                boolean ok = false;
-                try {
-                    rows = exporter.write(plan, out);
-                    ok = true;
-                } finally {
-                    exporter.release();
-                    logExport(username, realm, plan, rows, started, ok);
-                }
-            };
+            StreamingOutput body = exportBody(plan, getUsername(), realm, started);
             return Response.ok(body)
                     .header(HttpHeaders.CONTENT_TYPE, exporter.contentType(plan))
                     .header("Content-Disposition", "attachment; filename=\"" + exporter.fileName(plan) + "\"")
@@ -161,6 +153,37 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
         } catch (RuntimeException e) {
             exporter.release();
             throw e;
+        }
+    }
+
+    /**
+     * The response body: streams the export, then releases the permit and logs once. On failure the
+     * connection is aborted before the exception propagates: the headers are already sent, and the
+     * container's exception mapper would otherwise end the chunked response normally, leaving the
+     * client a truncated file that looks complete.
+     */
+    protected StreamingOutput exportBody(FleetExporter.ExportPlan plan, String username, String realm, long started) {
+        return out -> {
+            long rows = -1;
+            boolean ok = false;
+            try {
+                rows = exporter.write(plan, out);
+                ok = true;
+            } catch (IOException | RuntimeException | Error e) {
+                abortConnection();
+                throw e;
+            } finally {
+                exporter.release();
+                logExport(username, realm, plan, rows, started, ok);
+            }
+        };
+    }
+
+    /** Closes the current request's connection without ending the response, so the client sees a reset. */
+    protected void abortConnection() {
+        ServletRequestContext context = ServletRequestContext.current();
+        if (context != null) {
+            IoUtils.safeClose(context.getExchange().getConnection());
         }
     }
 
