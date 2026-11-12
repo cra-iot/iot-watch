@@ -215,6 +215,21 @@ class FleetExporterTest extends Specification {
         repository.queried.every { !it.contains("energy_active_t2") }
     }
 
+    def "values are filtered per asset to the attributes it has"() {
+        given:
+        def withT2 = electric("id1", "A")
+        def withoutT2 = electric("id2", "B")
+        withoutT2.getAttributes().remove("energy_active_t2")
+        def plan = planFor(exporter, request("ElectricMeterAsset"), ["ElectricMeterAsset": [withT2, withoutT2]])
+
+        when:
+        def lines = lines(export(plan))
+
+        then:
+        lines[1] == "2026-10-01,id1,A,,TEST-EUI-id1,,,2026-09-30T23:00:00Z,5,10,5,5,10,5,5,10,5"
+        lines[3] == "2026-10-01,id2,B,,TEST-EUI-id2,,,2026-09-30T23:00:00Z,5,10,5,5,10,5,,,"
+    }
+
     def "end_reading_at follows the first group the asset has"() {
         given:
         def meter = electric("id1", "E")
