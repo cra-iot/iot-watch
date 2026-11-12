@@ -29,7 +29,8 @@ export class OrFleetExportFormChangeEvent extends CustomEvent<FleetExportChoice>
 }
 
 const REPORTS = [FleetExportReport.MONTHLY, FleetExportReport.DAILY];
-const DEFAULT_MAX_MONTHS = 24;
+/** How many months the custom monthly range offers, newest first; the range length limit is separate. */
+const CUSTOM_MONTHS_BACK = 60;
 
 const t = (key: string, options?: Record<string, unknown>) => i18next.t(`app:fleet.export.${key}`, options);
 
@@ -183,7 +184,7 @@ export class OrFleetExportForm extends translateMixin(i18next)(OrElement) {
         const setTo = (e: CustomEvent) => { this.customTo = e.detail.value ?? ""; };
         if (this.report === FleetExportReport.MONTHLY) {
             const format = new Intl.DateTimeFormat(i18next.language, { month: "long", year: "numeric", timeZone: "UTC" });
-            const months = recentMonths(String(this.options.lastMonth), this.options.maxMonths ?? DEFAULT_MAX_MONTHS)
+            const months = recentMonths(String(this.options.lastMonth), CUSTOM_MONTHS_BACK)
                 .map((month) => ({ label: format.format(utcDate(month)), value: month }));
             return html`
                 <div class="range">

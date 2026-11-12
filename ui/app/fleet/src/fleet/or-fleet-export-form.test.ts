@@ -100,15 +100,20 @@ describe("or-fleet-export-form", () => {
     it("offers months up to last month for a custom monthly range and reports problems", async () => {
         const { form, changes } = await mount({ options: OPTIONS, period: "custom" });
         const from = items(form, "or-vaadin-select.from");
-        expect(from).toHaveLength(24);
+        expect(from).toHaveLength(60);
         expect(from[0].value).toBe("2026-10-01");
-        expect(from[23].value).toBe("2024-11-01");
+        expect(from[59].value).toBe("2021-11-01");
         expect(last(changes)).toMatchObject({ period: "custom", from: "2026-10-01", to: "2026-10-01" });
 
         change($(form, "or-vaadin-select.from")!, "2026-09-01");
         change($(form, "or-vaadin-select.to")!, "2026-08-01");
         await settle(form);
         expect(last(changes)).toMatchObject({ from: "2026-09-01", to: "2026-08-01", problem: "app:fleet.export.error.order" });
+
+        change($(form, "or-vaadin-select.from")!, "2024-10-01");
+        change($(form, "or-vaadin-select.to")!, "2026-10-01");
+        await settle(form);
+        expect(last(changes)).toMatchObject({ from: "2024-10-01", to: "2026-10-01", problem: "app:fleet.export.error.tooLong" });
     });
 
     it("offers date pickers up to last day for a custom daily range", async () => {
