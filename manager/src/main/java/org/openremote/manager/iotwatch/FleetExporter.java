@@ -5,6 +5,7 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -17,7 +18,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
-import java.util.concurrent.Semaphore;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.LongSupplier;
 import java.util.logging.Logger;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -39,6 +42,8 @@ public class FleetExporter {
 
     public static final String MAX_ROWS = "OR_IOTWATCH_EXPORT_MAX_ROWS";
     public static final String MAX_CONCURRENT = "OR_IOTWATCH_EXPORT_MAX_CONCURRENT";
+    public static final String PERMIT_TIMEOUT_MINUTES = "OR_IOTWATCH_EXPORT_PERMIT_TIMEOUT_MINUTES";
+    public static final int DEFAULT_PERMIT_TIMEOUT_MINUTES = 60;
     public static final int BATCH_SIZE = 50;
 
     public static final String CSV_CONTENT_TYPE = "text/csv; charset=UTF-8";
@@ -68,15 +73,49 @@ public class FleetExporter {
 
     private final DailyValueRepository repository;
     private final int maxRows;
-    private final Semaphore permits;
+    private final int maxConcurrent;
+    private final long permitTimeoutNanos;
+    private final LongSupplier nanoClock;
+    private final Set<Permit> permits = ConcurrentHashMap.newKeySet();
 
     public FleetExporter(DailyValueRepository repository, int maxRows, int maxConcurrent) {
+        this(repository, maxRows, maxConcurrent, Duration.ofMinutes(DEFAULT_PERMIT_TIMEOUT_MINUTES), System::nanoTime);
+    }
+
+    public FleetExporter(DailyValueRepository repository, int maxRows, int maxConcurrent,
+                         Duration permitTimeout, LongSupplier nanoClock) {
         this.repository = repository;
         this.maxRows = maxRows;
         if (maxConcurrent < 1) {
             LOG.warning(MAX_CONCURRENT + "=" + maxConcurrent + " is below 1, using 1");
         }
-        this.permits = new Semaphore(Math.max(1, maxConcurrent));
+        this.maxConcurrent = Math.max(1, maxConcurrent);
+        if (permitTimeout.compareTo(Duration.ofMinutes(1)) < 0) {
+            LOG.warning(PERMIT_TIMEOUT_MINUTES + "=" + permitTimeout.toMinutes() + " is below 1, using 1");
+        }
+        this.permitTimeoutNanos = Math.max(Duration.ofMinutes(1).toNanos(), permitTimeout.toNanos());
+        this.nanoClock = nanoClock;
+    }
+
+    /**
+     * A concurrent-export slot. Closing it twice, or after it expired, is a no-op, so a late
+     * close never frees a slot another export holds.
+     */
+    public final class Permit implements AutoCloseable {
+
+        private final long acquiredAt;
+        private final AtomicBoolean closed = new AtomicBoolean();
+
+        private Permit(long acquiredAt) {
+            this.acquiredAt = acquiredAt;
+        }
+
+        @Override
+        public void close() {
+            if (closed.compareAndSet(false, true)) {
+                permits.remove(this);
+            }
+        }
     }
 
     /** Loads the caller-authorized assets among ids, with only the given attributes. */
@@ -91,7 +130,8 @@ public class FleetExporter {
      * whole selection is validated before anything is loaded: no selection, a type the search
      * did not match or an attribute that cannot be exported throw IllegalArgumentException
      * (→400), an attribute a restricted caller cannot read throws SecurityException (→403).
-     * Each selected type is then loaded once through loader with its matched ids.
+     * Each selected type is then loaded once through loader with its matched ids. The fleet app
+     * translates these messages by their wording (fleet-export.ts, serverProblem).
      */
     public ExportPlan plan(FleetExportRequest request, Map<String, Set<String>> matchedIds, AssetLoader loader,
                            boolean restricted, Instant now) {
@@ -158,12 +198,29 @@ public class FleetExporter {
                                  List<String> identity, List<String> measurements) {
     }
 
-    public boolean tryAcquire() {
-        return permits.tryAcquire();
-    }
-
-    public void release() {
-        permits.release();
+    /**
+     * A slot for one export, or null while maxConcurrent exports run. A slot held longer than the
+     * permit timeout is reclaimed first: the response body that would close it may never run (a
+     * writer or filter failing before it), and a lost slot would otherwise block exports until
+     * the manager restarts. An export that genuinely runs longer only loses its slot, not its data.
+     */
+    public synchronized Permit tryAcquire() {
+        long now = nanoClock.getAsLong();
+        permits.removeIf(permit -> {
+            if (now - permit.acquiredAt < permitTimeoutNanos) {
+                return false;
+            }
+            LOG.warning("Fleet export slot held for over " + Duration.ofNanos(permitTimeoutNanos).toMinutes()
+                    + " minutes, reclaiming it");
+            permit.closed.set(true);
+            return true;
+        });
+        if (permits.size() >= maxConcurrent) {
+            return null;
+        }
+        Permit permit = new Permit(now);
+        permits.add(permit);
+        return permit;
     }
 
     /** csvName for one type, zipName for several, the ZIP stem + ".csv" for none. */

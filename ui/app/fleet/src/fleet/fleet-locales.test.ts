@@ -16,7 +16,8 @@ describe("locales", () => {
         it(`${lang} has every export text`, () => {
             const fleet = JSON.parse(readFileSync(new URL(`../../locales/${lang}/app.json`, import.meta.url), "utf-8")).fleet;
             const keys = ["button", "title", "help", "from", "to", "utc", "identity", "measurements", "all", "none", "cancel", "export", "exporting", "noTypes",
-                "error.missing", "error.order", "error.future", "error.tooLong", "error.busy", "error.failed"];
+                "error.missing", "error.order", "error.future", "error.tooLong", "error.busy", "error.failed",
+                "error.nothingSelected", "error.noDevices", "error.notExportable", "error.notReadable", "error.tooLarge"];
             for (const key of keys) {
                 const value = key.split(".").reduce((node: any, part) => node?.[part], fleet?.export);
                 expect(value, `fleet.export.${key}`).toBeTruthy();

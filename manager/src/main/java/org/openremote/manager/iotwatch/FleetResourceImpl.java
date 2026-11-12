@@ -102,6 +102,20 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
     @Override
     public Response export(FleetExportRequest request) {
         long started = System.currentTimeMillis();
+        String realm = null;
+        try {
+            if (request != null) {
+                realm = realmOf(request.query == null ? new FleetQuery() : request.query);
+            }
+            return startExport(request, started);
+        } catch (WebApplicationException e) {
+            // A rejected export still gets its one log line; an accepted one logs when its body ends.
+            logRejected(getUsername(), realm, e.getResponse(), started);
+            throw e;
+        }
+    }
+
+    protected Response startExport(FleetExportRequest request, long started) {
         if (request == null) {
             throw badRequest("Export request required");
         }
@@ -130,29 +144,31 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
             throw forbidden(e.getMessage());
         }
 
-        if (!exporter.tryAcquire()) {
-            throw new WebApplicationException(Response.status(429)
-                    .entity("Another export is running, try again in a moment").build());
+        FleetExporter.Permit permit = exporter.tryAcquire();
+        if (permit == null) {
+            throw new WebApplicationException(textResponse(Response.Status.TOO_MANY_REQUESTS,
+                    "Another export is running, try again in a moment"));
         }
         try {
-            StreamingOutput body = exportBody(plan, getUsername(), realm, started);
+            StreamingOutput body = exportBody(plan, permit, getUsername(), realm, started);
             return Response.ok(body)
                     .header(HttpHeaders.CONTENT_TYPE, exporter.contentType(plan))
                     .header("Content-Disposition", "attachment; filename=\"" + exporter.fileName(plan) + "\"")
                     .build();
         } catch (RuntimeException e) {
-            exporter.release();
+            permit.close();
             throw e;
         }
     }
 
     /**
-     * The response body: streams the export, then releases the permit and logs once. On failure the
+     * The response body: streams the export, then closes the permit and logs once. On failure the
      * connection is aborted before the exception propagates: the headers are already sent, and the
      * container's exception mapper would otherwise end the chunked response normally, leaving the
      * client a truncated file that looks complete.
      */
-    protected StreamingOutput exportBody(FleetExporter.ExportPlan plan, String username, String realm, long started) {
+    protected StreamingOutput exportBody(FleetExporter.ExportPlan plan, FleetExporter.Permit permit,
+                                         String username, String realm, long started) {
         return out -> {
             long rows = -1;
             boolean ok = false;
@@ -163,7 +179,7 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
                 abortConnection();
                 throw e;
             } finally {
-                exporter.release();
+                permit.close();
                 logExport(username, realm, plan, rows, started, ok);
             }
         };
@@ -190,6 +206,20 @@ public class FleetResourceImpl extends ManagerWebResource implements FleetResour
                 + " rows=" + rows
                 + " durationMs=" + (System.currentTimeMillis() - started)
                 + " outcome=" + (ok ? "ok" : "failed"));
+    }
+
+    /**
+     * The one line of an export rejected before streaming; the reason is the response's message,
+     * which can echo request input, so control characters are replaced to keep it one line.
+     */
+    protected static void logRejected(String username, String realm, Response response, long started) {
+        Object reason = response.getEntity();
+        LOG.info("Fleet export user=" + username
+                + " realm=" + realm
+                + " status=" + response.getStatus()
+                + " reason=" + (reason instanceof String text ? text.replaceAll("\\p{Cntrl}", "?") : "")
+                + " durationMs=" + (System.currentTimeMillis() - started)
+                + " outcome=rejected");
     }
 
     /** The manager clock's current instant. */

@@ -20,7 +20,10 @@ public record FleetExportRange(LocalDate from, LocalDate to, ZoneId zone, Instan
 
     public static final int MAX_DAYS = 366;
 
-    /** Throws IllegalArgumentException with a user-readable message. timeZone null/blank = UTC. */
+    /**
+     * Throws IllegalArgumentException with a user-readable message, which the fleet app translates
+     * by its wording (fleet-export.ts, serverProblem). timeZone null/blank = UTC.
+     */
     public static FleetExportRange parse(String from, String to, String timeZone, Instant now) {
         ZoneId zone;
         LocalDate fromDate;

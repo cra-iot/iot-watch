@@ -15,6 +15,13 @@ class FleetExportCsvTest extends Specification {
         FleetExportCsv.line(["a,b", 'say "hi"', "x\ny", "Příkon", null]) == '"a,b","say ""hi""","x\ny",Příkon,\r\n'
     }
 
+    def "neutralizes text cells a spreadsheet would run as formulas"() {
+        expect:
+        FleetExportCsv.line(["=1+2", "+cmd", "-1+cmd|x", "@SUM(A1)", "\tx", "-5", "+5", "-0.25", "a=b", ""]) ==
+                "'=1+2,'+cmd,'-1+cmd|x,'@SUM(A1),'\tx,-5,+5,-0.25,a=b,\r\n"
+        FleetExportCsv.line(["=a,b"]) == '"\'=a,b"\r\n'
+    }
+
     def "renders values"() {
         expect:
         FleetExportCsv.render(12.0d) == "12"

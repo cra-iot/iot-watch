@@ -135,7 +135,12 @@
         "future": "De einddatum mag niet na de laatste volledige UTC-dag liggen.",
         "tooLong": "Het bereik is te lang (maximaal 366 dagen).",
         "busy": "Er loopt al een export. Probeer het zo opnieuw.",
-        "failed": "De export is mislukt. Probeer het opnieuw."
+        "failed": "De export is mislukt. Probeer het opnieuw.",
+        "nothingSelected": "Selecteer ten minste één attribuut om te exporteren.",
+        "noDevices": "De zoekopdracht vindt geen apparaten van type {{type}} meer. Sluit dit venster en exporteer opnieuw.",
+        "notExportable": "Attribuut {{attribute}} kan niet worden geëxporteerd voor {{type}}. Sluit dit venster en exporteer opnieuw.",
+        "notReadable": "U hebt geen toegang tot attribuut {{attribute}} van {{type}}.",
+        "tooLarge": "De export is te groot. Verfijn de zoekopdracht of het datumbereik."
       }
     },
     "updated": {

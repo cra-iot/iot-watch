@@ -8,6 +8,7 @@ import type { FleetQuery, FleetQueryResult } from "model";
 // client and has no FleetResource.
 import rest from "rest";
 import { resolveHidden } from "../fleet/fleet-columns";
+import { toExportQuery } from "../fleet/fleet-export";
 import { DEFAULT_PAGE_SIZE, parsePageSize } from "../fleet/fleet-pager";
 import {
     fromUrlParams, mergeSiteOptions, readingFollowUp, singlePrimaryRegister, textValues, toFleetQuery, toUrlParams,
@@ -266,10 +267,7 @@ export class PageFleet extends Page<AppStateKeyed> {
     }
 
     protected _openExport(): void {
-        // The filter only: paging, sorting and grouping do not shape an export.
-        const query = toFleetQuery(this._tokens, {});
-        if (this._realm) { query.realm = this._realm; }
-        this._exportQuery = query;
+        this._exportQuery = toExportQuery(this._tokens, this._result?.columns, this._realm);
         this._exportOpen = true;
     }
 

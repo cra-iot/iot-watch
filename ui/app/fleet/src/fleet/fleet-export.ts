@@ -1,4 +1,5 @@
 import type { FleetExportOptions, FleetExportRequest, FleetQuery } from "model";
+import { singlePrimaryRegister, toFleetQuery, type Token } from "./fleet-tokens";
 
 export const MAX_DAYS = 366;
 export const SELECTION_KEY = "fleet.export.selection";
@@ -47,6 +48,18 @@ export function initialSelection(options: FleetExportOptions, remembered?: Selec
     return selection;
 }
 
+/**
+ * The search's filter for an export: paging, sorting and grouping do not shape it. A reading:
+ * token needs the primary register the current result reports, exactly as the search uses it.
+ */
+export function toExportQuery(tokens: Token[], columns: { name?: string; primary?: boolean }[] | undefined,
+                              realm?: string): FleetQuery {
+    const primaryRegister = singlePrimaryRegister(columns);
+    const query = toFleetQuery(tokens, primaryRegister ? { primaryRegister } : {});
+    if (realm) { query.realm = realm; }
+    return query;
+}
+
 export function toExportRequest(query: FleetQuery, from: string, to: string, selection: Selection): FleetExportRequest {
     const { text, types, parentIds, recursive, attributes, seen, status, realm } = query;
     const filter: FleetQuery = { text, types, parentIds, recursive, attributes, seen, status, realm };
@@ -78,4 +91,33 @@ export function fallbackFileName(from: string, to: string, contentType: string |
 /** First..last day of maxTo's month, capped at maxTo. */
 export function defaultRange(maxTo: string): { from: string; to: string } {
     return { from: `${maxTo.slice(0, 7)}-01`, to: maxTo };
+}
+
+/** A server message in the user's language: a translation key and its options. */
+export type ServerProblem = { key: string; options?: Record<string, string> };
+
+/**
+ * The export's 400/403 messages the dialog translates. The wording comes from FleetExporter.plan
+ * and FleetExportRange.parse; keep both sides in step. Anything else is shown as sent.
+ */
+const SERVER_PROBLEMS: { pattern: RegExp; key: string; names: string[] }[] = [
+    { pattern: /^Select at least one attribute to export$/, key: "nothingSelected", names: [] },
+    { pattern: /^No matched devices of type (.+)$/, key: "noDevices", names: ["type"] },
+    { pattern: /^Attribute (.+?) cannot be exported for (.+)$/, key: "notExportable", names: ["attribute", "type"] },
+    { pattern: /^Attribute (.+?) is not readable for (.+)$/, key: "notReadable", names: ["attribute", "type"] },
+    { pattern: /^Export too large: narrow the search or the date range$/, key: "tooLarge", names: [] },
+    { pattern: /^The first day must not be after the last day$/, key: "order", names: [] },
+    { pattern: /^The last day must be yesterday or earlier$/, key: "future", names: [] },
+    { pattern: /^The range must not exceed \d+ days$/, key: "tooLong", names: [] },
+];
+
+export function serverProblem(text: string): ServerProblem | undefined {
+    for (const { pattern, key, names } of SERVER_PROBLEMS) {
+        const match = text.match(pattern);
+        if (match) {
+            const options = Object.fromEntries(names.map((name, i) => [name, match[i + 1]]));
+            return names.length ? { key: `app:fleet.export.error.${key}`, options } : { key: `app:fleet.export.error.${key}` };
+        }
+    }
+    return undefined;
 }

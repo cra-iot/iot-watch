@@ -1,5 +1,7 @@
 package org.openremote.manager.iotwatch;
 
+import java.time.Duration;
+
 import org.openremote.container.persistence.PersistenceService;
 import org.openremote.container.timer.TimerService;
 import org.openremote.manager.asset.AssetStorageService;
@@ -20,7 +22,10 @@ public class IotWatchFleetService implements ContainerService {
                 new DailyValueRepository(container.getService(PersistenceService.class),
                         MapAccess.getInteger(config, AssetDatapointService.OR_DATA_POINTS_MAX_AGE_WEEKS, -1)),
                 MapAccess.getInteger(config, FleetExporter.MAX_ROWS, 1_000_000),
-                MapAccess.getInteger(config, FleetExporter.MAX_CONCURRENT, 2));
+                MapAccess.getInteger(config, FleetExporter.MAX_CONCURRENT, 2),
+                Duration.ofMinutes(MapAccess.getInteger(config, FleetExporter.PERMIT_TIMEOUT_MINUTES,
+                        FleetExporter.DEFAULT_PERMIT_TIMEOUT_MINUTES)),
+                System::nanoTime);
         container.getService(ManagerWebService.class).addApiSingleton(
                 new FleetResourceImpl(
                         container.getService(TimerService.class),

@@ -6,7 +6,8 @@ import type { FleetExportOptions, FleetExportOptionsAttribute, FleetExportOption
 // The project's generated client, as in page-fleet.
 import rest from "rest";
 import {
-    defaultRange, fallbackFileName, fileNameFrom, initialSelection, rangeError, SELECTION_KEY, toExportRequest, type Selection,
+    defaultRange, fallbackFileName, fileNameFrom, initialSelection, rangeError, SELECTION_KEY, serverProblem, toExportRequest,
+    type Selection,
 } from "./fleet-export";
 
 export class OrFleetExportCloseEvent extends CustomEvent<undefined> {
@@ -17,8 +18,8 @@ export class OrFleetExportCloseEvent extends CustomEvent<undefined> {
     }
 }
 
-/** A message to show: a translation key, or text the server sent. */
-type Problem = { key: string } | { text: string };
+/** A message to show: a translation key with its options, or text the server sent. */
+type Problem = { key: string; options?: Record<string, string> } | { text: string };
 
 function readRemembered(): Selection | undefined {
     try {
@@ -161,7 +162,7 @@ export class OrFleetExportDialog extends translateMixin(i18next)(OrElement) {
                 // With responseType blob the message body is a Blob.
                 const data = e.response.data;
                 const text = (typeof data === "string" ? data : await data?.text?.())?.trim();
-                if (text) { return { text }; }
+                if (text) { return serverProblem(text) ?? { text }; }
             } catch {
                 // Unreadable body: the generic message applies.
             }
@@ -254,7 +255,7 @@ export class OrFleetExportDialog extends translateMixin(i18next)(OrElement) {
                     ${this._busy ? html`<or-translate value="app:fleet.export.exporting"></or-translate>` : nothing}
                 </div>
                 <div class="error" role="alert">
-                    ${problem ? ("key" in problem ? html`<or-translate value=${problem.key}></or-translate>` : problem.text) : nothing}
+                    ${problem ? ("key" in problem ? html`<or-translate value=${problem.key} .options=${problem.options}></or-translate>` : problem.text) : nothing}
                 </div>
                 <div class="actions">
                     <button type="button" class="cancel" ?disabled=${this._busy} @click=${() => this._close()}><or-translate value="app:fleet.export.cancel"></or-translate></button>

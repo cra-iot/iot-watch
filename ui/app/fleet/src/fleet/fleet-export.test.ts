@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { FleetExportOptions, FleetQuery } from "model";
-import { defaultRange, fallbackFileName, fileNameFrom, initialSelection, rangeError, toExportRequest } from "./fleet-export";
+import {
+    defaultRange, fallbackFileName, fileNameFrom, initialSelection, rangeError, serverProblem, toExportQuery, toExportRequest,
+} from "./fleet-export";
+import type { Token } from "./fleet-tokens";
 
 const MAX = "2026-11-11";
 
@@ -109,5 +112,45 @@ describe("fallbackFileName", () => {
 describe("defaultRange", () => {
     it("spans the month of maxTo up to maxTo", () => {
         expect(defaultRange("2026-11-11")).toEqual({ from: "2026-11-01", to: "2026-11-11" });
+    });
+});
+
+describe("toExportQuery", () => {
+    const tokens: Token[] = [
+        { kind: "type", value: "WaterMeterAsset" },
+        { kind: "reading", operator: "GREATER_THAN", value: "1000" },
+    ];
+
+    it("keeps a reading filter with the result's primary register, as the search does", () => {
+        const query = toExportQuery(tokens, [{ name: "currentReading", primary: true }, { name: "devEui" }], "acme");
+        expect(query.attributes).toEqual([{ name: "currentReading", operator: "GREATER_THAN", value: 1000 }]);
+        expect(query.realm).toBe("acme");
+    });
+
+    it("drops the reading filter, like the search, when no single primary register is known", () => {
+        expect(toExportQuery(tokens, undefined).attributes ?? []).toEqual([]);
+    });
+
+    it("carries no paging, sorting or grouping", () => {
+        const query = toExportQuery(tokens, undefined);
+        for (const key of ["offset", "limit", "sort", "groupBy", "collapsed", "columns"]) {
+            expect(query).not.toHaveProperty(key);
+        }
+    });
+});
+
+describe("serverProblem", () => {
+    it("translates the export's known messages, with their names", () => {
+        expect(serverProblem("Export too large: narrow the search or the date range"))
+            .toEqual({ key: "app:fleet.export.error.tooLarge" });
+        expect(serverProblem("Attribute devEui is not readable for WaterMeterAsset"))
+            .toEqual({ key: "app:fleet.export.error.notReadable", options: { attribute: "devEui", type: "WaterMeterAsset" } });
+        expect(serverProblem("No matched devices of type GasMeterAsset"))
+            .toEqual({ key: "app:fleet.export.error.noDevices", options: { type: "GasMeterAsset" } });
+        expect(serverProblem("The range must not exceed 366 days")).toEqual({ key: "app:fleet.export.error.tooLong" });
+    });
+
+    it("leaves other messages to be shown as sent", () => {
+        expect(serverProblem("Unknown status: sleeping")).toBeUndefined();
     });
 });

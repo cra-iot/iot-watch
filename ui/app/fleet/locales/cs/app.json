@@ -183,7 +183,12 @@
         "future": "Koncové datum nesmí být po posledním dokončeném dni UTC.",
         "tooLong": "Rozsah je příliš dlouhý (nejvýše 366 dnů).",
         "busy": "Probíhá jiný export. Zkuste to za chvíli znovu.",
-        "failed": "Export se nezdařil. Zkuste to znovu."
+        "failed": "Export se nezdařil. Zkuste to znovu.",
+        "nothingSelected": "Vyberte alespoň jeden atribut k exportu.",
+        "noDevices": "Vyhledávání už neodpovídá žádnému zařízení typu {{type}}. Zavřete tento dialog a exportujte znovu.",
+        "notExportable": "Atribut {{attribute}} nelze u typu {{type}} exportovat. Zavřete tento dialog a exportujte znovu.",
+        "notReadable": "Nemáte přístup k atributu {{attribute}} typu {{type}}.",
+        "tooLarge": "Export je příliš velký. Zužte vyhledávání nebo rozsah dat."
       }
     },
     "updated": {

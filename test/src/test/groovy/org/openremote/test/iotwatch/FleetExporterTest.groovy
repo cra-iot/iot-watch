@@ -15,8 +15,10 @@ import org.openremote.model.watermeter.WaterMeterAsset
 import spock.lang.Specification
 
 import java.nio.charset.StandardCharsets
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.util.function.LongSupplier
 import java.util.zip.ZipInputStream
 
 class FleetExporterTest extends Specification {
@@ -205,8 +207,8 @@ class FleetExporterTest extends Specification {
         def exporter = new FleetExporter(new FakeRepository(), 1_000_000, configured)
 
         expect:
-        exporter.tryAcquire()
-        !exporter.tryAcquire()
+        exporter.tryAcquire() != null
+        exporter.tryAcquire() == null
 
         where:
         configured << [0, -3]
@@ -380,15 +382,58 @@ class FleetExporterTest extends Specification {
         given:
         def exporter = new FleetExporter(new FakeRepository(), 1_000_000, 1)
 
+        def permit = exporter.tryAcquire()
+
         expect:
-        exporter.tryAcquire()
-        !exporter.tryAcquire()
+        permit != null
+        exporter.tryAcquire() == null
 
         when:
-        exporter.release()
+        permit.close()
 
         then:
+        exporter.tryAcquire() != null
+    }
+
+    def "closing a permit twice frees only its own slot"() {
+        given:
+        def exporter = new FleetExporter(new FakeRepository(), 1_000_000, 2)
+        def first = exporter.tryAcquire()
         exporter.tryAcquire()
+
+        when:
+        first.close()
+        first.close()
+
+        then:
+        exporter.tryAcquire() != null
+        exporter.tryAcquire() == null
+    }
+
+    def "a permit held past the timeout is reclaimed, and its late close frees nothing"() {
+        given:
+        long now = 0
+        def exporter = new FleetExporter(new FakeRepository(), 1_000_000, 1, Duration.ofMinutes(60), { now } as LongSupplier)
+        def lost = exporter.tryAcquire()
+
+        when:
+        now = Duration.ofMinutes(59).toNanos()
+
+        then:
+        exporter.tryAcquire() == null
+
+        when:
+        now = Duration.ofMinutes(60).toNanos()
+        def next = exporter.tryAcquire()
+
+        then:
+        next != null
+
+        when:
+        lost.close()
+
+        then:
+        exporter.tryAcquire() == null
     }
 
     /** Records connection aborts instead of touching a real Undertow exchange. */
@@ -411,16 +456,17 @@ class FleetExporterTest extends Specification {
         def resource = new AbortRecordingResource(exporter)
         def plan = planFor(exporter, request(["WaterMeterAsset": ["currentReading"]]),
                 ["WaterMeterAsset": [water("id1", "W")]], false)
-        assert exporter.tryAcquire()
+        def permit = exporter.tryAcquire()
+        assert permit != null
 
         when:
-        resource.exportBody(plan, "test-user", "test-realm", System.currentTimeMillis())
+        resource.exportBody(plan, permit, "test-user", "test-realm", System.currentTimeMillis())
                 .write(new ByteArrayOutputStream())
 
         then:
         thrown(IllegalStateException)
         resource.aborts == 1
-        exporter.tryAcquire()
+        exporter.tryAcquire() != null
     }
 
     def "a successful export body leaves the connection alone and releases the permit"() {
@@ -429,15 +475,16 @@ class FleetExporterTest extends Specification {
         def resource = new AbortRecordingResource(exporter)
         def plan = planFor(exporter, request(["WaterMeterAsset": ["currentReading"]]),
                 ["WaterMeterAsset": [water("id1", "W")]], false)
-        assert exporter.tryAcquire()
+        def permit = exporter.tryAcquire()
+        assert permit != null
         def out = new ByteArrayOutputStream()
 
         when:
-        resource.exportBody(plan, "test-user", "test-realm", System.currentTimeMillis()).write(out)
+        resource.exportBody(plan, permit, "test-user", "test-realm", System.currentTimeMillis()).write(out)
 
         then:
         resource.aborts == 0
         lines(out.toByteArray()).size() == 3
-        exporter.tryAcquire()
+        exporter.tryAcquire() != null
     }
 }

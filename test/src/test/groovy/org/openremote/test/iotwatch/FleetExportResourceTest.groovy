@@ -213,4 +213,42 @@ class FleetExportResourceTest extends Specification {
         response.getHeaderString("Content-Type") == FleetExporter.CSV_CONTENT_TYPE
         FleetExporterTest.lines(out.toByteArray()).size() == 3
     }
+
+    def "a busy exporter is a 429 carrying its message as text"() {
+        given:
+        resource.devices = [FleetExporterTest.water("id1", "A")]
+        def busy = new FleetExporter(new FleetExporterTest.FakeRepository(), 1_000_000, 1)
+        def busyResource = new StubResource(busy)
+        busyResource.devices = resource.devices
+        assert busy.tryAcquire() != null
+
+        when:
+        busyResource.export(request(["WaterMeterAsset": ["currentReading"]]))
+
+        then:
+        def e = thrown(WebApplicationException)
+        assertTextEntity(e, 429, "Another export is running, try again in a moment")
+    }
+
+    def "a rejected export is logged with its status and reason"() {
+        given:
+        def records = []
+        def handler = new java.util.logging.Handler() {
+            void publish(java.util.logging.LogRecord record) { records << record.message }
+            void flush() {}
+            void close() {}
+        }
+        def logger = java.util.logging.Logger.getLogger(FleetResourceImpl.name)
+        logger.addHandler(handler)
+
+        when:
+        resource.export(null)
+
+        then:
+        thrown(BadRequestException)
+        records.any { it.contains("status=400") && it.contains("reason=Export request required") && it.contains("outcome=rejected") }
+
+        cleanup:
+        logger.removeHandler(handler)
+    }
 }

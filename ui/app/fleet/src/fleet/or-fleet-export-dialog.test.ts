@@ -114,6 +114,19 @@ describe("or-fleet-export-dialog", () => {
         expect(problem(element)).toBe("app:fleet.export.error.busy");
     });
 
+    it("translates a known server message and shows an unknown one as sent", async () => {
+        const element = await mount();
+        api.export.mockRejectedValue({ response: { status: 400, data: "Export too large: narrow the search or the date range" } });
+        exportButton(element).click();
+        await settle(element);
+        expect(problem(element)).toBe("app:fleet.export.error.tooLarge");
+
+        api.export.mockRejectedValue({ response: { status: 400, data: "Unknown status: sleeping" } });
+        exportButton(element).click();
+        await settle(element);
+        expect($(element, ".error")!.textContent!.trim()).toBe("Unknown status: sleeping");
+    });
+
     it("keeps the remembered choices of types that are not in this search", async () => {
         window.localStorage.setItem("fleet.export.selection", JSON.stringify({ GasMeterAsset: ["devEui"] }));
         const element = await mount();

@@ -179,7 +179,12 @@
         "future": "The end date must not be after the last complete UTC day.",
         "tooLong": "The range is too long (at most 366 days).",
         "busy": "Another export is running. Try again in a moment.",
-        "failed": "The export failed. Try again."
+        "failed": "The export failed. Try again.",
+        "nothingSelected": "Select at least one attribute to export.",
+        "noDevices": "The search no longer matches devices of type {{type}}. Close this dialog and export again.",
+        "notExportable": "Attribute {{attribute}} cannot be exported for {{type}}. Close this dialog and export again.",
+        "notReadable": "You do not have access to attribute {{attribute}} of {{type}}.",
+        "tooLarge": "The export is too large. Narrow the search or the date range."
       }
     },
     "updated": {
