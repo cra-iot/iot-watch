@@ -19,6 +19,8 @@ import org.openremote.model.iotwatch.FleetColumns;
  * RFC 4180 (only when needed), lines end with CRLF, and values are rendered the same way for
  * every column so a spreadsheet never sees scientific notation. A text cell a spreadsheet would
  * run as a formula gets a leading apostrophe (OWASP CSV injection); numbers are left as they are.
+ * Excel in a locale whose list separator is a semicolon (Czech included) splits a double-clicked
+ * file on ';', so a formula start right after a semicolon gets the apostrophe as well.
  */
 public final class FleetExportCsv {
 
@@ -29,6 +31,12 @@ public final class FleetExportCsv {
     public static final List<String> GROUP_PARTS = List.of("start", "end", "consumption");
 
     private static final String FORMULA_START = "=+-@\t\r";
+
+    /**
+     * A semicolon a semicolon-separated reading would start a formula cell after; a quote counts
+     * too, as such a cell could unquote to a formula, unless it closes the cell.
+     */
+    private static final Pattern SEMICOLON_FORMULA = Pattern.compile(";(?=[=+\\-@\t\r]|\"(?!$))");
 
     /** A cell that is exactly one Excel string literal, as text() writes it; it evaluates to plain text. */
     private static final Pattern TEXT_LITERAL = Pattern.compile("=\"(?:[^\"]|\"\")*\"");
@@ -123,9 +131,11 @@ public final class FleetExportCsv {
 
     /**
      * Prefixes a cell starting with a formula character; a number such as -5 is no formula, and
-     * neither is a lone string literal such as text() writes.
+     * neither is a lone string literal such as text() writes. A formula start after a semicolon
+     * is prefixed in every cell.
      */
-    private static String neutralize(String cell) {
+    private static String neutralize(String value) {
+        String cell = SEMICOLON_FORMULA.matcher(value).replaceAll(";'");
         if (cell.isEmpty() || FORMULA_START.indexOf(cell.charAt(0)) < 0 || isNumber(cell)
                 || TEXT_LITERAL.matcher(cell).matches()) {
             return cell;

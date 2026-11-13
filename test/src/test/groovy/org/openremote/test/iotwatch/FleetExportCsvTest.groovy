@@ -44,6 +44,14 @@ class FleetExportCsvTest extends Specification {
                 '"\'=""x""&HYPERLINK(""y"")",\'=1+2,"=""x"""\r\n'
     }
 
+    def "neutralizes formulas after a semicolon, which some Excel locales split cells on"() {
+        expect:
+        FleetExportCsv.line(["x;=1+1;", "a;+b;-c;@d;\te", 'a;"=1"', "a; =1", "a;b"]) ==
+                "x;'=1+1;,a;'+b;'-c;'@d;'\te,\"a;'\"\"=1\"\"\",a; =1,a;b\r\n"
+        FleetExportCsv.line([FleetExportCsv.text("x;=1+1;")]) == "\"=\"\"x;'=1+1;\"\"\"\r\n"
+        FleetExportCsv.render(["a", "-5"]) == "a; -5"
+    }
+
     def "renders values"() {
         expect:
         FleetExportCsv.render(12.0d) == "12"
