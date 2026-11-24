@@ -26,6 +26,7 @@ public final class FleetColumns {
         registers.put("ElectricMeterAsset", "energy_active_total");
         registers.put("HeatMeterAsset", "energy_heating");
         registers.put("PassageCounterAsset", "period_in");
+        registers.put("SoundLevelMeterAsset", "sound_level_eq");
         PRIMARY_REGISTERS = Collections.unmodifiableMap(registers);
     }
 

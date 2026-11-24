@@ -31,6 +31,7 @@ class FleetColumnResolverTest extends Specification {
         "ElectricMeterAsset"  | "energy_active_total"
         "HeatMeterAsset"      | "energy_heating"
         "PassageCounterAsset"  | "period_in"
+        "SoundLevelMeterAsset" | "sound_level_eq"
     }
 
     def "a configuration override beats the declaration"() {
@@ -196,6 +197,24 @@ class FleetColumnResolverTest extends Specification {
         !byName.containsKey("rawValue")
     }
 
+    def "sound level meters offer their other levels, not the weightings or battery"() {
+        when:
+        def columns = resolver().columnsFor(["SoundLevelMeterAsset"], null)
+        def names = columns*.name
+
+        then: "the equivalent level is the primary column"
+        columns.find { it.primary }.name == "sound_level_eq"
+
+        and: "the other levels are offered"
+        names.containsAll(["sound_level", "sound_level_max"])
+
+        and: "weightings, battery and rawValue stay out"
+        !names.contains("frequency_weighting")
+        !names.contains("time_weighting")
+        !names.contains("battery_level")
+        !names.contains("rawValue")
+    }
+
     def "a unit-less number is offered only when it stores data points"() {
         given:
         def stored = new AttributeDescriptor<>("visits", ValueType.POSITIVE_INTEGER,
@@ -225,7 +244,7 @@ class FleetColumnResolverTest extends Specification {
 
         then: "every device type the ingest writes to"
         types.containsAll(["WaterMeterAsset", "GasMeterAsset", "ElectricMeterAsset", "HeatMeterAsset", "TrackerAsset",
-                           "PassageCounterAsset"])
+                           "PassageCounterAsset", "SoundLevelMeterAsset"])
 
         and: "resolved from the model: each one declares rawValue, and no other type is included"
         types == ValueUtil.getAssetInfos(null)

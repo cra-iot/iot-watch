@@ -49,6 +49,11 @@ class FleetExportRegistersTest extends Specification {
         FleetExportRegisters.groups("Nope", false).isEmpty()
     }
 
+    def "sound level meters are not exportable"() {
+        expect:
+        !FleetExportRegisters.exportable("SoundLevelMeterAsset")
+    }
+
     def "heat energy unit follows its descriptor"() {
         when:
         def group = FleetExportRegisters.groups("HeatMeterAsset", false)[0]
