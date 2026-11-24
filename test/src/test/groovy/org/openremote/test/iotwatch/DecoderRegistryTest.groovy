@@ -8,6 +8,7 @@ import org.openremote.model.gasmeter.GasMeterAsset
 import org.openremote.model.heatmeter.HeatMeterAsset
 import org.openremote.model.attribute.Attribute
 import org.openremote.model.passagecounter.PassageCounterAsset
+import org.openremote.model.soundlevelmeter.SoundLevelMeterAsset
 import org.openremote.model.tracker.TrackerAsset
 import org.openremote.model.util.ValueUtil
 import org.openremote.model.value.ValueType
@@ -303,6 +304,132 @@ class DecoderRegistryTest extends Specification {
         then:
         plan.get().targetNames() == ["period_in", "period_out"] as Set
         events*.ref*.name as Set == ["period_in", "period_out"] as Set
+    }
+
+    def "builds a same-name plan for sound level meters"() {
+        given:
+        def asset = new SoundLevelMeterAsset("S")
+        asset.getAttributes().clear()
+        asset.getAttributes().getOrCreate(SoundLevelMeterAsset.SOUND_LEVEL_EQ_ATTRIBUTE_DESCRIPTOR)
+        asset.getAttributes().getOrCreate(SoundLevelMeterAsset.FREQUENCY_WEIGHTING_ATTRIBUTE_DESCRIPTOR)
+
+        when:
+        def plan = registry.planFor(asset)
+
+        then:
+        plan.isPresent()
+        plan.get().decoder() instanceof SameNameDecoder
+        plan.get().targetNames() == ["sound_level_eq", "frequency_weighting"] as Set
+        registry.assetClasses().contains(SoundLevelMeterAsset)
+    }
+
+    def "decodes the sound-level-meter key set onto a fully provisioned asset"() {
+        given:
+        def plan = registry.planFor(fullSoundMeter()).get()
+        def message = ingested('''{"data_decoded": {
+            "decoded": true,
+            "sound_level": 57.5,
+            "sound_level_eq": 47.4,
+            "sound_level_max": 61.8,
+            "frequency_weighting": "A",
+            "time_weighting": "F",
+            "battery_level": 100,
+            "meter_id": "6739A00000000001",
+            "battery": 100,
+            "LAF": 57.5,
+            "ipso_version": "v0.1"
+        }}''')
+
+        when:
+        def events = plan.decoder().decode("asset1", message, plan.targetNames(), 1000L)
+        def byName = events.collectEntries { [it.ref.name, it.value.get()] }
+
+        then:
+        byName["sound_level"] == 57.5d
+        byName["sound_level_eq"] == 47.4d
+        byName["sound_level_max"] == 61.8d
+        byName["frequency_weighting"] == "A"
+        byName["time_weighting"] == "F"
+        byName["battery_level"] == 100
+        byName["meter_id"] == "6739A00000000001"
+
+        and: "the decode flag and Milesight's own keys are not attributes"
+        !byName.containsKey("decoded")
+        !byName.containsKey("battery")
+        !byName.containsKey("LAF")
+        !byName.containsKey("ipso_version")
+    }
+
+    def "a whole-dB level arriving as a JSON integer is still written"() {
+        given:
+        def plan = registry.planFor(fullSoundMeter()).get()
+        def message = ingested('{"data_decoded": {"sound_level_eq": 60}}')
+
+        when:
+        def events = plan.decoder().decode("asset1", message, plan.targetNames(), 1000L)
+
+        then:
+        events.size() == 1
+        events[0].value.get() == 60
+        events[0].value.get() instanceof Number
+    }
+
+    def "a battery-only uplink leaves the weightings untouched"() {
+        given:
+        def plan = registry.planFor(fullSoundMeter()).get()
+        def message = ingested('{"data_decoded": {"battery_level": 87}}')
+
+        when:
+        def events = plan.decoder().decode("asset1", message, plan.targetNames(), 1000L)
+
+        then:
+        events*.ref*.name == ["battery_level"]
+    }
+
+    def "Milesight-native level keys write nothing"() {
+        given:
+        def plan = registry.planFor(fullSoundMeter()).get()
+        def message = ingested('{"data_decoded": {"LAF": 57.5, "LAeq": 47.4, "LAFmax": 61.8, "battery": 100}}')
+
+        when:
+        def events = plan.decoder().decode("asset1", message, plan.targetNames(), 1000L)
+
+        then:
+        events.isEmpty()
+    }
+
+    def "levels decode without the weighting attributes provisioned"() {
+        given:
+        def asset = new SoundLevelMeterAsset("S")
+        asset.getAttributes().clear()
+        [SoundLevelMeterAsset.SOUND_LEVEL_ATTRIBUTE_DESCRIPTOR,
+         SoundLevelMeterAsset.SOUND_LEVEL_EQ_ATTRIBUTE_DESCRIPTOR,
+         SoundLevelMeterAsset.SOUND_LEVEL_MAX_ATTRIBUTE_DESCRIPTOR].each {
+            asset.getAttributes().getOrCreate(it)
+        }
+        def plan = registry.planFor(asset).get()
+        def message = ingested('''{"data_decoded": {"sound_level": 57.5, "sound_level_eq": 47.4,
+            "sound_level_max": 61.8, "frequency_weighting": "A", "time_weighting": "F"}}''')
+
+        when:
+        def events = plan.decoder().decode("asset1", message, plan.targetNames(), 1000L)
+
+        then:
+        events*.ref*.name as Set == ["sound_level", "sound_level_eq", "sound_level_max"] as Set
+    }
+
+    private static SoundLevelMeterAsset fullSoundMeter() {
+        def asset = new SoundLevelMeterAsset("S")
+        [SoundLevelMeterAsset.METER_ID_ATTRIBUTE_DESCRIPTOR,
+         SoundLevelMeterAsset.SOUND_LEVEL_ATTRIBUTE_DESCRIPTOR,
+         SoundLevelMeterAsset.SOUND_LEVEL_EQ_ATTRIBUTE_DESCRIPTOR,
+         SoundLevelMeterAsset.SOUND_LEVEL_MAX_ATTRIBUTE_DESCRIPTOR,
+         SoundLevelMeterAsset.FREQUENCY_WEIGHTING_ATTRIBUTE_DESCRIPTOR,
+         SoundLevelMeterAsset.TIME_WEIGHTING_ATTRIBUTE_DESCRIPTOR,
+         SoundLevelMeterAsset.BATTERY_LEVEL_ATTRIBUTE_DESCRIPTOR].each {
+            asset.getAttributes().getOrCreate(it)
+        }
+        return asset
     }
 
     // Asset types are keyed by simple class name, so a class named like an OpenRemote built-in

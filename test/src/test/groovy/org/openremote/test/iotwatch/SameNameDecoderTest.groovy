@@ -5,6 +5,7 @@ import org.openremote.model.electricmeter.ElectricMeterAsset
 import org.openremote.model.gasmeter.GasMeterAsset
 import org.openremote.model.heatmeter.HeatMeterAsset
 import org.openremote.model.passagecounter.PassageCounterAsset
+import org.openremote.model.soundlevelmeter.SoundLevelMeterAsset
 import org.openremote.model.util.ValueUtil
 import org.openremote.model.watermeter.WaterMeterAsset
 import spock.lang.Specification
@@ -173,7 +174,8 @@ class SameNameDecoderTest extends Specification {
             new GasMeterAsset("g"),
             new ElectricMeterAsset("e"),
             new HeatMeterAsset("h"),
-            new PassageCounterAsset("p")
+            new PassageCounterAsset("p"),
+            new SoundLevelMeterAsset("s")
         ]
     }
 }
