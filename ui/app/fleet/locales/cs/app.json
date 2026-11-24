@@ -10,6 +10,7 @@
       "RfidChipAsset": "RFID čip",
       "RfidReaderAsset": "RFID čtečka",
       "ShipTrackerAsset": "Lodní tracker",
+      "SoundLevelMeterAsset": "Senzor hluku",
       "TrackerAsset": "Tracker",
       "WaterMeterAsset": "Vodoměr"
     },

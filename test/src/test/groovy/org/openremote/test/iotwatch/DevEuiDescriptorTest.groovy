@@ -6,6 +6,7 @@ import org.openremote.model.heatmeter.HeatMeterAsset
 import org.openremote.model.passagecounter.PassageCounterAsset
 import org.openremote.model.rfid.RfidChipAsset
 import org.openremote.model.rfid.RfidReaderAsset
+import org.openremote.model.soundlevelmeter.SoundLevelMeterAsset
 import org.openremote.model.tracker.ShipTrackerAsset
 import org.openremote.model.tracker.TrackerAsset
 import org.openremote.model.value.MetaItemType
@@ -31,7 +32,8 @@ class DevEuiDescriptorTest extends Specification {
             ElectricMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR,
             HeatMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR,
             GasMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR,
-            PassageCounterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR
+            PassageCounterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR,
+            SoundLevelMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR
         ]
     }
 
@@ -49,7 +51,8 @@ class DevEuiDescriptorTest extends Specification {
             ElectricMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR,
             HeatMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR,
             GasMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR,
-            PassageCounterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR
+            PassageCounterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR,
+            SoundLevelMeterAsset.DEV_EUI_ATTRIBUTE_DESCRIPTOR
         ]
     }
 
@@ -67,7 +70,8 @@ class DevEuiDescriptorTest extends Specification {
             ElectricMeterAsset.RAW_VALUE_ATTRIBUTE_DESCRIPTOR,
             HeatMeterAsset.RAW_VALUE_ATTRIBUTE_DESCRIPTOR,
             GasMeterAsset.RAW_VALUE_ATTRIBUTE_DESCRIPTOR,
-            PassageCounterAsset.RAW_VALUE_ATTRIBUTE_DESCRIPTOR
+            PassageCounterAsset.RAW_VALUE_ATTRIBUTE_DESCRIPTOR,
+            SoundLevelMeterAsset.RAW_VALUE_ATTRIBUTE_DESCRIPTOR
         ]
     }
 }

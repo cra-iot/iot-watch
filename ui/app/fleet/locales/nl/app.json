@@ -10,6 +10,7 @@
       "RfidChipAsset": "RFID-chip",
       "RfidReaderAsset": "RFID-lezer",
       "ShipTrackerAsset": "Scheepstracker",
+      "SoundLevelMeterAsset": "Geluidssensor",
       "TrackerAsset": "Tracker",
       "WaterMeterAsset": "Watermeter"
     }
