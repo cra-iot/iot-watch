@@ -59,7 +59,7 @@ public class SsoRealmConfigurer {
         }
 
         List<AuthenticationExecutionInfoRepresentation> executions = flows.getExecutions(alias);
-        List<String> present = executions.stream().map(AuthenticationExecutionInfoRepresentation::getProviderId).toList();
+        List<String> present = executions.stream().map(SsoRealmConfigurer::providerOf).toList();
         List<String> unexpected = present.stream().filter(provider -> !EXECUTIONS.contains(provider)).toList();
         if (!unexpected.isEmpty()) {
             throw new IllegalStateException("Flow '" + alias + "' contains unexpected executions " + unexpected
@@ -75,7 +75,7 @@ public class SsoRealmConfigurer {
         if (added) {
             executions = flows.getExecutions(alias);
         }
-        List<String> order = executions.stream().map(AuthenticationExecutionInfoRepresentation::getProviderId).toList();
+        List<String> order = executions.stream().map(SsoRealmConfigurer::providerOf).toList();
         if (!order.equals(EXECUTIONS)) {
             throw new IllegalStateException("Flow '" + alias + "' executions are in the order " + order
                 + ", expected " + EXECUTIONS + "; reorder them by hand");
@@ -88,6 +88,11 @@ public class SsoRealmConfigurer {
         }
     }
 
+    /** A nested sub-flow execution has no provider id; name it so the refusal message stays readable. */
+    private static String providerOf(AuthenticationExecutionInfoRepresentation execution) {
+        return execution.getProviderId() == null ? "<sub-flow " + execution.getDisplayName() + ">" : execution.getProviderId();
+    }
+
     protected Outcome ensureProvider(IdentityProvidersResource providers) {
         Optional<IdentityProviderRepresentation> existing = providers.findAll().stream()
             .filter(provider -> config.alias().equals(provider.getAlias()))
@@ -95,6 +100,8 @@ public class SsoRealmConfigurer {
         IdentityProviderRepresentation representation = representation(existing.map(IdentityProviderRepresentation::getConfig).orElse(null));
         if (existing.isPresent()) {
             representation.setInternalId(existing.get().getInternalId());
+            // An operator who switched the provider off in the console keeps that decision across restarts.
+            representation.setEnabled(existing.get().isEnabled());
             providers.get(config.alias()).update(representation);
             return Outcome.UPDATED;
         }

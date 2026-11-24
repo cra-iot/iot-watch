@@ -44,4 +44,19 @@ class OidcDiscoveryTest extends Specification {
         then:
         thrown(IllegalArgumentException)
     }
+
+    def "a document issued by a different issuer is rejected, naming both"() {
+        when:
+        OidcDiscovery.parse(DOCUMENT).requireIssuer("https://sso.example/auth/realms/OTHER")
+
+        then:
+        def e = thrown(IllegalArgumentException)
+        e.message.contains("realms/OTHER")
+        e.message.contains("realms/CRA")
+    }
+
+    def "a matching issuer passes the document through"() {
+        expect:
+        OidcDiscovery.parse(DOCUMENT).requireIssuer("https://sso.example/auth/realms/CRA").issuer() == "https://sso.example/auth/realms/CRA"
+    }
 }

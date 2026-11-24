@@ -14,6 +14,8 @@ import org.openremote.model.security.Realm;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -22,8 +24,10 @@ import java.util.logging.Logger;
  * on startup every existing realm is reconciled and every realm created later is configured as soon
  * as it exists, through the manager's own Keycloak admin client. The configuration itself is
  * {@link SsoRealmConfigurer}: a detect-and-link first login flow and the OIDC identity provider.
- * Without the env vars the service does nothing and the realms keep local logins only; it never
- * removes a provider (use docs/runbooks/add-sso-to-realm.py --remove for that).
+ * Without the env vars the service does nothing and the realms keep local logins only. The service
+ * owns the flow and the provider's settings (manual edits are overwritten on the next start, except
+ * unknown config keys and a provider an operator disabled), and it never removes a provider: that is
+ * done with the local runbook docs/runbooks/enable-sso-realm.md, which is not part of this repository.
  */
 public class IotWatchSsoService implements ContainerService {
 
@@ -81,6 +85,17 @@ public class IotWatchSsoService implements ContainerService {
 
     /** Configures every listed realm the configuration admits; one failing realm does not stop the others. */
     protected void reconcile(Collection<String> realmNames) {
+        try {
+            discovery();   // once for all realms; an unreachable issuer must not cost one timeout per realm
+        } catch (Exception e) {
+            LOG.log(Level.SEVERE, "CRA SSO: cannot read the discovery document of " + config.issuer()
+                + ", no realm configured at startup; retried on the next realm creation", e);
+            return;
+        }
+        Set<String> unknown = unknownRealms(realmNames);
+        if (!unknown.isEmpty()) {
+            LOG.warning("CRA SSO: " + SsoConfig.OR_IOTWATCH_SSO_REALMS + " names realms that do not exist: " + unknown);
+        }
         for (String realm : realmNames) {
             if (config.appliesTo(realm)) {
                 configureQuietly(realm);
@@ -88,6 +103,13 @@ public class IotWatchSsoService implements ContainerService {
                 LOG.fine("CRA SSO: realm '" + realm + "' is not in " + SsoConfig.OR_IOTWATCH_SSO_REALMS + ", skipped");
             }
         }
+    }
+
+    /** Names in the configured realm list that match none of the given realms (typo detection). */
+    protected Set<String> unknownRealms(Collection<String> realmNames) {
+        Set<String> unknown = new TreeSet<>(config.realms());
+        realmNames.forEach(unknown::remove);
+        return unknown;
     }
 
     protected void onRealmChange(PersistenceEvent<Realm> event) {
@@ -114,11 +136,20 @@ public class IotWatchSsoService implements ContainerService {
         LOG.info("CRA SSO: identity provider '" + config.alias() + "' " + outcome.name().toLowerCase() + " in realm '" + realm + "'");
     }
 
+    /** The issuer's endpoints, read once and kept; a failed read is retried on the next call. */
     protected synchronized OidcDiscovery discovery() throws IOException, InterruptedException {
         if (discovery == null) {
-            discovery = OidcDiscovery.fetch(config.issuer());
+            discovery = fetchDiscovery();
             LOG.info("CRA SSO: endpoints of " + config.issuer() + " read from its discovery document");
+            if (config.logout() && discovery.endSessionUrl() == null) {
+                LOG.warning("CRA SSO: " + SsoConfig.OR_IOTWATCH_SSO_LOGOUT + " is set but the issuer publishes no"
+                    + " end_session_endpoint, logging out of IoT Watch will not end the SSO session");
+            }
         }
         return discovery;
+    }
+
+    protected OidcDiscovery fetchDiscovery() throws IOException, InterruptedException {
+        return OidcDiscovery.fetch(config.issuer());
     }
 }

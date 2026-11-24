@@ -52,7 +52,12 @@ class SsoConfigTest extends Specification {
         then:
         config.appliesTo("master")
         config.appliesTo("vodomery")
-        !config.appliesTo("ppas")
+        !config.appliesTo("customer-b")
+    }
+
+    def "the client secret never appears in the string form"() {
+        expect:
+        !SsoConfig.parse(minimal()).get().toString().contains("s3cret")
     }
 
     def "alias, display name and logout can be overridden"() {

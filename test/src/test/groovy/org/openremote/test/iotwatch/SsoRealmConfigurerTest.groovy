@@ -197,4 +197,38 @@ class SsoRealmConfigurerTest extends Specification {
         def e = thrown(IllegalStateException)
         e.message.contains("400")
     }
+
+    def "keeps a provider that an operator disabled in the console disabled"() {
+        given:
+        def configurer = new SsoRealmConfigurer(config(), discovery())
+        flows.getFlows() >> [flow(FLOW)]
+        flows.getExecutions(FLOW) >> [execution("e1", DETECT_EXISTING, "REQUIRED"), execution("e2", AUTO_LINK, "REQUIRED")]
+        def disabled = existingProvider("cra-sso", [:])
+        disabled.enabled = false
+        providers.findAll() >> [disabled]
+        providers.get("cra-sso") >> provider
+
+        when:
+        configurer.apply(realm)
+
+        then:
+        1 * provider.update({ IdentityProviderRepresentation rep -> !rep.enabled && rep.config.clientSecret == "s3cret" })
+    }
+
+    def "refuses a flow that contains a sub-flow with the same clear message"() {
+        given:
+        def configurer = new SsoRealmConfigurer(config(), discovery())
+        flows.getFlows() >> [flow(FLOW)]
+        flows.getExecutions(FLOW) >> [execution("e1", DETECT_EXISTING, "REQUIRED"), execution("e2", AUTO_LINK, "REQUIRED"),
+                                      execution("e3", null, "ALTERNATIVE")]   // a nested sub-flow has no provider id
+
+        when:
+        configurer.apply(realm)
+
+        then:
+        def e = thrown(IllegalStateException)
+        e.message.contains("unexpected executions")
+        0 * providers.create(_)
+        0 * providers.get(_)
+    }
 }

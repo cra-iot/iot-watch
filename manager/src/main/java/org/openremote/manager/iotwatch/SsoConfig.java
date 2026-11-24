@@ -61,6 +61,13 @@ public record SsoConfig(String issuer, String clientId, String clientSecret, Str
         return realms.isEmpty() || realms.contains(realm);
     }
 
+    /** The record's default string form would print the client secret; this one never does. */
+    @Override
+    public String toString() {
+        return "SsoConfig[issuer=" + issuer + ", clientId=" + clientId + ", clientSecret=********, alias=" + alias
+            + ", displayName=" + displayName + ", logout=" + logout + ", realms=" + realms + "]";
+    }
+
     private static String text(Map<String, ?> config, String key) {
         Object value = config.get(key);
         if (value == null) {

@@ -43,7 +43,20 @@ public record OidcDiscovery(String issuer, String authorizationUrl, String token
         if (response.statusCode() != 200) {
             throw new IOException("HTTP " + response.statusCode() + " from " + url);
         }
-        return parse(response.body());
+        return parse(response.body()).requireIssuer(issuer);
+    }
+
+    /**
+     * OpenID Connect Discovery requires the document's issuer to equal the one it was fetched for, and Keycloak
+     * validates the ID tokens against the issuer written into the provider, so a mismatch (typically a typo in
+     * the configured URL that still returns a document) is reported here instead of as failed logins.
+     */
+    public OidcDiscovery requireIssuer(String expected) {
+        if (!expected.equals(issuer)) {
+            throw new IllegalArgumentException("Discovery document of " + expected + " names the issuer " + issuer
+                + "; check " + SsoConfig.OR_IOTWATCH_SSO_ISSUER);
+        }
+        return this;
     }
 
     private static String required(JsonNode node, String field) {

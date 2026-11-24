@@ -13,10 +13,10 @@ import static org.openremote.manager.iotwatch.SsoRealmConfigurer.AUTO_LINK
 import static org.openremote.manager.iotwatch.SsoRealmConfigurer.DETECT_EXISTING
 
 // Exercises the configurer against a real Keycloak; SsoRealmConfigurerTest mocks the admin client.
-// Runs only when OR_SSO_LIVE_KEYCLOAK_URL (e.g. https://test-watch.iot.cra.cz/auth), OR_SSO_LIVE_ISSUER
-// (any OIDC issuer reachable from here) and OR_ADMIN_PASSWORD are set. It creates a throwaway realm
-// and deletes it afterwards; nothing else on the server is touched.
-@IgnoreIf({ !env['OR_SSO_LIVE_KEYCLOAK_URL'] })
+// Runs only when OR_SSO_LIVE_KEYCLOAK_URL (e.g. https://<keycloak-host>/auth), OR_SSO_LIVE_ISSUER
+// (any OIDC issuer reachable from here) and OR_ADMIN_PASSWORD are all set. It creates a throwaway
+// realm and deletes it afterwards; nothing else on the server is touched.
+@IgnoreIf({ !(env['OR_SSO_LIVE_KEYCLOAK_URL'] && env['OR_SSO_LIVE_ISSUER'] && env['OR_ADMIN_PASSWORD']) })
 class SsoRealmConfigurerLiveTest extends Specification {
 
     def "applies the flow and the provider to a fresh realm and re-applies without duplicates"() {
