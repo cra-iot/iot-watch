@@ -36,6 +36,7 @@ fileTree(
         excludes: [
                 ".git/**",
                 "**/.git/**",
+                ".claude/**",
                 ".gradle/**",
                 "**/.gradle/**",
                 "**/build/**",

@@ -68,7 +68,9 @@ IoT Watch does not communicate with devices directly. Device connectivity, messa
 
 ### Keycloak setup
 
-The identity provider in place is [Keycloak](https://github.com/openremote/keycloak), running in its own container. The default configuration from the repository ([link](https://github.com/openremote/keycloak)) is used. Users are managed locally in Keycloak — there is no federation to the CRA corporate SSO. Each customer gets a dedicated realm.
+The identity provider in place is [Keycloak](https://github.com/openremote/keycloak), running in its own container. The default configuration from the repository ([link](https://github.com/openremote/keycloak)) is used. Users are managed locally in Keycloak and each customer gets a dedicated realm.
+
+Optionally the realms also offer login through the CRA corporate SSO (Keycloak identity brokering, OpenID Connect). The manager service `IotWatchSsoService` configures it in every realm, master included, or only in the realms listed in `OR_IOTWATCH_SSO_REALMS`: at startup for the existing realms and immediately for every realm created later. It is enabled by `OR_IOTWATCH_SSO_ISSUER` (the SSO realm's issuer URL), `OR_IOTWATCH_SSO_CLIENT_ID` and `OR_IOTWATCH_SSO_CLIENT_SECRET`; `OR_IOTWATCH_SSO_ALIAS` (default `cra-sso`, part of the broker redirect URI `/auth/realms/<realm>/broker/<alias>/endpoint`), `OR_IOTWATCH_SSO_DISPLAY_NAME` (the button label, default `CRA SSO`) and `OR_IOTWATCH_SSO_LOGOUT` (`true` also ends the SSO session on logout) are optional. Only users that already exist in the realm can log in through SSO: the first login flow links the SSO identity to the realm user with the same e-mail (or username) and never creates one, so operators keep managing users, roles and asset links in the Manager UI and create SSO users with their directory e-mail and no password. The service never removes a provider; a one-off setup or a rollback is done with the local runbook `docs/runbooks/enable-sso-realm.md`.
 
 ### Proxy setup
 
