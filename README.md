@@ -19,7 +19,7 @@ OpenRemote is licensed under [AGPL-3.0](https://github.com/openremote/openremote
 
 - **Custom asset types** (`model/`) representing CRA IoT device data — the main customization of this project.
 - **IoT Watch manager app** (`ui/app/fleet`): the OpenRemote manager UI extended with a **Fleet** page, a searchable overview of all meters in a realm with alarm / silent / ok status, backed by the `POST /api/{realm}/fleet/query` endpoint in `manager/`. Served at `/manager` in place of the built-in app.
-- **Deployment content** (`deployment/`): Manager UI configuration and logos, map settings, and Keycloak themes. These are still the template defaults; CRA branding and the CRA Keycloak theme are in progress.
+- **Deployment content** (`deployment/`): Manager UI configuration and logos, map settings, and Keycloak themes. The CRA login theme `cra` is in `deployment/keycloak/themes`; the Manager UI configuration and map settings are still the template defaults.
 - **Data ingestion** from the CRA IoT Platform via its HTTP egress, received by a custom, API-key-authenticated HTTP ingest endpoint implemented in `manager/`. The MQTT egress → built-in OpenRemote MQTT agent path (configured in the Manager; no custom protocol code) remains supported but is no longer used.
 - **Device decoding** (`manager/`): a decode service turns each message's `rawValue` into typed attributes, independent of how `rawValue` arrived — so it serves both ingest paths. Replaces the earlier Manager-authored Groovy decode rules.
 - **Groovy rules** authored in the Manager UI; this repository versions their backups.
@@ -82,8 +82,9 @@ The TEST and PROD instances run the **unmodified official OpenRemote images** on
 
 - `/content/extensions/` — the `iot-watch-model` and `iot-watch-manager` extension JARs. The manager loads every JAR found in `/deployment/manager/extensions`. The setup and agent JARs are not shipped.
 - `/content/apps/manager/` — the IoT Watch manager app, served by the manager at `/manager` in place of the built-in app.
+- `/content/keycloak/themes/` — the Keycloak themes from `deployment/keycloak/themes` (the CRA login theme `cra`).
 
-The Helm chart runs the image as an init container that copies `/content` into an `emptyDir`; the manager container mounts only the `extensions` folder at `/deployment/manager/extensions` and the app folder under the custom app docroot. Manager UI configuration (`manager_config.json`) and map settings are provided by the environment's deployment configuration, and Keycloak themes are not part of the image.
+The manager Helm chart runs the image as an init container that copies `/content` into an `emptyDir`; the manager container mounts only the `extensions` folder at `/deployment/manager/extensions` and the app folder under the custom app docroot. The Keycloak Helm chart does the same with `/content/keycloak/themes`, mounted at `/deployment/keycloak/themes`, where the OpenRemote Keycloak image looks for themes (see `deployment/keycloak/themes/README.md`). Manager UI configuration (`manager_config.json`) and map settings are provided by the environment's deployment configuration.
 
 The `docker-compose.yml` in the root of this repository is the upstream template's deployment profile and serves local development and manual runs only; there the same content is delivered through the `deployment` image and a shared volume instead of a mount.
 

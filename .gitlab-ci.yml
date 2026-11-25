@@ -160,9 +160,15 @@ build:deployment:image:
     - IMAGE_TAG="${DEPLOYMENT_IMAGE}:${VERSION}"
     - ctr=$(buildah from --creds=$PROXY_AUTH_WRITE dockerhub.$PROXY/library/alpine:3)
     - mnt=$(buildah mount "$ctr")
-    - mkdir -p "$mnt/content/extensions" "$mnt/content/apps/manager"
+    - mkdir -p "$mnt/content/extensions" "$mnt/content/apps/manager" "$mnt/content/keycloak/themes"
     - cp "$EXT"/iot-watch-model-*.jar "$EXT"/iot-watch-manager-*.jar "$mnt/content/extensions/"
     - cp -R fleet-app/. "$mnt/content/apps/manager/"
+    # Keycloak themes: every theme directory, without the README next to them
+    - |
+      for t in deployment/keycloak/themes/*/; do
+        cp -R "${t%/}" "$mnt/content/keycloak/themes/"
+      done
+      test -f "$mnt/content/keycloak/themes/cra/login/theme.properties" || { echo "cra login theme missing from the image" >&2; exit 1; }
     - chmod -R a+rX "$mnt/content"
     - buildah umount "$ctr"
     - |
@@ -177,7 +183,7 @@ build:deployment:image:
         --label "org.opencontainers.image.vendor=CRA" \
         --label "org.opencontainers.image.source=${CI_PROJECT_URL}" \
         --label "org.opencontainers.image.url=${CI_PROJECT_URL}" \
-        --label "org.opencontainers.image.description=IoT Watch deployment content (extensions + manager app) for the Helm chart, built from ${CI_PROJECT_PATH} ${CI_COMMIT_REF_NAME}" \
+        --label "org.opencontainers.image.description=IoT Watch deployment content (extensions, manager app, Keycloak themes) for the Helm charts, built from ${CI_PROJECT_PATH} ${CI_COMMIT_REF_NAME}" \
         "$ctr"
     - buildah commit "$ctr" "$NEXUS_REGISTRY/$IMAGE_TAG"
     - printf '%s' "$NEXUS_REGISTRY_PASSWORD" | buildah login -u "$NEXUS_REGISTRY_USER" --password-stdin $NEXUS_REGISTRY
