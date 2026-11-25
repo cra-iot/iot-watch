@@ -448,7 +448,8 @@ textarea:focus {
     margin-top: 0;
 }
 
-/* Buttons: orange, white uppercase text with a chevron, as on the CRA SSO page */
+/* Buttons: orange, uppercase text with a chevron, as on the CRA SSO page, but with ink
+   instead of white text for WCAG AA contrast (white on CRA orange is about 2.1:1) */
 .cra-btn,
 :where(button[type="submit"]:not(.cra-password-toggle), input[type="submit"]) {
     display: inline-flex;
@@ -461,8 +462,8 @@ textarea:focus {
     font-weight: 800;
     letter-spacing: 0.02em;
     text-transform: uppercase;
-    color: #FFFFFF;
-    background: var(--cra-orange) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 14' fill='none' stroke='white' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1l6 6-6 6'/%3E%3C/svg%3E") no-repeat right 26px center / 7px 12px;
+    color: var(--cra-ink);
+    background: var(--cra-orange) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 14' fill='none' stroke='%23293133' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1l6 6-6 6'/%3E%3C/svg%3E") no-repeat right 26px center / 7px 12px;
     border: 0;
     border-radius: 0;
     cursor: pointer;
@@ -475,7 +476,7 @@ textarea:focus {
 
 /* Link buttons keep their label colour on hover (a:hover would turn it orange-dark) */
 .cra-btn:hover {
-    color: #FFFFFF;
+    color: var(--cra-ink);
 }
 
 .cra-btn:disabled,
