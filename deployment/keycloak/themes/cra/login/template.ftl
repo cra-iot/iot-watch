@@ -2,10 +2,15 @@
     CRA IoT Watch page layout. Derived from the Keycloak base theme template.ftl (26.7):
     the macro signature, nested sections and session scripts must stay compatible with the
     base page templates, which all render through this layout.
+
+    On login.ftl and login-username.ftl a "CRA account" provider block above the local form
+    replaces the base socialProviders section (nested "socialProviders" is skipped there).
+    Check it against the base login.ftl on Keycloak upgrades.
 -->
 <#import "footer.ftl" as loginFooter>
 <#macro registrationLayout bodyClass="" displayInfo=false displayMessage=true displayRequiredFields=false>
 <#assign realmName = (realm.displayName?has_content)?then(realm.displayName, realm.name)>
+<#assign craSsoBlock = realm.password && social?? && social.providers?has_content && (pageId == "login" || pageId == "login-username")>
 <!DOCTYPE html>
 <html class="${properties.kcHtmlClass!}" lang="${lang}"<#if realm.internationalizationEnabled> dir="${(locale.rtl)?then('rtl','ltr')}"</#if>>
 
@@ -172,7 +177,7 @@
             </#if>
             </div>
 
-            <div id="kc-content">
+            <div id="kc-content"<#if craSsoBlock> class="cra-content--sso"</#if>>
                 <#-- App-initiated actions should not see warning messages about the need to complete the action during login. -->
                 <#if displayMessage && message?has_content && (message.type != 'warning' || !isAppInitiatedAction??)>
                     <div class="${properties.kcAlertClass!} cra-alert--${message.type}" role="alert">
@@ -182,6 +187,18 @@
                         <#if message.type = 'info'><span class="${properties.kcFeedbackInfoIcon!}" aria-hidden="true"></span></#if>
                         <span class="${properties.kcAlertTitleClass!}">${kcSanitize(message.summary)?no_esc}</span>
                     </div>
+                </#if>
+
+                <#if craSsoBlock>
+                    <section class="cra-sso">
+                        <h2 class="cra-sso__heading">${msg("craAccountHeading")}</h2>
+                        <#list social.providers as p>
+                            <a data-once-link data-disabled-class="${properties.kcFormSocialAccountListButtonDisabledClass!}" id="social-${p.alias}"
+                               class="cra-btn cra-btn--primary cra-btn--block cra-sso__button" href="${p.loginUrl}"><#if p.alias == "cra-sso">${msg("craAccount")}<#else>${p.displayName!}</#if></a>
+                        </#list>
+                    </section>
+                    <div class="cra-or"><span>${msg("craOr")}</span></div>
+                    <h2 class="cra-local__heading">${msg("craLocalAccountHeading")}</h2>
                 </#if>
 
                 <#nested "form">
@@ -206,7 +223,9 @@
                     </form>
                 </#if>
 
-                <#nested "socialProviders">
+                <#if !craSsoBlock>
+                    <#nested "socialProviders">
+                </#if>
 
                 <#if displayInfo>
                     <div id="kc-info" class="${properties.kcSignUpClass!}">

@@ -494,6 +494,51 @@ textarea:focus {
     background: var(--cra-background);
 }
 
+/* CRA account block above the local form: the SSO button is the primary action, the local submit turns secondary */
+.cra-sso__heading,
+.cra-local__heading {
+    margin: 0 0 14px;
+    font-size: 1.0625rem;
+    font-weight: 700;
+    color: var(--cra-ink);
+}
+
+.cra-sso {
+    margin-bottom: 18px;
+}
+
+.cra-sso__button {
+    text-decoration: none;
+    margin-bottom: 10px;
+}
+
+.cra-or {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 6px 0 22px;
+    font-size: 0.875rem;
+    color: var(--cra-muted);
+}
+
+.cra-or::before,
+.cra-or::after {
+    content: "";
+    flex: 1;
+    border-top: 1px solid var(--cra-divider);
+}
+
+.cra-content--sso #kc-login {
+    color: var(--cra-ink);
+    background: var(--cra-paper);
+    box-shadow: inset 0 0 0 1px var(--cra-line);
+    padding: 0 32px;
+}
+
+.cra-content--sso #kc-login:hover {
+    background: var(--cra-background);
+}
+
 /* Button pairs outside a flex container (terms: accept / decline) */
 .form-actions {
     display: flex;
