@@ -13,6 +13,13 @@ IoT Watch login theme based on the CRA Single Sign-On page: white header with th
 - Font: Nunito (SIL Open Font License 1.1, `login/resources/fonts/OFL.txt`). Do not add commercially licensed fonts, because this repository is published.
 - Activation: set the login theme of a realm to `cra` (Manager UI > Realms, or Keycloak admin console > Realm settings > Themes). Enable internationalization on the realm to show the language switcher.
 
+#### CRA account sign-in
+When a realm has an identity provider, the login pages show a "CRA account" block above the local form, separated from it by "or". It appears on the `login` and `login-username` pages (the `pageId` values in Keycloak 26.7) and only when the realm allows password login and has at least one visible identity provider. Realms without a provider look as before.
+
+- The provider with alias `cra-sso` gets the button label "CRA account" (message `craAccount`), whatever its display name is. Any other alias shows its own display name on the button.
+- With the block shown, the local "Sign in" button turns secondary (outlined), so the identity provider is the primary action.
+- The block replaces the base `socialProviders` section on these two pages. On Keycloak upgrades, compare it with the `socialProviders` section of the base `login.ftl` and `login-username.ftl` and update `login/template.ftl` if the base markup or conditions changed.
+
 ### Delivery to Keycloak (Kubernetes)
 `./gradlew clean installDist` also packs every theme in this directory into `deployment/build/keycloak/cra-keycloak-theme.jar` (task `:deployment:keycloakThemeJar`; `META-INF/keycloak-themes.json` is generated from the directory layout). Keycloak loads theme JARs from `/opt/keycloak/providers`, so the Kubernetes deployment mounts this single file there instead of a theme directory tree. The JAR is handed to the Keycloak Helm chart base64-encoded on one line (`base64 < cra-keycloak-theme.jar | tr -d '\n'`), the same way the extension JARs are handed to the manager chart. Keycloak picks up a new or changed JAR only on restart.
 
