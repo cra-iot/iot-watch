@@ -3,3 +3,4 @@ org.openremote.manager.iotwatch.IotWatchIngestService
 org.openremote.manager.iotwatch.IotWatchDecodeService
 org.openremote.manager.iotwatch.IotWatchFleetService
 org.openremote.manager.iotwatch.IotWatchSsoService
+org.openremote.manager.iotwatch.IotWatchManagerConfigService
