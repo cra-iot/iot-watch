@@ -6,6 +6,9 @@
     On login.ftl and login-username.ftl a "CRA account" provider block above the local form
     replaces the base socialProviders section (nested "socialProviders" is skipped there).
     Check it against the base login.ftl on Keycloak upgrades.
+
+    The override intentionally does not import theme-resources.ftl or use the base themeResources
+    branch: a child theme must set styles, scripts and favicon through theme.properties.
 -->
 <#import "footer.ftl" as loginFooter>
 <#macro registrationLayout bodyClass="" displayInfo=false displayMessage=true displayRequiredFields=false>
@@ -191,7 +194,9 @@
 
                 <#if craSsoBlock>
                     <section class="cra-sso">
-                        <h2 class="cra-sso__heading">${msg("craAccountHeading")}</h2>
+                        <#assign craHasSsoProvider = false>
+                        <#list social.providers as p><#if p.alias == "cra-sso"><#assign craHasSsoProvider = true></#if></#list>
+                        <h2 class="cra-sso__heading">${msg(craHasSsoProvider?then("craAccountHeading", "identity-provider-login-label"))}</h2>
                         <#list social.providers as p>
                             <a data-once-link data-disabled-class="${properties.kcFormSocialAccountListButtonDisabledClass!}" id="social-${p.alias}"
                                class="cra-btn cra-btn--primary cra-btn--block cra-sso__button" href="${p.loginUrl}"><#if p.alias == "cra-sso">${msg("craAccount")}<#else>${p.displayName!}</#if></a>
